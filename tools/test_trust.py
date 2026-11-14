@@ -157,5 +157,26 @@ class AccessoryOnly(unittest.TestCase):
         self.assertEqual(out, list(self.CASES.values()))
 
 
+class BrandWordRequired(unittest.TestCase):
+    """実績側の英字の語（メーカー・レンズ銘）が1つも無い照合はしない（YASHICA 35mm 2.8 に ALPA 35mm 2.8 が当たっていた）."""
+    CASES = [("YASHICA LENS 35mm 1：2.8 A1341823", "ALPA 35mm 2.8", False),
+             ("ニコン Ai Nikkor 50mm F1.4", "Nikon Ai 50mm f1.4", True),
+             ("Carl Zeiss Sonnar 85mm F2.8 AEG", "Sonnar 85mm 2.8 AEG", True)]
+
+    def test_python(self):
+        for q, r, ok in self.CASES:
+            got = ba.match_sales(q, [{"title": r, "_tokens": ba._tokens(r), "source": "頒布会"}])
+            self.assertEqual(bool(got), ok, (q, r))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        cases = json.dumps([[q, r] for q, r, _ in self.CASES], ensure_ascii=False)
+        out = run_js(data, f"console.log(JSON.stringify({cases}.map(([q,r])=>m.matchRefs(q,[{{title:r,tokens:[...m.tokensOf(r)],tier:2}}]).length>0)))")
+        self.assertEqual(out, [ok for _, _, ok in self.CASES])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -800,6 +800,10 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         # 型違い（Contax の MMJ と AEG など）は相場が違う
         if variants_conflict(qt, rt):
             continue
+        # 実績側の英字の語（メーカー・レンズ銘など）が1つも無ければ別物
+        # 例: 「YASHICA 35mm 1:2.8」に「ALPA 35mm 2.8」が数字だけで当たっていた
+        if not (qt & {t for t in rt if not re.search(r"\d", t) and t not in COLOR_WORDS}):
+            continue
         # 型番・焦点距離・F値など数字を含む語は、実績側のものが全部一致すること
         digits = {t for t in rt if re.search(r"\d", t)}
         if not digits <= qt:
