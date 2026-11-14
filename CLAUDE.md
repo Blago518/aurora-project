@@ -30,6 +30,9 @@ GitHub 上のリポジトリ名は `aurora-research`（**公開**）。事業の
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv` |
 | `build_knowledge.py` | data/ から `knowledge/相場/`・`knowledge/機種/` を自動生成 |
+| `ebay_api.py` | eBay 公式APIで自分の注文・出品・手数料を取得（金額は通貨の列を見る） |
+| `import_downloads.py` | ダウンロードフォルダの CPaSS・オークレボ明細を取り込み → `build_ledger_costs.py` |
+| `build_ledger_costs.py` | 発送明細 → 管理番号ごとの国際送料・発送代行費・関税（data/ledger_costs.csv） |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
 | `test_appraise.py` | テスト（Python と拡張機能の判定一致も確認） |
@@ -40,6 +43,7 @@ python3 tools/appraise.py                    # data/search_urls.txt の検索URL
 python3 tools/build_reference_prices.py      # 古物台帳・頒布会 → data/reference_prices.csv
 python3 tools/build_extension.py             # 拡張機能を作り直す → chrome://extensions で ↻
 python3 tools/build_knowledge.py             # 相場ノート・機種ノートを更新
+python3 tools/import_downloads.py            # ダウンロードした CPaSS・オークレボ明細を取り込んで費用を集計
 python3 -m unittest discover -s tools        # テスト
 ```
 

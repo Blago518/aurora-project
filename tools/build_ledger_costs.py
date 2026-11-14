@@ -37,9 +37,12 @@ def _num(v) -> float:
 
 
 def _xlsx_rows(path: Path) -> list[dict]:
+    import warnings
     import openpyxl  # 標準ライブラリに無いので、使うときだけ読み込む（Mac では pip3 install openpyxl）
-    ws = openpyxl.load_workbook(path, read_only=True, data_only=True).active
-    rows = list(ws.iter_rows(values_only=True))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # CPaSS の xlsx は書式情報が無く警告が出るが、中身は問題ない
+        ws = openpyxl.load_workbook(path, read_only=True, data_only=True).active
+        rows = list(ws.iter_rows(values_only=True))
     head = [str(h or "").strip() for h in rows[0]]
     return [dict(zip(head, r)) for r in rows[1:] if any(c not in (None, "") for c in r)]
 
