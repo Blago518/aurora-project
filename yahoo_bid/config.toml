@@ -1,0 +1,48 @@
+# ヤフオク入札判断ツールの設定
+# 数値は自分の実績に合わせて調整してください。
+
+[fx]
+# 1 USD = 何円で計算するか（--fx で上書き可。auto_fetch=true なら起動時に取得を試みる）
+usd_jpy = 150.0
+auto_fetch = true
+# 円転時の為替手数料・目減り（Payoneer等）
+conversion_loss_pct = 2.0
+
+[ebay]
+# 落札手数料（Final Value Fee）: カテゴリにより異なる。カメラ・レンズ目安 13.25%
+final_value_fee_pct = 13.25
+# 1注文あたりの固定手数料（USD）
+per_order_fee_usd = 0.40
+# 海外決済手数料（International fee）
+international_fee_pct = 1.65
+# 広告（Promoted Listings）を使う場合の率。使わないなら 0
+ad_rate_pct = 0.0
+# 手数料は「商品価格＋買い手負担送料」に掛かる。買い手から受け取る送料（USD）
+buyer_shipping_usd = 0.0
+
+[shipping]
+# 国際送料（円）。--ship で品目ごとに上書き可。サイズ別の目安
+default_jpy = 3500
+small_jpy = 2500     # レンズ・コンパクト等
+medium_jpy = 3500    # 一眼ボディ等
+large_jpy = 6000     # 中判・セット品等
+# 梱包資材など
+packing_jpy = 300
+
+[yahoo]
+# ヤフオク側の国内送料が不明なときの仮置き（円）
+default_domestic_shipping_jpy = 1000
+# ストア出品で税別表示の場合に掛ける消費税率（%）。通常は 0（税込表示）
+store_tax_pct = 0.0
+
+[tax]
+# 輸出免税による消費税還付を利益に含めるか（課税事業者のみ）
+include_consumption_tax_refund = false
+consumption_tax_pct = 10.0
+
+[judge]
+# 入札判断の基準
+min_profit_jpy = 5000
+min_margin_pct = 15.0
+# 想定販売価格に使うeBay販売済み価格の分位（0.5=中央値。保守的にするなら 0.4 など）
+sold_price_quantile = 0.5
