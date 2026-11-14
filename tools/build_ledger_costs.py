@@ -118,7 +118,8 @@ def load_aucrevo_charges(paths: list[Path]) -> list[dict]:
                 continue
             item_id = ""
             for nxt in lines[i + 1:i + 3]:
-                mm = re.search(r"商品ID[:：]\s*(\d+)", nxt)
+                # 通常は「商品ID:nnnn」、米国関税の行は「FedexAWB:…/#nnnn」の形
+                mm = re.search(r"商品ID[:：]\s*(\d+)", nxt) or re.search(r"AWB[:：]\S*/#(\d+)", nxt)
                 if mm:
                     item_id = mm.group(1)
                     break
