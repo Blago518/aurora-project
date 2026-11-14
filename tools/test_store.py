@@ -161,5 +161,31 @@ class MemoAutoSave(unittest.TestCase):
         self.assertIn("aurora_price_memo.csv", bg)
 
 
+class AdaptallFlag(unittest.TestCase):
+    """タムロンの交換マウント（アダプトール）だけの出品は付属品。焦点距離があるレンズ本体は除かない（Python と JS で同じ）."""
+    CASES = {"20-47 オリンパスOMマウント タムロン アダプトール マウント": True,
+             "Tamron Adaptall-2 mount Canon FD": True,
+             "TAMRON SP MACRO 90mm F2.8 72B OLYMPUS アダプトール": False,
+             "Tamron SP 70-210mm F3.5 Adaptall-2": False}
+
+    def test_python(self):
+        for t, adapter in self.CASES.items():
+            self.assertEqual("アダプター等" in ba.detect_flags(t), adapter, t)
+
+    def test_js(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        with tempfile.TemporaryDirectory() as d:
+            dp = Path(d) / "d.json"
+            dp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            code = (f"const {{makeCore}}=require({json.dumps(str(bs.CORE_JS))});const c=makeCore(require({json.dumps(str(dp))}));"
+                    f"console.log(JSON.stringify({json.dumps(list(self.CASES), ensure_ascii=False)}.map(t=>c.detectFlags(t).includes('アダプター等'))))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), list(self.CASES.values()))
+
+
 if __name__ == "__main__":
     unittest.main()
