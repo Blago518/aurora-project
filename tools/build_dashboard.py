@@ -2,13 +2,22 @@
 """事業の数字をグラフで見るページ（reports/dashboard.html）を作る.
 
 入力（どれも無ければ、その部分は「データ無し」と表示するだけ）:
-    data/ledger.csv            古物台帳（ledger_sync.py / update_all.py が取り込む）
+    reports/ebay_orders_*.csv  eBay API の注文（python3 tools/ebay_api.py orders --days 730）→ 販売の件数・金額・国・返金の有無。
+                               あれば販売はこれで数える（古物台帳の記入が遅れていても eBay の実態どおりになる）
+    reports/ebay_finances_*.csv eBay API の取引明細（python3 tools/ebay_api.py fees --days 730）→ 実際の手取り・手数料・広告費・返金
+    data/ledger.csv            古物台帳（ledger_sync.py / update_all.py が取り込む）→ 仕入金額・購入日・仕入先（No. で結び付け）。
+                               eBay API の注文が無いときは販売もこれで数える
     data/ledger_costs.csv      管理番号ごとの国際送料・関税・発送代行費・販売国（build_ledger_costs.py）
     reports/listings_*.csv     eBay の出品中一覧（python3 tools/ebay_api.py listings）の一番新しいもの
     data/kanri.csv             管理シートの No.・状態・購入日・販売日（ledger_sync.py が取り込む）→ 売れた商品の状態
-    data/ebay_sales.csv        ebay売上シート（eBay の取引レポート）→ 実際の手取り（Net amount）で利益を出す
+    data/ebay_report.csv       ebay売上シート（eBay の取引レポート）→ eBay API の取引明細が無いときの実際の手取り
     data/junk.csv              J管理シート → ジャンク品のヤフオク再販の成績
     data/item_types.csv        出品情報シートの商品種別（Lens / Camera Body）→ 種類別のグラフ
+    data/monthly_costs.csv     （任意）月ごとの送料・関税・発送代行の実額（列: 月,CPaSS,関税,オークレボ）。
+                               発送明細（ledger_costs.csv）が無いときに、推定（一律 $30）と比べるのに使う
+    data/sku_fix.csv           昔の注文（SKU_TRUSTED_FROM より前）の SKU の対応表（列: order_id,正しいNo.,メモ）。
+                               その頃は eBay の SKU（Custom label）が No. と合っていないので、SKU は使わずこの表で No. を決める。
+                               候補は python3 tools/build_dashboard.py --sku-candidates → reports/sku_fix_candidates.csv
     data/targets.toml          目標（任意）。例:
                                    [month]
                                    sales_jpy = 500000
@@ -20,6 +29,7 @@
 
 使い方（aurora フォルダで）:
     python3 tools/build_dashboard.py           # → reports/dashboard.html（Mac ではブラウザで開く）
+    python3 tools/build_dashboard.py --sku-candidates   # 昔の注文の正しい No. の候補 → reports/sku_fix_candidates.csv
     python3 tools/build_dashboard.py --no-open
 """
 from __future__ import annotations
@@ -68,6 +78,8 @@ COUNTRY_JA = {
     "IL": "イスラエル", "MX": "メキシコ", "BR": "ブラジル", "PL": "ポーランド", "DK": "デンマーク",
     "NO": "ノルウェー", "FI": "フィンランド", "PT": "ポルトガル", "TH": "タイ", "MY": "マレーシア",
 }
+# この日より前の eBay の注文は SKU（Custom label）が No. と合っていない（ユーザー確認 2026-11-15。ebay売上シートの注意書きと同じ）
+SKU_TRUSTED_FROM = date(2026, 8, 18)
 MONTHS_EN = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 KIND_JA = {"lens": "レンズ", "camera body": "カメラ（ボディ）"}
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
@@ -239,7 +251,9 @@ def read_kanri(path: Path) -> dict[str, dict]:
         no = norm_sku(r.get("No.", ""))
         if no:
             out[no] = {"raw": (r.get("状態") or "").strip(), "cond": sheet_condition(r.get("状態", "")),
-                       "sold": parse_date(r.get("販売日")), "optical": bool(OPTICAL_RE.search(r.get("状態") or ""))}
+                       "sold": parse_date(r.get("販売日")), "optical": bool(OPTICAL_RE.search(r.get("状態") or "")),
+                       "cost": _num(r.get("仕入(円)")), "buy": parse_date(r.get("購入日")),
+                       "title": (r.get("商品名") or "").strip(), "supplier": (r.get("アカウント名(仕入元)") or "").strip()}
     return out
 
 
@@ -289,6 +303,146 @@ def read_ebay_sales(path: Path) -> dict:
             "first": min((d for d in (parse_date(r.get("Transaction creation date")) for r in rows) if d), default=None)}
 
 
+def _latest(reports: Path, prefix: str) -> tuple[list[dict], str]:
+    files = sorted(reports.glob(f"{prefix}_*.csv")) if reports.exists() else []
+    if not files:
+        return [], ""
+    m = re.search(r"(\d{4})(\d{2})(\d{2})", files[-1].stem)
+    return _csv_rows(files[-1]), (f"{m.group(1)}/{m.group(2)}/{m.group(3)}" if m else files[-1].name)
+
+
+def read_api_finances(rows: list[dict]) -> dict:
+    """eBay API の取引明細（ebay_api.py fees）→ 注文ごとの実際の手取り（USD）.
+
+    SALE（手数料を引いた入金）・REFUND・広告費などの NON_SALE_CHARGE を注文番号で合計する。
+    注文に結び付かないもの（ストアの月額など）は unassigned。PAYOUT（銀行への入金）・TRANSFER は数えない。"""
+    per: dict[str, dict] = defaultdict(lambda: {"net": 0.0, "refund": 0.0, "promo": 0.0, "fee": 0.0})
+    unassigned: dict[str, float] = defaultdict(float)
+    refunds, skipped = [], 0
+    for r in rows:
+        typ = (r.get("type") or "").strip()
+        if typ in ("PAYOUT", "TRANSFER", "") or (r.get("status") or "") in ("FAILED",):
+            continue
+        if (r.get("amount_currency") or "USD") != "USD":
+            skipped += 1
+            continue
+        amt = _num(r.get("amount")) or 0.0
+        amt = amt if r.get("booking") == "CREDIT" else -amt
+        oid = (r.get("order_id") or "").strip()
+        if not oid:
+            m = re.search(r"ORDER_ID:(\S+)", r.get("references") or "")
+            oid = m.group(1) if m else ""
+        if typ == "REFUND":
+            refunds.append({"date": (r.get("date") or "").replace("-", "/"), "order_id": oid, "usd": amt})
+        if not oid:
+            unassigned[f"{typ} {r.get('fee_type') or ''}".strip()] += amt
+            continue
+        p = per[oid]
+        p["net"] += amt
+        if typ == "REFUND":
+            p["refund"] += amt
+        elif "AD_FEE" in (r.get("fee_type") or "") or "AD_FEE" in typ:
+            p["promo"] += amt
+        if typ == "SALE":
+            p["fee"] += _num(r.get("total_fee")) or 0.0
+    return {"per": dict(per), "unassigned": dict(unassigned), "refunds": refunds, "skipped_currency": skipped}
+
+
+def read_sku_fix(path: Path) -> dict[str, str]:
+    """注文番号 → 正しい No.（data/sku_fix.csv）."""
+    return {r["order_id"].strip(): r["正しいNo."].strip() for r in _csv_rows(path)
+            if (r.get("order_id") or "").strip() and (r.get("正しいNo.") or "").strip()}
+
+
+def _title_tokens(title: str) -> set[str]:
+    return {t.lower() for t in appraise.title_to_query(title or "", 20).split() if len(t) > 1 or t.isdigit()}
+
+
+def sku_candidates(orders: list[dict], ledger: list[dict], kanri_full: dict, fix: dict[str, str],
+                   top: int = 3) -> list[dict]:
+    """SKU が信用できない昔の注文ごとに、商品名が似ている台帳・管理シートの No. を候補として出す（購入日が販売日以前のものだけ）."""
+    items: dict[str, dict] = {}
+    for k, v in kanri_full.items():
+        if v.get("title"):
+            items[k] = {"no": k, "title": v["title"], "buy": v.get("buy"), "cost": v.get("cost")}
+    for r in ledger:
+        if r["sku"]:
+            items[norm_sku(r["sku"])] = {"no": r["sku"], "title": r["title"], "buy": r["buy"], "cost": r["cost_jpy"]}
+    toks = {k: _title_tokens(v["title"]) for k, v in items.items()}
+    out = []
+    for o in orders:
+        day = parse_date(o.get("date"))
+        if not day or day >= SKU_TRUSTED_FROM or o.get("order_id", "") in fix:
+            continue
+        ot = _title_tokens(o.get("title", ""))
+        scored = []
+        for k, it in items.items():
+            if it["buy"] and it["buy"] > day:
+                continue  # 売れた後に買ったものは違う
+            common = ot & toks[k]
+            if not common:
+                continue
+            scored.append((len(common) / len(ot | toks[k]), it))
+        scored.sort(key=lambda x: -x[0])
+        row = {"order_id": o.get("order_id", ""), "注文日": day.strftime("%Y/%m/%d"), "eBayのSKU": o.get("sku", ""),
+               "eBayの商品名": o.get("title", ""), "金額($)": o.get("item_price", "")}
+        for i in range(top):
+            s, it = scored[i] if i < len(scored) else (0, None)
+            row[f"候補{i + 1}_No."] = it["no"] if it else ""
+            row[f"候補{i + 1}_品目"] = it["title"] if it else ""
+            row[f"候補{i + 1}_一致度"] = f"{s * 100:.0f}%" if it else ""
+        out.append(row)
+    return out
+
+
+def sales_from_api(orders: list[dict], fin: dict, ledger: list[dict], kanri_full: dict, fx: float,
+                   fix: dict[str, str] | None = None) -> dict:
+    """eBay API の注文 → 販売の行（古物台帳の行と同じ形）. 仕入金額・購入日・仕入先は No.（SKU）で台帳・管理シートから.
+
+    SKU_TRUSTED_FROM より前の注文は SKU を使わず、data/sku_fix.csv の対応表で No. を決める（無ければ仕入額不明）."""
+    fix = fix or {}
+    by_sku = {norm_sku(r["sku"]): r for r in ledger if r["sku"]}
+    per = (fin or {}).get("per", {})
+    sales, cancelled, non_usd, unfixed = [], [], 0, []
+    for o in orders:
+        day = parse_date(o.get("date"))
+        if not day:
+            continue
+        oid = o.get("order_id", "")
+        if oid in fix:
+            sku = fix[oid]
+        elif day < SKU_TRUSTED_FROM:
+            sku = ""  # 昔の注文の SKU は信用しない
+        else:
+            sku = o.get("sku", "")
+        key = norm_sku(sku)
+        f = per.get(o.get("order_id", ""))
+        net = f["net"] if f else None
+        if day < SKU_TRUSTED_FROM and oid not in fix and not ((o.get("payment_status") or "") == "FULLY_REFUNDED"):
+            unfixed.append({"date": day.strftime("%Y/%m/%d"), "order_id": oid, "sku": o.get("sku", ""),
+                            "title": o.get("title", "")})
+        if (o.get("payment_status") or "") == "FULLY_REFUNDED" or (o.get("cancel_state") or "").upper().startswith("CANCEL"):
+            cancelled.append({"date": day.strftime("%Y/%m/%d"), "label": o.get("sku", ""), "title": o.get("title", ""),
+                              "why": "返金" if o.get("payment_status") == "FULLY_REFUNDED" else "キャンセル"})
+            continue
+        price = (_num(o.get("item_price")) or 0.0) + (_num(o.get("shipping")) or 0.0)
+        if (o.get("currency") or "USD") != "USD":
+            non_usd += 1
+            price = round(price * {"GBP": 1.27, "AUD": 0.66, "EUR": 1.08, "CAD": 0.73}.get(o.get("currency"), 1.0), 2)
+        led = by_sku.get(key, {}) if key else {}
+        k = kanri_full.get(key, {}) if key else {}
+        cost = led.get("cost_jpy") if led.get("cost_jpy") is not None else k.get("cost")
+        sales.append({
+            "title": led.get("title") or o.get("title", ""), "sold": day, "price_usd": price, "cost_jpy": cost,
+            "buy": led.get("buy") or k.get("buy"), "supplier": led.get("supplier") or k.get("supplier", ""),
+            "country": (o.get("country") or "").upper(), "sku": sku, "order_id": oid,
+            "net_usd": net, "api": {"gross": price, "net": net or 0.0, "refund": f["refund"] if f else 0.0,
+                                    "promo": f["promo"] if f else 0.0, "orders": 1} if f else None,
+            "in_ledger_sold": bool(led.get("sold")), "in_ledger": bool(led), "old_unfixed": bool(day < SKU_TRUSTED_FROM and oid not in fix),
+        })
+    return {"sales": sales, "cancelled": cancelled, "non_usd": non_usd, "unfixed": unfixed}
+
+
 def read_item_types(path: Path) -> dict[str, str]:
     out = {}
     for r in _csv_rows(path):
@@ -306,6 +460,16 @@ def read_junk(path: Path) -> list[dict]:
         out.append({"cost": _num(r.get("仕入(円)")) or 0.0, "sale": _num(r.get("実販売(円)")),
                     "diff": _num(r.get("売上−仕入(円)")), "buy": parse_date(r.get("購入日")),
                     "sold": parse_date(r.get("販売日")), "where": (r.get("保管") or "").strip()})
+    return out
+
+
+def read_monthly_costs(path: Path) -> dict[str, float]:
+    """月 → 送料・関税・発送代行の実額の合計（円）."""
+    out = {}
+    for r in _csv_rows(path):
+        m = parse_date((r.get("月") or "") + "/1")
+        if m:
+            out[f"{m.year}-{m.month:02d}"] = sum(_num(r.get(k)) or 0.0 for k in ("CPaSS", "関税", "オークレボ"))
     return out
 
 
@@ -403,18 +567,29 @@ def _group(rows: list[dict], key, top: int | None = None) -> list[dict]:
 
 def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], listings_date: str,
           targets: dict, cfg: dict, fx: float, today: date, kanri: dict | None = None,
-          ebay: dict | None = None, item_types: dict | None = None, junk: list | None = None) -> dict:
+          ebay: dict | None = None, item_types: dict | None = None, junk: list | None = None,
+          monthly_costs: dict | None = None, api: dict | None = None) -> dict:
     j = cfg["judge"]
-    sold = [r for r in ledger if r["sold"]]
-    stock = [r for r in ledger if not r["sold"]]
     ebay = ebay or {}
     per = ebay.get("per", {})
+    if api and api.get("sales"):  # eBay API の注文で販売を数える
+        sold = api["sales"]
+        sold_keys = {norm_sku(r["sku"]) for r in sold if r["sku"]}
+        stock = [r for r in ledger if not r["sold"] and norm_sku(r["sku"]) not in sold_keys]
+        source = "api"
+    else:
+        sold = [r for r in ledger if r["sold"]]
+        stock = [r for r in ledger if not r["sold"]]
+        source = "ledger"
     for r in sold:
         key = norm_sku(r["sku"]) if r["sku"] else ""
         actual = costs.get(key) if key else None
         r["matched"] = actual is not None
-        e = per.get(key) if key else None
-        net = e["net"] if e and e["orders"] else None
+        if source == "api":
+            e, net = r.get("api"), r.get("net_usd")
+        else:
+            e = per.get(key) if key else None
+            net = e["net"] if e and e["orders"] else None
         r["p"] = profit_parts(r["price_usd"], r["cost_jpy"], cfg, fx, actual, net)
         r["p_est"] = profit_parts(r["price_usd"], r["cost_jpy"], cfg, fx, actual) if net is not None else r["p"]
         r["ebay"] = e if net is not None else None
@@ -423,7 +598,10 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
     d: dict = {"generated": datetime.now().strftime("%Y/%m/%d %H:%M"), "fx": fx,
                "min_profit": j["min_profit_jpy"], "min_margin": j["min_margin_pct"],
                "columns": [{"key": k, "label": COLUMN_LABEL[k], "found": v} for k, v in cols.items()],
-               "has_ledger": bool(ledger), "has_costs": bool(costs),
+               "has_ledger": bool(ledger), "has_costs": bool(costs), "source": source,
+               "api_date": (api or {}).get("date", ""), "fin_date": (api or {}).get("fin_date", ""),
+               "cancelled": (api or {}).get("cancelled") or [], "non_usd": (api or {}).get("non_usd", 0),
+               "unfixed": (api or {}).get("unfixed") or [], "sku_trusted_from": SKU_TRUSTED_FROM.strftime("%Y/%m/%d"),
                "deduction_usd": cfg["shipping"].get("deduction_usd", 30)}
 
     # 概要
@@ -488,7 +666,7 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
     d["kind_from_sheet"] = sum(1 for r in sold if item_types.get(norm_sku(r["sku"])))
     d["supplier"] = _group(sold, lambda r: r["supplier"] or "（空欄）", top=10) if cols.get("supplier") else None
     d["country"] = (_group(sold, lambda r: COUNTRY_JA.get(r["country_code"], r["country_code"] or "（不明）"), top=8)
-                    if cols.get("country") or costs else None)
+                    if cols.get("country") or costs or source == "api" else None)
     d["weekday"] = [{"label": w, "count": sum(1 for r in sold if r["sold"].weekday() == i)}
                     for i, w in enumerate(WEEKDAYS)]
     pb = {b["label"]: b for b in _group(sold, lambda r: price_band(r["price_usd"]))}
@@ -555,13 +733,14 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
 
     # 実際の手取り（ebay売上）と推定の比較・返金・注文に結び付かない費用
     act = [r for r in sold if r["ebay"]]
-    d["has_ebay"] = bool(per)
+    d["has_ebay"] = bool(per) or bool(act)
     if act:
         gross = sum(r["ebay"]["gross"] for r in act)
         net = sum(r["ebay"]["net"] - r["ebay"]["refund"] for r in act)  # 手数料率は返金を除いて見る
         e = cfg["ebay"]
         d["actual"] = {
             "n": len(act), "since": ebay["first"].strftime("%Y/%m/%d") if ebay.get("first") else "",
+            "source": "eBay API の取引明細" if source == "api" else "ebay売上シート",
             "profit": round(sum(r["p"]["profit"] for r in act)), "profit_est": round(sum(r["p_est"]["profit"] for r in act)),
             "fee_rate": round((1 - net / gross) * 100, 1) if gross else None,
             "fee_rate_cfg": round(e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"], 2),
@@ -570,7 +749,11 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
         }
     else:
         d["actual"] = None
-    if per:
+    fin = (api or {}).get("fin") or {}
+    if fin.get("per"):
+        ebay = {**ebay, "refunds": [{"date": x["date"], "label": x["order_id"], "usd": x["usd"]} for x in fin["refunds"]],
+                "unassigned": fin["unassigned"]}
+    if per or fin.get("per"):
         rf = defaultdict(lambda: {"count": 0, "usd": 0.0})
         for x in ebay.get("refunds", []):
             if x["date"] and x["usd"] < 0:
@@ -582,6 +765,31 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
         d["unassigned"] = [{"label": k, "jpy": round(v * fx)} for k, v in ebay.get("unassigned", {}).items() if round(v * fx)]
     else:
         d["refunds"] = d["refund_list"] = d["unassigned"] = None
+
+    # eBay で売れたのに古物台帳に販売の記録が無い No.（台帳の記入漏れの確認用）
+    ledger_keys = {norm_sku(r["sku"]) for r in ledger if r["sku"]}
+    if source == "api":
+        d["ebay_not_in_ledger"] = sorted(
+            ({"label": r["sku"] or "（SKU なし）", "usd": round(r["price_usd"], 2), "in_ledger": r["in_ledger"]}
+             for r in sold if not r["in_ledger_sold"] and not r.get("old_unfixed")), key=lambda x: x["label"])
+    else:
+        ledger_sold = {norm_sku(r["sku"]) for r in sold if r["sku"]}
+        d["ebay_not_in_ledger"] = sorted(
+            ({"label": k, "usd": round(v["gross"], 2), "in_ledger": k in ledger_keys}
+             for k, v in per.items() if v["orders"] and v["net"] > 0 and k not in ledger_sold),
+            key=lambda x: x["label"])
+
+    # 送料・関税・発送代行: 月ごとの推定と実額（data/monthly_costs.csv があれば）
+    if monthly_costs:
+        est = defaultdict(float)
+        for r in sold:
+            est[f"{r['sold'].year}-{r['sold'].month:02d}"] += r["p"]["ship"] + r["p"]["duty"] + r["p"]["aucrevo"]
+        prof = {m["month"]: m["profit"] for m in d["monthly"]}
+        d["ship_check"] = [{"month": m, "est": round(est[m]), "actual": round(a), "profit": prof.get(m, 0),
+                            "adjusted": round(prof.get(m, 0) + est[m] - a)}
+                           for m, a in sorted(monthly_costs.items()) if a or est[m]]
+    else:
+        d["ship_check"] = None
 
     # ジャンク（ヤフオク再販。J管理シート）
     if junk:
@@ -637,9 +845,12 @@ def main(argv=None) -> int:
     ap.add_argument("--reports", type=Path, default=REPORTS)
     ap.add_argument("--targets", type=Path, default=DATA / "targets.toml")
     ap.add_argument("--kanri", type=Path, default=DATA / "kanri.csv")
-    ap.add_argument("--ebay-sales", type=Path, default=DATA / "ebay_sales.csv")
+    ap.add_argument("--ebay-sales", type=Path, default=DATA / "ebay_report.csv")
     ap.add_argument("--item-types", type=Path, default=DATA / "item_types.csv")
     ap.add_argument("--junk", type=Path, default=DATA / "junk.csv")
+    ap.add_argument("--monthly-costs", type=Path, default=DATA / "monthly_costs.csv")
+    ap.add_argument("--sku-fix", type=Path, default=DATA / "sku_fix.csv")
+    ap.add_argument("--sku-candidates", action="store_true", help="昔の注文の正しい No. の候補 → reports/sku_fix_candidates.csv")
     ap.add_argument("-o", "--out", type=Path, default=REPORTS / "dashboard.html")
     ap.add_argument("--no-open", action="store_true")
     args = ap.parse_args(argv)
@@ -653,20 +864,46 @@ def main(argv=None) -> int:
             pass
     ledger, cols = read_ledger(args.ledger)
     listings, ldate = latest_listings(args.reports)
+    orders, odate = _latest(args.reports, "ebay_orders")
+    fin_rows, fdate = _latest(args.reports, "ebay_finances")
+    kanri = read_kanri(args.kanri)
+    fix = read_sku_fix(args.sku_fix)
+    if args.sku_candidates:
+        if not orders:
+            print("eBay API の注文がありません。先に python3 tools/ebay_api.py orders --days 730 を実行してください。")
+            return 1
+        rows = sku_candidates(orders, ledger, kanri, fix)
+        out = args.reports / "sku_fix_candidates.csv"
+        args.reports.mkdir(parents=True, exist_ok=True)
+        with open(out, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else ["order_id"])
+            w.writeheader()
+            w.writerows(rows)
+        print(f"{SKU_TRUSTED_FROM:%Y/%m/%d} より前で対応表に無い注文 {len(rows)}件の候補 → {out}")
+        print("確認できたら data/sku_fix.csv（列: order_id,正しいNo.,メモ）に書く。Claude に「候補を確認したい」と言えば一緒に作ります")
+        return 0
+    api = None
+    if orders:
+        fin = read_api_finances(fin_rows) if fin_rows else {}
+        api = {**sales_from_api(orders, fin, ledger, kanri, fx, fix), "date": odate, "fin_date": fdate, "fin": fin}
     data = build(ledger, cols, read_costs(args.costs), listings, ldate, read_targets(args.targets), cfg, fx, date.today(),
-                 read_kanri(args.kanri), read_ebay_sales(args.ebay_sales), read_item_types(args.item_types),
-                 read_junk(args.junk))
+                 kanri, read_ebay_sales(args.ebay_sales), read_item_types(args.item_types),
+                 read_junk(args.junk), read_monthly_costs(args.monthly_costs), api)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(data), encoding="utf-8")
-    missing = [COLUMN_LABEL[k] for k, v in cols.items() if not v and not (k == "country" and data["has_costs"])]
+    missing = [COLUMN_LABEL[k] for k, v in cols.items() if not v and not (k == "country" and (data["has_costs"] or data["source"] == "api"))]
     print(f"ダッシュボード: 販売 {data['kpi']['count']}件・在庫 {data['kpi']['stock']}件・出品中 "
           f"{data.get('listings_unique') or 0}件 → {args.out.relative_to(ROOT) if args.out.is_relative_to(ROOT) else args.out}")
     if ledger and missing:
         print(f"  古物台帳に見つからない列: {'・'.join(missing)}（そのグラフは出ません。列名を Claude に伝えると対応します）")
     if not data["has_kanri"] or not data["has_ebay"]:
         print("  管理・ebay売上・J管理・出品情報シートが未取り込みです（python3 tools/ledger_sync.py script でスクリプトを貼り替え）")
+    print(f"  販売の数え方: {'eBay API の注文（' + odate + ' 取得）' if api else '古物台帳（eBay API の注文が無いため）'}")
+    if api and api["unfixed"]:
+        print(f"  {SKU_TRUSTED_FROM:%Y/%m/%d} より前で No. が分からない注文 {len(api['unfixed'])}件（仕入額不明）"
+              " → python3 tools/build_dashboard.py --sku-candidates で候補を出して data/sku_fix.csv に")
     if data["actual"]:
-        print(f"  実際の手取りで計算: {data['actual']['n']} / {data['kpi']['count']}件（ebay売上シートと No. が一致）")
+        print(f"  実際の手取りで計算: {data['actual']['n']} / {data['kpi']['count']}件（{data['actual']['source']}）")
     if not listings:
         print("  出品中の状態グラフ: eBay の出品一覧がありません（python3 tools/ebay_api.py listings で作れます）")
     if sys.platform == "darwin" and not args.no_open:

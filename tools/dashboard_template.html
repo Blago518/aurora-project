@@ -13,7 +13,7 @@
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --good-text: #006300;
   --q1: #0d366b; --q2: #104281; --q3: #184f95; --q4: #1c5cab; --q5: #256abf; --q6: #2a78d6; --q7: #3987e5; --q8: #5598e7; --q9: #6da7ec;
-  --neutral: #b5b3ab;
+  --neutral: #8f8d86; --neutral2: #d3d1ca;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -23,7 +23,7 @@
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
     --good-text: #0ca30c;
     --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #2a78d6; --q9: #256abf;
-    --neutral: #5f5e59;
+    --neutral: #7a7871; --neutral2: #45443f;
   }
 }
 :root[data-theme="dark"] {
@@ -33,11 +33,12 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
   --good-text: #0ca30c;
   --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #2a78d6; --q9: #256abf;
-  --neutral: #5f5e59;
+  --neutral: #7a7871; --neutral2: #45443f;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.6 system-ui, -apple-system, "Hiragino Sans", "Segoe UI", sans-serif; }
-main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+main { max-width: 1180px; margin: 0 auto; padding-block: 24px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 h1 { font-size: 22px; margin: 0 0 4px; }
 h2 { font-size: 17px; margin: 36px 0 4px; }
 h3 { font-size: 14px; margin: 0 0 2px; font-weight: 600; }
@@ -226,6 +227,8 @@ const lines = lazy(function (box, {labels, series, fmt, axisFmt = man, h = 220, 
   box.appendChild(svg);
 });
 
+const isDarkTheme = () => document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+
 // ---- ドーナツ（割合）
 const donut = lazy(function (box, {items, colors, unit = "件"}) {
   const total = items.reduce((a, b) => a + b.count, 0);
@@ -240,6 +243,11 @@ const donut = lazy(function (box, {items, colors, unit = "件"}) {
     const d = items.length === 1 ? `M${c},${c - R}A${R},${R} 0 1 1 ${c - 0.01},${c - R}L${c - 0.01},${c - r}A${r},${r} 0 1 0 ${c},${c - r}Z`
       : `M${p(s, R)}A${R},${R} 0 ${large} 1 ${p(e, R)}L${p(e, r)}A${r},${r} 0 ${large} 0 ${p(s, r)}Z`;
     el("path", {d, fill: css(colors[i]), "data-tip": `<b>${esc(it.label)}</b>${it.count.toLocaleString()}${unit}（${(it.count / total * 100).toFixed(1)}%）`}, svg);
+    if (a > 0.42 && items.length > 1) {  // 7%くらいより太い区切りだけ、中に%を書く
+      const [x, y] = p(s + (e - s) / 2, (R + r) / 2);
+      const dark = !isDarkTheme() && (colors[i] === "--s4" || colors[i] === "--neutral2");  // 黄色・薄いグレーの上は黒い字
+      txt(svg, x, y + 4, Math.round(it.count / total * 100) + "%", {"text-anchor": "middle", style: `font-size:12px;font-weight:600;fill:${dark ? "#0b0b0b" : "#ffffff"};pointer-events:none`});
+    }
   });
   txt(svg, c, c - 2, total.toLocaleString(), {"text-anchor": "middle", style: `font-size:22px;font-weight:600;fill:${css("--ink")}`});
   txt(svg, c, c + 16, unit === "件" ? "件" : unit, {"text-anchor": "middle"});
@@ -294,10 +302,10 @@ const empty = (parent, html) => parent.insertAdjacentHTML("beforeend", `<div cla
 function draw() {
   app.innerHTML = ""; toc.innerHTML = ""; Q = [];
   const K = D.kpi;
-  $("#meta").innerHTML = `作成 ${esc(D.generated)}・為替 1ドル＝${D.fx}円（config.toml）で円にしています・販売 ${esc(K.first)}〜${esc(K.last)}`;
+  $("#meta").innerHTML = `作成 ${esc(D.generated)}・為替 1ドル＝${D.fx}円で円にしています・販売 ${esc(K.first)}〜${esc(K.last)}<br>販売の数え方: ${D.source === "api" ? `<b>eBay API の注文</b>（${esc(D.api_date)} 取得。全額返金・キャンセルは除く）` : "<b>古物台帳</b>の販売日（eBay API の注文が無いため）"}`;
 
   // ---- 概要
-  const s0 = section("kpi", "概要", "利益＝eBay の手取り（ebay売上シートと一致した販売は実額、無い販売は config.toml の手数料率で推定）× 為替 − 円転ロス − 国際送料・関税・発送代行（明細があれば実額、無ければ一律 $" + D.deduction_usd + "）− 仕入金額。消費税還付は含めません");
+  const s0 = section("kpi", "概要", "利益＝eBay の手取り（eBay API の取引明細か ebay売上シートで分かる販売は実額、分からない販売は config.toml の手数料率で推定）× 為替 − 円転ロス − 国際送料・関税・発送代行（明細があれば実額、無ければ一律 $" + D.deduction_usd + "）− 仕入金額。消費税還付は含めません");
   if (!D.has_ledger) empty(s0, "古物台帳（data/ledger.csv）がありません。<code>python3 tools/update_all.py</code> で取り込めます。");
   const g0 = grid(s0, true);
   const tiles = [
@@ -308,12 +316,16 @@ function draw() {
     ["在庫（未販売）", cnt(K.stock), "仕入額 " + yen(K.stock_cost)],
     ["送料が実額の件数", `${K.ship_actual} / ${K.count}件`, D.has_costs ? `発送明細と No. が一致 ${K.matched}件` : "発送明細なし → 全件 一律$" + D.deduction_usd],
   ];
+  if (D.ship_check && D.ship_check.length) {
+    const sc = D.ship_check, adj = sc.reduce((a, r) => a + r.adjusted, 0);
+    tiles.splice(3, 0, ["送料を実額で直した利益", yen(adj), `${sc[0].month}〜${sc[sc.length - 1].month}。管理シートの月次の送料・関税・発送代行で計算`]);
+  }
   g0.innerHTML = tiles.map(([l, v, h]) => `<div class="card tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="hint">${esc(h)}</div></div>`).join("");
 
   // ---- 1. 状態
-  const condColor = l => ({"未使用": "--q1", "TOP MINT": "--q2", "MINT": "--q3", "Almost MINT": "--q4", "Near MINT": "--q5", "Exc+5": "--q6", "Exc+4": "--q7", "Exc+3": "--q8", "Exc+2以下": "--q9", "ジャンク": "--s2", "その他": "--neutral", "表記なし": "--neutral"})[l];
-  const isDark = document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-  const s1 = section("cond", "状態の割合（MINT 何%）", `${isDark ? "明るい" : "濃い"}青ほど良い状態。マウスを乗せると件数`);
+  // 状態ごとに違う色（並び順どおりに色の順番を割り当てる。隣どうしが見分けやすい順番）。同じ状態はどのグラフでも同じ色
+  const condColor = l => ({"未使用": "--q1", "TOP MINT": "--s1", "MINT": "--s2", "Almost MINT": "--s3", "Near MINT": "--s4", "Exc+5": "--s5", "Exc+4": "--s6", "Exc+3": "--s7", "Exc+2以下": "--s8", "ジャンク": "--neutral", "その他": "--neutral2", "表記なし": "--neutral2"})[l];
+  const s1 = section("cond", "状態の割合（MINT 何%）", "良い状態から順に並べています。マウスを乗せる（タップする）と件数");
   const g1 = grid(s1);
   if (D.conditions) {
     const a = card(g1, "出品中", `eBay の出品中一覧（${esc(D.listings_date)} 取得・${D.listings_unique}件。UK・豪州の複製は1件）。出品タイトルの MINT・Exc+ などの表記から`);
@@ -329,8 +341,8 @@ function draw() {
   if (D.sold_conditions && D.sold_conditions.length) {
     const SC = D.sold_conditions;
     const tipC = i => `<b>${esc(SC[i].label)}</b>${SC[i].count}件・1件あたり ${yen(SC[i].avg_profit)}・利益率 ${pct(SC[i].margin)}`;
-    hbars(card(g1, "状態別の1件あたり利益（売れた商品）").box, {labels: SC.map(c => c.label), values: SC.map(c => c.avg_profit), fmt: man, colorFn: (v, i) => v < 0 ? "--critical" : condColor(SC[i].label), tipFn: tipC});
-    hbars(card(g1, "状態別の利益率（売れた商品）", `判断基準 ${D.min_margin}%`).box, {labels: SC.map(c => c.label), values: SC.map(c => c.margin ?? 0), fmt: pct, colorFn: (v, i) => v < D.min_margin ? "--critical" : condColor(SC[i].label), tipFn: tipC});
+    hbars(card(g1, "状態別の1件あたり利益（売れた商品）").box, {labels: SC.map(c => c.label), values: SC.map(c => c.avg_profit), fmt: v => man(v) + (v < 0 ? " ⚠ 赤字" : ""), colorFn: (v, i) => condColor(SC[i].label), tipFn: tipC});
+    hbars(card(g1, "状態別の利益率（売れた商品）", `判断基準 ${D.min_margin}%`).box, {labels: SC.map(c => c.label), values: SC.map(c => c.margin ?? 0), fmt: v => pct(v) + (v < D.min_margin ? " ⚠ 基準未満" : ""), colorFn: (v, i) => condColor(SC[i].label), tipFn: tipC});
   }
   if (D.conditions) {
     const b = card(g1, "状態別の平均ウォッチ数（出品中）", "ウォッチが多い状態＝関心を集めやすい");
@@ -350,7 +362,7 @@ function draw() {
   }
 
   // ---- 2. 月別
-  const s2 = section("monthly", "月別の売上・利益・件数", "古物台帳の販売日ごと。棒にマウスを乗せると数字が出ます");
+  const s2 = section("monthly", "月別の売上・利益・件数", "販売日ごと。棒にマウスを乗せると数字が出ます");
   if (D.monthly.length) {
     const g2 = grid(s2), M = D.monthly, lab = M.map(m => m.month.slice(2).replace("-", "/"));
     const tipM = i => `<b>${esc(M[i].month)}</b>売上 ${yen(M[i].sales)}<br>利益 ${yen(M[i].profit)}<br>${M[i].count}件・利益率 ${pct(M[i].margin)}`;
@@ -432,7 +444,7 @@ function draw() {
   }
 
   // ---- 実際の手取り（ebay売上シート）
-  const sa = section("actual", "実際の手取り・返品", D.actual ? `ebay売上シート（eBay の取引レポート。${esc(D.actual.since)}〜）と台帳の No. が一致した ${D.actual.n}件` : "");
+  const sa = section("actual", "実際の手取り・返品", D.actual ? (D.source === "api" ? `eBay API の取引明細（${esc(D.fin_date)} 取得）と注文番号が一致した ${D.actual.n}件` : `ebay売上シート（eBay の取引レポート。${esc(D.actual.since)}〜）と台帳の No. が一致した ${D.actual.n}件`) : "");
   if (D.actual) {
     const A = D.actual, diff = A.profit - A.profit_est;
     sa.insertAdjacentHTML("beforeend", `<div class="grid k">` + [
@@ -452,6 +464,22 @@ function draw() {
     columns(rc.box, {labels: lab, values: R.map(r => r.jpy), fmt: yen, labelEvery: 1, color: "--s2", tipFn: tipR});
     rc.card.insertAdjacentHTML("beforeend", table([{h: "日付", f: r => r.date}, {h: "No.", f: r => r.label || "—"}, {h: "返金額", n: 1, f: r => "$" + (-r.usd).toFixed(2)}], D.refund_list));
   }
+  if (D.ebay_not_in_ledger && D.ebay_not_in_ledger.length) {
+    const X = D.ebay_not_in_ledger;
+    sa.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>⚠ eBay で売れたのに古物台帳に販売の記録が無い（${X.length}件）</h3>` +
+      `<p class="note" style="margin:0">${D.source === "api" ? "eBay API の注文から数えているのでグラフには入っています。古物台帳（古物営業法の帳簿）に販売日・販売金額を記入してください" : "このページの件数・売上・利益に入っていません。古物台帳の販売日・販売金額を記入すると入ります"}</p>` +
+      `<p style="margin:6px 0 0;font-size:13px">${X.map(x => `${esc(x.label)}（$${x.usd}${x.in_ledger ? "" : "・台帳に行が無い"}）`).join("、")}</p></div>`);
+  }
+  if (D.unfixed && D.unfixed.length) {
+    sa.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>⚠ No. が分からない昔の注文（${D.unfixed.length}件・${esc(D.sku_trusted_from)} より前）</h3>` +
+      `<p class="note" style="margin:0">この頃の eBay の SKU は No. と合っていないので使っていません。仕入額が分からず、利益は仕入0円で計算されています。` +
+      `<code>python3 tools/build_dashboard.py --sku-candidates</code> で候補を出し、確認したものを data/sku_fix.csv に書くと直ります</p>` +
+      table([{h: "注文日", f: r => r.date}, {h: "eBay の SKU", f: r => r.sku || "—"}, {h: "商品名", f: r => r.title}], D.unfixed) + `</div>`);
+  }
+  if (D.cancelled && D.cancelled.length) {
+    sa.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>全額返金・キャンセルで販売に数えていない注文（${D.cancelled.length}件）</h3>` +
+      table([{h: "日付", f: r => r.date}, {h: "No.", f: r => r.label || "—"}, {h: "理由", f: r => r.why}, {h: "商品", f: r => r.title}], D.cancelled) + `</div>`);
+  }
   if (D.unassigned && D.unassigned.length) sa.insertAdjacentHTML("beforeend", `<p class="note">注文に結び付かない入出金（利益には含めていません）: ${D.unassigned.map(u => `${esc(u.label)} ${yen(u.jpy)}`).join("・")}</p>`);
 
   // ---- 10. 費用の内訳
@@ -464,6 +492,15 @@ function draw() {
       (parts.find(p => p.key === "profit").value < 0 ? `<p class="note">利益の合計がマイナスのため帯に含めていません</p>` : "") +
       table([{h: "項目", f: r => r.label}, {h: "金額", n: 1, f: r => yen(r.value)}, {h: "売上に対して", n: 1, f: r => pct(r.value / K.sales * 100)}], parts);
     c10.card.insertAdjacentHTML("beforeend", `<p class="note">国際送料: 発送明細と一致した ${K.ship_actual}件は実額、残りは一律 $${D.deduction_usd}。関税・発送代行は明細と一致した分だけ。</p>`);
+  }
+
+  if (D.ship_check && D.ship_check.length) {
+    const SCk = D.ship_check;
+    const sc = card(s10, "送料・関税・発送代行: 推定と実額（月別）", "実額は管理シートの月次サマリー（CPaSS・関税・オークレボ）。発送明細が無い販売は一律 $" + D.deduction_usd + " で推定しているため、実額との差を見て利益を読み替えてください");
+    sc.card.style.marginTop = "16px";
+    sc.box.innerHTML = `<div class="tbl-wrap"><table><tr><th>月</th><th class="n">推定</th><th class="n">実額</th><th class="n">差</th><th class="n">このページの利益</th><th class="n">実額で直した利益</th></tr>` +
+      SCk.map(r => `<tr><td>${esc(r.month)}</td><td class="n">${yen(r.est)}</td><td class="n">${yen(r.actual)}</td><td class="n">${yen(r.actual - r.est)}</td><td class="n">${yen(r.profit)}</td><td class="n"><b>${yen(r.adjusted)}</b></td></tr>`).join("") + `</table></div>` +
+      `<p class="note">実額は発送した月で集計されるため、販売月とずれることがあります</p>`;
   }
 
   // ---- 5. 販売国・販売日数
