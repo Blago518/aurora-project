@@ -371,6 +371,8 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .hd button{background:#24496a;color:#fff}
 #yhk .bd{padding:10px 12px}#yhk table{width:100%;border-collapse:collapse}
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
+#yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
+#yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
 #yhk .fix{margin-top:4px;white-space:nowrap}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix button{padding:3px 6px;margin-left:2px}
 #yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
 #yhk a{color:#0b5d8c;text-decoration:none}#yhk .m{font-size:15px;font-weight:800}
@@ -386,15 +388,18 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
 .yhk-badge{display:inline-block;margin:2px 0;padding:2px 7px;border-radius:7px;font:700 12px -apple-system,sans-serif;color:#fff}
 .yhk-badge.g{background:#1f7a5c}.yhk-badge.o{background:#1b6387}.yhk-badge.x{background:#9aa6b2}
-@media (prefers-color-scheme:dark){#yhk tr.soon td{background:#2a2216}#yhk{background:#152231;color:#e2eaf2}#yhk th,#yhk td{border-color:#26394b}#yhk a{color:#7cc4ee}
+@media (prefers-color-scheme:dark){#yhk tr.soon td{background:#2a2216}#yhk tr.tent td{background:#1f2129}#yhk .tsep{background:#3a2f17;color:#f2d79a}#yhk{background:#152231;color:#e2eaf2}#yhk th,#yhk td{border-color:#26394b}#yhk a{color:#7cc4ee}
 #yhk button{background:#24384c;color:#d6e6f2}#yhk input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}}`;
 
   let state = { items: [], total: null, fx: Number(load(LS_FX, DATA.cfg.fx)) || DATA.cfg.fx, loading: "", browse: {} };
 
   // ------------------------------------------------------------------ eBay出品中の相場（公式 Browse API・裏方の background.js 経由）
   const canBrowse = () => DATA.cfg.browse && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id;
+  // 仮の相場（送料込$）: eBay出品中の「最安値」と「中央値×係数」の安い方（保守的に）。件数が少なければ出さない
   function suggestUsd(b) {
-    return b && b.med && b.n >= DATA.cfg.activeMinCount ? Math.floor(b.med * DATA.cfg.activeFactor) : null;
+    if (!b || !b.med || b.n < DATA.cfg.activeMinCount) return null;
+    const byMed = Math.floor(b.med * DATA.cfg.activeFactor);
+    return b.min ? Math.min(byMed, Math.floor(b.min)) : byMed;
   }
   function browseCell(label) {
     const b = state.browse[label];
@@ -564,7 +569,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       const usd = i.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? Math.round(sg * DATA.cfg.junkFactor) : sg;
       const c = calculate(i, usd, state.fx);
       const [mk] = judge(Object.assign({}, i, { calc: c }));
-      if (mk === "◎" || mk === "○") waits.push({ i, c, usd, label, b: state.browse[label] });
+      if (mk === "◎" || mk === "○") waits.push({ i, c, usd, sg, mk, label, b: state.browse[label] });
     }
     waits.sort((a, b) => (a.i.end < b.i.end ? -1 : 1));
     const more = !state.done && state.total && state.total > items.length;
@@ -591,26 +596,25 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       const i = w.i, c = w.c, e = ebay(w.label);
       const [left, soon] = remain(i.end);
       const d = state.desc[i.id];
-      return `<tr class="${soon ? "soon" : ""}"><td class="m o">sold<br>確認<div class="s ${soon ? "hot" : ""}">${left}</div></td>
+      return `<tr class="${soon ? "soon" : ""} tent"><td class="m ${w.mk === "◎" ? "g" : "o"}"><span class="tmark">仮</span>${w.mk}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>
-<div class="s">機種: ${esc(w.label)} ・ eBay出品中 中央値$${Math.round(w.b.med)}（${w.b.n}件）×${DATA.cfg.activeFactor}${w.usd !== suggestUsd(w.b) ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} ＝ $${w.usd}で仮計算</div>
+<div class="s">機種: ${esc(w.label)} ・ eBay出品中 最安$${Math.round(w.b.min || 0)}・中央値$${Math.round(w.b.med)}×${DATA.cfg.activeFactor}（${w.b.n}件）の安い方 $${w.sg}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} ＝ $${w.usd}で仮計算（sold未確認）</div>
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
 <td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
-<td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div></td>
-<td class="n"><input data-memo="${esc(w.label)}" value="${suggestUsd(w.b)}" class="sug" style="width:70px"><button data-a="memo" data-k="${esc(w.label)}">登録</button></td></tr>`;
+<td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div><div class="s">分岐 ${yen(c.breakeven)}</div></td>
+<td class="n">${yen(c.profit)}<div class="s">${c.margin != null ? c.margin + "%" : ""}</div>
+<div class="fix" title="sold を見て、売れた価格（送料込$）がこの額以上なら、そのまま［登録］。低ければ直して［登録］。同じ機種の今後の出品にも効きます"><input data-memo="${esc(w.label)}" value="${w.sg}" class="sug"><button data-a="memo" data-k="${esc(w.label)}">登録</button></div></td></tr>`;
     };
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th>利益(現在)</th></tr>`;
 
-    root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件</span>
+    root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件${waits.length ? ` ・ 仮◎○ ${waits.length}件` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">続きを鑑定（残り${state.total - items.length}件）</button>` : ""}
 <button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ 送料$${DATA.cfg.deductionUsd}差引 ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）</h4>
-${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class="s">このページには基準を満たす出品がありません。</div>`}
-${canBrowse() ? `<details ${waits.length ? "open" : ""}><summary>sold確認待ち（相場は未登録だが、eBay出品中×${DATA.cfg.activeFactor}なら利益が出る） ${waits.length}件</summary>
-<div class="s" style="margin:4px 0">sold を見て、売れた価格が想定$以上なら［登録］→ ◎○に上がります（登録するまで入札候補には入れません）。売れた価格が低ければ、その額に直して［登録］。</div>
-${waits.length ? `<table><tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th>eBay</th><th>現在</th><th>入札する上限額</th><th>想定$（送料込）</th></tr>${waits.map(waitRow).join("")}</table>` : `<div class="s">${Object.keys(state.browse).length ? "ありません" : "eBay出品中の価格を調べています…"}</div>`}</details>` : ""}
+${good.length || waits.length ? `<table>${head}${good.map(row).join("")}${waits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値と中央値×${DATA.cfg.activeFactor}の安い方で仮に計算。<b>sold を見て、売れた価格が入っている額以上なら［登録］</b>（低ければ直して［登録］）→ ◎○に上がり、同じ機種の今後の出品にも効きます</td></tr>${waits.map(waitRow).join("")}` : ""}</table>` : `<div class="s">このページには基準を満たす出品がありません。</div>`}
+${canBrowse() && !waits.length ? `<div class="s">${Object.keys(state.browse).length ? "仮◎○はありません" : "eBay出品中の価格を調べています…（仮◎○）"}</div>` : ""}
 <details><summary>要確認（相場はあるが付属品・セット等の可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
 <details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
