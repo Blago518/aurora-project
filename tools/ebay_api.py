@@ -219,6 +219,7 @@ def fetch_orders(days: int) -> list[dict]:
                 fee_d = o.get("totalMarketplaceFee")
                 rows.append({
                     "date": o.get("creationDate", "")[:10],
+                    "order_id": o.get("orderId", ""),
                     "title": li.get("title", ""),
                     "sku": li.get("sku", ""),
                     "quantity": li.get("quantity", 1),
@@ -304,7 +305,10 @@ def cmd_listings(_args) -> None:
             rows.append({
                 "days_listed": days,
                 "title": it.findtext("e:Title", default="", namespaces=ns),
-                "site": it.findtext("e:Site", default="", namespaces=ns),  # US / UK / Australia など
+                # Site が返らないことがあるので、通貨から補う（eBay Mag で英国・豪州に複製した出品）
+                "site": it.findtext("e:Site", default="", namespaces=ns)
+                or {"USD": "US", "GBP": "UK", "AUD": "Australia", "EUR": "EU"}.get(
+                    price_el.get("currencyID", "") if price_el is not None else "", ""),
                 "currency": price_el.get("currencyID", "") if price_el is not None else "",
                 "price": (price_el.text or "") if price_el is not None else "",
                 "watchers": it.findtext("e:WatchCount", default="0", namespaces=ns),
@@ -329,53 +333,69 @@ def cmd_listings(_args) -> None:
         print(f"  {r['days_listed']:>4}日  {r['price']:>8} {r['currency']:<3} {r['site'][:9]:<9}  ウォッチ{r['watchers']:>3}  {r['title'][:60]}")
 
 
+def _refs(t: dict) -> str:
+    return " ".join(f"{r.get('referenceType', '')}:{r.get('referenceId', '')}" for r in t.get("references", []) or [])
+
+
 def cmd_fees(args) -> None:
+    """取引明細（Finances API）を1行ずつ保存し、手数料率を通貨ごとに集計する.
+
+    SALE の amount は入金通貨（USD）、手数料の対象額・手数料は出品サイトの通貨（GBP・AUD のことがある）。
+    通貨が混ざった合計は意味がないので、率は通貨ごとに出す。
+    """
     since = (datetime.now(timezone.utc) - timedelta(days=args.days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    sales = fees = ads = intl = 0.0
-    n, offset = 0, 0
-    by_type: dict[str, float] = {}
-    currencies: set[str] = set()
+    rows, offset = [], 0
     while True:
         q = urllib.parse.urlencode({"filter": f"transactionDate:[{since}..]", "limit": 200, "offset": offset})
         d = get_json(f"{APIZ}/sell/finances/v1/transaction?{q}", user_token())
         for t in d.get("transactions", []):
-            typ = t.get("transactionType", "")
-            amt = _money(t.get("amount"))
-            if typ == "SALE":
-                n += 1
-                currencies.add(_cur(t.get("amount")) or "?")
-                gross = _money(t.get("totalFeeBasisAmount")) or amt + _money(t.get("totalFeeAmount"))
-                sales += gross
-                fees += _money(t.get("totalFeeAmount"))
-                for li in t.get("orderLineItems", []):
-                    for fee in li.get("marketplaceFees", []):
-                        if "INTERNATIONAL" in fee.get("feeType", ""):
-                            intl += _money(fee.get("amount"))
-            elif typ == "NON_SALE_CHARGE":
-                memo = (t.get("transactionMemo") or "") + (t.get("feeType") or "")
-                by_type[memo or "その他"] = by_type.get(memo or "その他", 0) + amt
-                if "AD" in memo.upper() or "PROMOTED" in memo.upper():
-                    ads += amt
+            intl = sum(_money(f.get("amount")) for li in t.get("orderLineItems", []) or []
+                       for f in li.get("marketplaceFees", []) or [] if "INTERNATIONAL" in f.get("feeType", ""))
+            rows.append({
+                "date": (t.get("transactionDate") or "")[:10],
+                "type": t.get("transactionType", ""),
+                "booking": t.get("bookingEntry", ""),  # CREDIT=入金 / DEBIT=引き落とし
+                "order_id": t.get("orderId", ""),
+                "amount": _money(t.get("amount")),
+                "amount_currency": _cur(t.get("amount")),
+                "amount_original": _orig(t.get("amount")),
+                "fee_basis": _money(t.get("totalFeeBasisAmount")),
+                "fee_basis_currency": _cur(t.get("totalFeeBasisAmount")),
+                "total_fee": _money(t.get("totalFeeAmount")),
+                "fee_currency": _cur(t.get("totalFeeAmount")),
+                "intl_fee": round(intl, 2),
+                "fee_type": t.get("feeType", ""),
+                "memo": t.get("transactionMemo", ""),
+                "references": _refs(t),
+                "status": t.get("transactionStatus", ""),
+            })
         offset += 200
         if offset >= d.get("total", 0):
             break
+    REPORTS.mkdir(exist_ok=True)
+    out = REPORTS / f"ebay_finances_{datetime.now():%Y%m%d}.csv"
+    with open(out, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else ["date"])
+        w.writeheader(); w.writerows(rows)
+    sales = [r for r in rows if r["type"] == "SALE"]
     if not sales:
-        print(f"直近{args.days}日の売上取引がありません。")
+        print(f"直近{args.days}日の売上取引がありません。→ {out}")
         return
-    pct = lambda v: v / sales * 100
-    cur = "/".join(sorted(currencies))
-    print(f"金額の通貨: {cur}")
-    if len(currencies) > 1:
-        print("  ※ 通貨が混ざっています。下の % は目安です（Claude に結果を貼ってください）")
-    print(f"直近{args.days}日: 売上 {n}件・${sales:,.2f}（手数料の対象額）")
-    print(f"  落札手数料など（totalFee）: ${fees:,.2f} = {pct(fees):.2f}%（うち海外決済 {pct(intl):.2f}%）")
-    print(f"  広告費（Promoted）: ${ads:,.2f} = {pct(ads):.2f}%")
-    for k, v in sorted(by_type.items(), key=lambda x: -x[1])[:8]:
-        print(f"    その他の請求 {k}: ${v:,.2f}")
-    print("\nconfig.toml の目安:")
-    print(f"  final_value_fee_pct = {pct(fees - intl):.2f}   # 現在の設定と比べて、差が大きければ更新")
-    print(f"  international_fee_pct = {pct(intl):.2f}")
-    print(f"  ad_rate_pct = {pct(ads):.2f}")
+    print(f"直近{args.days}日の取引 {len(rows)}行（うち売上 {len(sales)}件）→ {out}")
+    for cur in sorted({r["fee_basis_currency"] or r["amount_currency"] for r in sales}):
+        grp = [r for r in sales if (r["fee_basis_currency"] or r["amount_currency"]) == cur]
+        basis = sum(r["fee_basis"] for r in grp) or 1
+        fee, intl = sum(r["total_fee"] for r in grp), sum(r["intl_fee"] for r in grp)
+        print(f"  {cur}: {len(grp)}件 対象額 {basis:,.2f}  手数料 {fee / basis * 100:.2f}%"
+              f"（うち海外決済 {intl / basis * 100:.2f}%）")
+    other: dict[str, float] = {}
+    for r in rows:
+        if r["type"] != "SALE":
+            k = f"{r['type']} {r['fee_type']}".strip() + f" [{r['amount_currency']}]"
+            other[k] = other.get(k, 0) + (r["amount"] if r["booking"] != "CREDIT" else -r["amount"])
+    for k, v in sorted(other.items(), key=lambda x: -x[1]):
+        print(f"    {k}: {v:,.2f}")
+    print("広告費（AD_FEE）は上の一覧。率は Claude が注文ごとに計算します。")
 
 
 def browse_search(query: str, limit: int = 50) -> list[dict]:
