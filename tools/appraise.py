@@ -1429,6 +1429,10 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
     e = html.escape
     j = cfg["judge"]
     cards: dict[str, list[str]] = {"安心": [], "チャレンジ": [], "要確認": []}
+    # 付属品だけ（カタログ・フード・説明書など）・アダプター等は仕入れの対象外 → 出さない（件数だけ）
+    is_acc = lambda r: any(f in (r.get("注意") or "") for f in ("付属品のみ?", "アダプター等"))  # noqa: E731
+    acc_n = sum(1 for r in rows if is_acc(r))
+    rows_all, rows = rows, [r for r in rows if not is_acc(r)]
     shown = [r for r in rows if r["判定"] in ("◎", "○") or (r["判定"] == "要確認" and r["想定販売価格USD"])]
     hidden_bad = [r for r in rows if r["判定"] == "×"]
     tent = sorted((r for r in rows if r.get("仮判定")), key=lambda r: -(r.get("仮の利益(現在価格)") or 0))
@@ -1457,6 +1461,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
   <p class="meta">検索語: <code>{e(r['eBay検索語'])}</code> ・ 終了: {e(r['終了'] or '-')}{(' ・ ' + e(r['メモ'])) if r['メモ'] else ''}</p>
 </article>""")
     counts = {k: sum(r["判定"] == k for r in rows) for k in ("◎", "○", "要確認", "×")}
+    counts["付属品など"] = acc_n
     doc = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>ヤフオク入札判断</title>
 <style>
@@ -1480,7 +1485,7 @@ h2{{font-size:16px;margin:22px 0 6px}}details{{margin:12px 0}}.mini{{font-size:1
 .tbl a{{color:inherit;font-weight:700;white-space:nowrap}}
 </style></head><body><div class="wrap">
 <h1>ヤフオク入札判断レポート</h1>
-<p class="summary">{datetime.now():%Y-%m-%d %H:%M} 作成 ・ {len(rows)}件（◎{counts['◎']} ○{counts['○']} 要確認{counts['要確認']} ×{counts['×']}）<br>
+<p class="summary">{datetime.now():%Y-%m-%d %H:%M} 作成 ・ {len(rows_all)}件（◎{counts['◎']} ○{counts['○']} 要確認{counts['要確認']} ×{counts['×']} ・ 付属品など{counts['付属品など']}件は除外）<br>
 為替 1USD={fx:.2f}円（円転ロス{cfg['fx']['conversion_loss_pct']}%） ・ 基準: 利益{j['min_profit_jpy']:,}円以上かつ利益率{j['min_margin_pct']}%以上 ・
 eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['international_fee_pct']}%+広告{cfg['ebay']['ad_rate_pct']}%+${cfg['ebay']['per_order_fee_usd']}<br>
 上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの相場は自動取得しません（規約順守）。soldリンク・Product Researchで確認してください。</p>
