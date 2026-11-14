@@ -43,6 +43,7 @@ python3 tools/build_reference_prices.py   # data/ledger.csv（古物台帳）+ d
 python3 tools/build_extension.py          # → extension/（chrome://extensions で ↻）
 python3 tools/build_store.py              # → 店舗アプリのデータ（iCloud Drive › aurora › store_data.json）
 python3 tools/build_knowledge.py          # → knowledge/相場/・knowledge/機種/
+python3 tools/build_dashboard.py          # → reports/dashboard.html（数字のグラフ）
 python3 -m unittest discover -s tools     # テスト
 ```
 

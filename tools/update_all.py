@@ -9,6 +9,7 @@
    置き換える前の古いファイルは data/backup/ に残す。
 2. Chatwork の販売報告を公式 API で取り込む（chatwork_sync.py。未設定なら飛ばす）
 3. 作り直す: reference_prices.csv → 拡張機能（extension/）→ スマホ用データ（store_data.json・iCloud・暗号化して自動配信）→ ナレッジ
+   → eBay の出品中一覧（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
    拡張機能で［直す］［登録］した相場（ダウンロード/aurora_price_memo.csv）もここで取り込まれる。
 4. 入札リスト: data/search_urls.txt の検索をまとめて鑑定 → reports/bid_report_*.html を開く（◎○の件数を通知）
 5. 入札の結果: 拡張機能の［入札した］の記録を取り込み、終わった出品の最終価格から落札率などを集計 → reports/bid_results.md
@@ -135,6 +136,7 @@ def main(argv=None) -> int:
     ok &= run("build_extension.py")
     ok &= run("build_store.py")
     ok &= run("build_knowledge.py")
+    dashboard()
     bids = None if args.no_bids else bid_list()
     results = None
     try:
@@ -150,6 +152,21 @@ def main(argv=None) -> int:
         wr = results and results.get("win_rate")
         notify(msg + (f"／入札候補 ◎○ {bids}件" if bids is not None else "") + (f"／落札率 {wr}%" if wr is not None else ""))
     return 0 if ok else 1
+
+
+def dashboard() -> None:
+    """eBay の出品中一覧を取り直し（eBay API の設定済みなら）、数字のグラフ（reports/dashboard.html）を作る. 失敗しても更新全体は止めない."""
+    try:
+        import ebay_api
+        has_token = bool(ebay_api.secret_get("refresh_token"))
+    except Exception:
+        has_token = False
+    if has_token:
+        print("\n▶ eBay の出品中一覧")
+        subprocess.call([sys.executable, str(HERE / "ebay_api.py"), "listings"], cwd=ROOT)
+    print("\n▶ 数字のグラフ")
+    if subprocess.call([sys.executable, str(HERE / "build_dashboard.py"), "--no-open"], cwd=ROOT) != 0:
+        print("  ⚠ グラフを作れませんでした（上の表示を Claude に送ってください）")
 
 
 def bid_list() -> int | None:
