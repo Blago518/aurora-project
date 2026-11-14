@@ -41,7 +41,7 @@ def core_js() -> str:
     a, b = tpl.index(CORE_START), tpl.index(CORE_END)
     body = tpl[tpl.index("\n", a) + 1:b]
     names = ("titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, "
-             "modelKey, ebay, median, roundDown")
+             "modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf")
     return (
         "// 自動生成ファイル: tools/build_store.py が tools/extension_template.js の @core 部分をコピーしたもの。\n"
         "// 直接編集しない（拡張機能と判定を一致させるため）。データは入っていない。\n"
@@ -64,7 +64,7 @@ BRAND_NAMES = {b.lower(): b for b in ba.BRANDS_EN.values()}
 
 CAMERA_WORDS = {"slr", "camera", "body", "rangefinder", "tlr", "film", "compact", "point"}
 # レンズの機種を分ける語（マウント・世代）。例: Canon FD 50mm F1.4 と Canon EF 50mm F1.4 は別機種
-LENS_LINE_WORDS = {"fd", "new", "ef", "ef-s", "rf", "ai", "ai-s", "nonai", "af", "af-s", "af-d", "smc",
+LENS_LINE_WORDS = {"fd", "newfd", "new", "ef", "ef-s", "rf", "ai", "ai-s", "nonai", "af", "af-s", "af-d", "smc",
                    "takumar", "m42", "md", "mc", "xf", "fe", "l", "macro", "planar", "sonnar", "summicron",
                    "summilux", "elmarit", "noctilux"}
 CAMERA_LINE_WORDS = ba.GENERATIONS | {"program", "pro", "super", "classic", "dx", "quartz", "date"}
@@ -78,7 +78,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     brand, rest = BRAND_NAMES[toks[0].lower()], toks[1:]
     def norm(t: str) -> list[str]:
         t = t.lower()
-        return ["new", "fd"] if t == "nfd" else ["ai-s"] if t == "ais" else [t]
+        return ["newfd"] if t in ("nfd", "fdn") else ["ai-s"] if t == "ais" else [t]
     low = [x for t in rest for x in norm(t)]
     has_mm = any(re.fullmatch(r"\d+(-\d+)?mm", t) for t in low)
     has_f = any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?", t) for t in low)

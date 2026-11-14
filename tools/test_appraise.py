@@ -16,7 +16,7 @@ class TitleToQuery(unittest.TestCase):
 
     def test_lens(self):
         q = ba.title_to_query("キヤノン New FD 50mm F1.4 単焦点 #123456")
-        self.assertEqual(q, "Canon New FD 50mm F1.4")
+        self.assertEqual(q, "Canon NewFD 50mm F1.4")  # eBay のリンクでは ebay_search_query が ("New FD",nFD) にする
 
     def test_flags(self):
         self.assertIn("ジャンク", ba.detect_flags("ジャンク ペンタックス 67 部品取り"))
@@ -203,6 +203,94 @@ class UserscriptParity(unittest.TestCase):
         self.assertEqual(json.loads(out), py)
 
 
+class DescriptionCheck(unittest.TestCase):
+    """拡張機能の説明文チェック: 光学難・故障の記載を拾い、「〜なし」の打ち消しは拾わない（node が無ければスキップ）."""
+
+    def test_desc_hits(self):
+        import shutil, subprocess
+        import build_extension as bu
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        cases = {
+            "【 カビあり | 絞り羽根に油浮きあり | 現状渡し 】": ["カビ", "油浮き"],
+            "レンズ光学系 内部にカビやチリのよごれが広く見られます。": ["カビ"],
+            "カビ・クモリ・バルサム切れなし。綺麗な光学です。": [],
+            "カビ、クモリ、キズ等ありません。\n絞り粘りもございません。": [],
+            "カビは見られませんが、薄いクモリがあります。": ["クモリ"],
+            "前玉に拭き傷少しあり。動作未確認のためジャンク扱い。": ["拭き傷", "動作未確認"],
+            "外観並品。光学良好。": [],
+            "（「ジャンク品」「動作未確認品」は対象外です。）": [],
+            "【光学】 クモリ：ごくわずか カビ：なし": ["クモリ"],
+            "カビ：なし クモリ：なし バルサム：なし": [],
+            "初期不良の自然故障は返品対応させていただきます。": [],
+            "【返品対象外】\n・微細なゴミやカビ、くもり、サビ、磨耗、劣化など。": [],
+            "返品不可です。\n後玉に薄いカビがあります。": ["カビ"],
+            "正常なご使用状態で故障した場合、無償修理させていただきます。": [],
+            "シャッター故障のためジャンクです。": ["故障"],
+            " ◆光学コンデション \n コーティング剥がれあります \n 写真を必ずご確認ください \n": ["コーティング剥がれ", "光学は写真で確認"],
+            "◆光学コンディション\n綺麗です\n◆動作\n良好": [],
+            "写真を必ずご確認ください。光学良好、カビクモリなし。": [],
+        }
+        data = bu.build_data(CFG, 150.0)
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"const m=require({json.dumps(str(js))});const c={json.dumps(list(cases), ensure_ascii=False)};"
+                    "console.log(JSON.stringify(c.map(t=>m.descHits(t,'').map(h=>h.word))))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), list(cases.values()))
+        # 商品の状態が「全体的に状態が悪い」なら拾う
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            out = subprocess.run(["node", "-e", f"const m=require({json.dumps(str(js))});"
+                                  "console.log(m.descHits('良品です','全体的に状態が悪い').length)"],
+                                 capture_output=True, text=True, check=True).stdout
+        self.assertEqual(out.strip(), "1")
+
+
+class Variants(unittest.TestCase):
+    """型の違い（Contax の MMG/MMJ/AEG/AEJ など）: 照合しない・eBay 検索語に型と除外語を入れる。Python と JS で同じ."""
+
+    TITLES = ["CONTAX Carl Zeiss Planar T* 50mm F1.4 AE Japan", "コンタックス Distagon 35mm F1.4 MMJ",
+              "Contax Sonnar 135mm F2.8 AEG", "Canon FD 50mm F1.4 S.S.C.", "Canon New FD 50mm F1.4",
+              "Nikon Ai-s 50mm f1.8", "Hasselblad Planar CF 80mm F2.8", "Minolta MC Rokkor-PF 58mm F1.4",
+              "Contax Planar 50mm F1.4 From JAPAN"]
+
+    def test_conflict(self):
+        q = ba._tokens("Contax Planar 50mm F1.4 AEJ")
+        self.assertTrue(ba.variants_conflict(q, ba._tokens("Contax Planar 50mm f/1.4 MMJ")))
+        self.assertTrue(ba.variants_conflict(q, ba._tokens("Contax Planar 50mm F1.4")))  # Contax は型の表記が無い実績も別物
+        self.assertFalse(ba.variants_conflict(q, ba._tokens("Contax Planar 50mm F1.4 AE Japan")))
+        n = ba._tokens("Nikon Ai-S 50mm F1.8")
+        self.assertTrue(ba.variants_conflict(n, ba._tokens("Nikon Ai 50mm F1.8")))
+        self.assertFalse(ba.variants_conflict(n, ba._tokens("Nikon 50mm F1.8")))  # Nikon は片方だけなら照合する
+        self.assertNotIn("f1.4mmj", ba._tokens("Contax 35mm F1.4 MMJ"))
+
+    def test_query(self):
+        q = ba.ebay_search_query(ba.title_to_query(self.TITLES[1]), self.TITLES[1])
+        self.assertEqual(q, "Contax Distagon 35mm F1.4 MMJ -MMG -AEG -AEJ")
+        q = ba.ebay_search_query(ba.title_to_query(self.TITLES[8]), self.TITLES[8])
+        self.assertNotIn("AEJ", q)  # 「From JAPAN」は AEJ ではない
+
+    def test_js_same(self):
+        import shutil, subprocess
+        import build_extension as bu
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        py = [ba.ebay_search_query(ba.title_to_query(t), t) for t in self.TITLES]
+        data = bu.build_data(CFG, 150.0)
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"const m=require({json.dumps(str(js))});const t={json.dumps(self.TITLES, ensure_ascii=False)};"
+                    "console.log(JSON.stringify(t.map(x=>m.ebaySearchQuery(m.titleToQuery(x),x))))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), py)
+
+
 class NoScraping(unittest.TestCase):
     """eBay の規約順守: eBay のページを自動取得するコードが無いこと."""
 
@@ -215,6 +303,35 @@ class NoScraping(unittest.TestCase):
 
     def test_mutar_is_adapter(self):
         self.assertIn("アダプター等", ba.detect_flags("CONTAX RTSムター？2X(中古品)"))
+
+    def test_background_uses_official_api_only(self):
+        """出品中の相場は公式 Browse API（api.ebay.com）だけ。www.ebay.com のページは取りに行かない."""
+        bg = (Path(ba.__file__).parent / "extension_background.js").read_text(encoding="utf-8")
+        hosts = set(__import__("re").findall(r"https://([a-z.]+)/", bg))
+        self.assertEqual(hosts, {"api.ebay.com"})
+
+
+class ExtensionBrowse(unittest.TestCase):
+    """eBay のキーがあるときだけ、出品中の相場を調べる裏方（background.js）が入る."""
+
+    def _build(self, keys):
+        import build_extension as bu
+        with tempfile.TemporaryDirectory() as d:
+            bu.write_chrome_extension("// test", Path(d), keys)
+            man = json.loads((Path(d) / "manifest.json").read_text(encoding="utf-8"))
+            bg = (Path(d) / "background.js").read_text(encoding="utf-8") if (Path(d) / "background.js").exists() else None
+        return man, bg
+
+    def test_with_keys(self):
+        man, bg = self._build(("APP-X", "CERT-Y"))
+        self.assertEqual(man["host_permissions"], ["https://api.ebay.com/*"])
+        self.assertIn('const APP_ID = "APP-X";', bg)
+        self.assertNotIn("__CERT_ID__", bg)
+
+    def test_without_keys(self):
+        man, bg = self._build(None)
+        self.assertNotIn("host_permissions", man)
+        self.assertIsNone(bg)
 
 
 if __name__ == "__main__":
