@@ -72,7 +72,20 @@ function saveMemo(csv) {
   return chrome.downloads.download({ url, filename: "aurora_price_memo.csv", conflictAction: "overwrite", saveAs: false });
 }
 
+// ［全て開く］: 今のタブのすぐ右に、渡された順（ヤフオク → sold → now）で開く。ヤフオクと eBay の URL だけ
+function openTabs(urls, tab) {
+  const ok = (urls || []).filter((u) => /^https:\/\/(auctions\.yahoo\.co\.jp|(www\.)?ebay\.com)\//.test(String(u))).slice(0, 5);
+  let index = tab && tab.index != null ? tab.index + 1 : undefined;
+  return ok.reduce((p, url, n) => p.then(() => chrome.tabs.create(Object.assign(
+    { url, active: n === 0 }, index != null ? { index: index + n } : {}, tab && tab.windowId != null ? { windowId: tab.windowId } : {},
+    tab && tab.id != null ? { openerTabId: tab.id } : {}))), Promise.resolve());
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+  if (msg && msg.type === "openTabs") {
+    openTabs(msg.urls, _sender && _sender.tab).then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
+    return true;
+  }
   // オークファンの入札予約: ヤフオクのパネルの［予約］→ 予約ページを開き、URL と上限額を渡す（予約するのは人）
   if (msg && msg.type === "aucfanReserve") {
     chrome.storage.local.set({ aucfanPending: Object.assign({}, msg.item, { t: Date.now() }) })
