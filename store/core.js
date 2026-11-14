@@ -272,7 +272,7 @@ function makeCore(DATA) {
     const t = String(title || "").normalize("NFKC");
     const hit = (C.listingCondRules || []).find(([p]) => new RegExp(p).test(t));
     const word = hit ? t.match(new RegExp(hit[0]))[0] : "表記なし";
-    return `この出品は「${word}」→ ${RANK_LABEL[listingRank(title)]} として、状態1ランク＝$${DATA.cfg.condStep}で補正`;
+    return `この出品は${hit ? "「" + word + "」" : "表記なし"}＝${RANK_LABEL[listingRank(title)]}で補正（1ランク$${DATA.cfg.condStep}）`;
   }
   function conditionAdjusted(refs, title, flags) {
     const step = Number(DATA.cfg.condStep || 0);

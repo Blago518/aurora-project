@@ -287,7 +287,7 @@
     const t = String(title || "").normalize("NFKC");
     const hit = (C.listingCondRules || []).find(([p]) => new RegExp(p).test(t));
     const word = hit ? t.match(new RegExp(hit[0]))[0] : "表記なし";
-    return `この出品は「${word}」→ ${RANK_LABEL[listingRank(title)]} として、状態1ランク＝$${DATA.cfg.condStep}で補正`;
+    return `この出品は${hit ? "「" + word + "」" : "表記なし"}＝${RANK_LABEL[listingRank(title)]}で補正（1ランク$${DATA.cfg.condStep}）`;
   }
   function conditionAdjusted(refs, title, flags) {
     const step = Number(DATA.cfg.condStep || 0);
@@ -392,7 +392,7 @@
   const srcLabel = (r) => (r.source || "").replace(/\(.*$/, "");
 
   const css = `
-#yhk{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(860px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
+#yhk{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(1100px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
 background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
 #yhk.min{width:auto}#yhk.min .bd{display:none}
 #yhk .hd{position:sticky;top:0;background:#0b1728;color:#fff;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -403,8 +403,8 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
 #yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
 #yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
-#yhk .fix{margin-top:4px;max-width:150px;margin-left:auto}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:76px}#yhk .fix button{padding:3px 6px;margin-left:2px}
-#yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
+#yhk .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button{padding:3px 6px;margin-left:2px}
+#yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td:nth-child(2){min-width:240px}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
 #yhk a{color:#0b5d8c;text-decoration:none}#yhk .m{font-size:15px;font-weight:800}
 #yhk .g{color:#1f7a5c}#yhk .o{color:#1b6387}#yhk .x{color:#a4473a}#yhk .s{font-size:11px;color:#6a7c8e}
 #yhk details{margin-top:10px}#yhk summary{cursor:pointer;font-weight:700}
@@ -555,14 +555,14 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
     if (!c || !c.maxBid || i.usd == null) return "";
     const tm = i.tax ? 1 + DATA.cfg.storeTaxPct / 100 : 1;
     const x = calculate(Object.assign({}, i, { price: Math.round(c.maxBid * tm) }), i.usd, state.fx);
-    return x.profit == null ? "" : `<div class="s" title="上限額ちょうどで落札したときの利益">この額で落札→利益${yen(x.profit)}（${x.margin}%）</div>`;
+    return x.profit == null ? "" : `<div class="s" title="上限額ちょうどで落札したときの利益">落札時 利益${yen(x.profit)}（${x.margin}%）</div>`;
   }
   function condLine(i) {
     const rs = (i.refs || []).filter((r) => r.tier <= 2).slice(0, 5);
     if (!rs.length) return "";
     const note = conditionNote(i.refs, i.title, i.flags);
-    return `<div class="s">状態: ${rs.map((r) => `${esc(conditionOf(r) || "記載なし")} $${r.price}${isMemo(r) ? "（直した相場）" : ""}`).join(" ・ ")}</div>` +
-      (note ? `<div class="s">${esc(note)}</div>` : "");
+    return `<div class="s">状態: ${rs.map((r) => `${esc(conditionOf(r) || "記載なし")} $${r.price}${isMemo(r) ? "（直した）" : ""}`).join(" ・ ")}` +
+      `${note ? " → " + esc(note) : ""}</div>`;
   }
   function applyDesc(items) {
     for (const i of items) {
