@@ -172,6 +172,7 @@ def main(argv=None) -> int:
     ap.add_argument("-o", "--out", type=Path, default=ROOT / "data" / "store_data.json")
     ap.add_argument("--fx", type=float, help="為替（省略時は自動取得、失敗時は config.toml）")
     ap.add_argument("--no-icloud", action="store_true", help="iCloud Drive にコピーしない")
+    ap.add_argument("--no-publish", action="store_true", help="iPhone への自動配信をしない")
     args = ap.parse_args(argv)
 
     CORE_JS.parent.mkdir(exist_ok=True)
@@ -188,6 +189,9 @@ def main(argv=None) -> int:
         ICLOUD.mkdir(exist_ok=True)
         shutil.copy(args.out, ICLOUD / args.out.name)
         print(f"iCloud Drive にコピー: iCloud Drive › aurora › {args.out.name}", file=sys.stderr)
+    if not args.no_publish and args.out == ROOT / "data" / "store_data.json":
+        import store_publish  # 暗号化して iPhone へ自動配信（未設定なら何もしない）
+        store_publish.publish(args.out)
     return 0
 
 
