@@ -219,5 +219,50 @@ class MemoCondition(unittest.TestCase):
         self.assertEqual(json.loads(out), [["Near MINT", True], ["Exc+++", True], ["ジャンク", True], ["", True]])
 
 
+class ConditionAdjust(unittest.TestCase):
+    """状態の補正（1ランク $10）: 過去データの状態とこの出品の状態の差で販売価格を動かす。Python と JS で同じ."""
+
+    SALES = [("Olympus 35mm F2", "相場メモ(Near MINT)", 139.99),        # Near MINT = 7
+             ("[MINT] Nikon FM2 Black", "Chatwork販売実績(キタムラ)", 250.0),  # MINT = 8
+             ("Nikon FM2 Black Exc+++", "自分の販売実績", 210.0),             # Exc+3 = 4
+             ("Canon AE-1 Program", "自分の販売実績", 120.0)]                 # 状態なし＝補正しない
+    TITLES = {"オリンパス OM ZUIKO 35mm F2 美品": 139.99,           # 美品=Near MINT → 差0
+              "オリンパス OM ZUIKO 35mm F2 極上": 149.99,           # 極上=MINT → +1
+              "オリンパス OM ZUIKO 35mm F2 動作品": 129.99,         # 動作品=Exc+5 → -1
+              "オリンパス OM ZUIKO 35mm F2": 139.99,               # 表記なし=Near MINT
+              "オリンパス OM ZUIKO 35mm F2 MINT": 139.99,          # 英語の格付けは使わない
+              "ニコン Nikon FM2 ブラック 未使用に近い": 260.0,        # TOP MINT=9: 自分の実績 Exc+3($210)+5ランク（Chatwork より優先）
+              "ニコン Nikon FM2 ブラック ジャンク": 147.0,           # ジャンクは補正せず $210×0.7
+              "キヤノン Canon AE-1 Program 美品": 120.0}
+
+    def _python(self):
+        sales = [{"title": t, "source": s, "_price": pr, "_tokens": ba._tokens(t)} for t, s, pr in self.SALES]
+        items = [ba.Item(url=f"u{i}", title=t, current_price_jpy=5000, domestic_shipping_jpy=800, prefilled=True)
+                 for i, t in enumerate(self.TITLES)]
+        ba.analyze(items, sales, CFG, 150.0, True, 0, [])
+        return [it.expected_price_usd for it in items]
+
+    def test_python(self):
+        self.assertEqual(self._python(), list(self.TITLES.values()))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(CFG, 150.0)
+        data["kantei"] = []
+        data["refs"] = [{"title": t, "price": pr, "tier": ba.source_tier({"source": s}), "source": s,
+                         "tokens": sorted(ba._tokens(t)), "acc": False} for t, s, pr in self.SALES]
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"global.localStorage={{getItem(){{return null}},setItem(){{}}}};const m=require({json.dumps(str(js))});"
+                    f"const it={json.dumps(list(self.TITLES), ensure_ascii=False)}.map((t,i)=>({{id:'x'+i,title:t,price:5000,ship:800,bids:0,end:''}}));"
+                    "m.evaluate(it,150);console.log(JSON.stringify(it.map(i=>i.usd)))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), self._python())
+
+
 if __name__ == "__main__":
     unittest.main()
