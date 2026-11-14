@@ -419,7 +419,7 @@ function draw() {
   }
 
   // ---- 5. 販売国・販売日数
-  const s5 = section("country", "販売国・販売までの日数");
+  const s5 = section("country", "販売国・販売までの日数", "販売までの日数＝購入日から販売日まで");
   const g5 = grid(s5);
   if (D.country && D.country.length && !(D.country.length === 1 && D.country[0].label === "（不明）")) {
     const cc = card(g5, "販売国", `発送明細（CPaSS）の国。明細と一致しない販売は（不明）`);
@@ -429,20 +429,21 @@ function draw() {
   } else empty(g5, "販売国: 古物台帳に国の列が無く、発送明細（data/ledger_costs.csv）とも No. が一致しませんでした。明細の管理番号と台帳の No. の関係を Claude に教えてください。");
   if (D.days_to_sell) {
     columns(card(g5, "販売までの日数", `中央値 ${D.days_to_sell.median ?? "—"}日（${D.days_to_sell.n}件）`).box, {labels: D.days_to_sell.bins.map(b => b.label), values: D.days_to_sell.bins.map(b => b.count), fmt: cnt, axisFmt: v => v, labelEvery: 1});
-  } else empty(g5, "販売までの日数: 古物台帳に<b>仕入日（購入日）の列が無い</b>ため出せません。台帳に「仕入日」列を足すと自動で出ます。売れ残りは下の「出品中の在庫」で見られます。");
+    if (D.stock_days && D.stock_days.n) columns(card(g5, "在庫（未販売）の購入からの日数", `${D.stock_days.n}件。右に行くほど長く売れていない`).box, {labels: D.stock_days.bins.map(b => b.label), values: D.stock_days.bins.map(b => b.count), fmt: cnt, axisFmt: v => v, labelEvery: 1, colorFn: (v, i) => i >= 4 ? "--s2" : "--s1"});
+  } else empty(g5, "販売までの日数: data/ledger.csv に<b>購入日の列が無い</b>ため出せません。<code>python3 tools/ledger_sync.py</code> で古物台帳を取り込み直してください。");
 
   // ---- 11. 曜日
   const s11 = section("weekday", "曜日別の販売件数", "販売日（台帳の日付）の曜日");
   if (K.count) columns(card(grid(s11), "").box, {labels: D.weekday.map(w => w.label), values: D.weekday.map(w => w.count), fmt: cnt, axisFmt: v => v, labelEvery: 1});
 
   // ---- 4. 仕入先
-  const s4 = section("supplier", "仕入先別");
+  const s4 = section("supplier", "仕入先（アカウント）別", "古物台帳のアカウント名ごと。上位10件＋その他");
   if (D.supplier) {
     const g4 = grid(s4), S = D.supplier;
     const tipS = i => `<b>${esc(S[i].label)}</b>${S[i].count}件・1件あたり ${yen(S[i].avg_profit)}・利益率 ${pct(S[i].margin)}`;
     hbars(card(g4, "件数").box, {labels: S.map(s => s.label), values: S.map(s => s.count), fmt: v => v + "件", tipFn: tipS});
     hbars(card(g4, "1件あたりの推定利益").box, {labels: S.map(s => s.label), values: S.map(s => s.avg_profit), fmt: man, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipS});
-  } else empty(s4, "古物台帳に<b>仕入先の列が無い</b>ため出せません。台帳に「仕入先」列（ヤフオク・頒布会・店舗など）を足すと自動で出ます。");
+  } else empty(s4, "data/ledger.csv に<b>アカウント名の列が無い</b>ため出せません。<code>python3 tools/ledger_sync.py</code> で古物台帳を取り込み直してください。");
 
   // ---- 9. 出品中の在庫
   const s9 = section("stock", "出品中の在庫", "60日以上・ウォッチ1以下（オレンジの点）は値下げ・タイトル見直しの候補。点をクリックで eBay の出品を開く");

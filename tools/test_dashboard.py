@@ -11,14 +11,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import appraise  # noqa: E402
 import build_dashboard as bd  # noqa: E402
 
-LEDGER = """古物台帳,,,,,
+LEDGER = """"#","購入日","販売日","品目(商品名)","数量","No.","仕入金額(円)
+送料含む","販売金額($)
+送料含む","アカウント名","ヤフオクURL","備考"
+"1","2026/07/26","2026/10/3","Canon FL 50mm f/1.4","1","A001","8,000","180","acc1","",""
+"2","2026/07/24","2026/10/20","Nikon Zoom-NIKKOR 35-135mm F3.5-4.5 AI-S","1","A002","15,000","120","acc2","",""
+"3","2026/07/26","2026/11/2","Canon FD 50mm F1.4 S.S.C.","1","A003","6,000","150","acc1","",""
+"4","2026/08/08","2026/11/10","Nikon FM2 Black Body","1","A004","25,000","320","SPM JAPAN 合同会社","",""
+"5","2026/08/10","","Pentax MX Body","1","A005","9,000","","acc3","",""
+"""
+OLD_LEDGER = """古物台帳,,,,,
 ,,,,,
 販売日,品目(商品名),数量,No.,"仕入金額
 (円)",販売金額($)
 2026/10/03,Canon FL 50mm f/1.4,1,A001,8000,180
-2026/10/20,Nikon Zoom-NIKKOR 35-135mm F3.5-4.5 AI-S,1,A002,15000,120
-2026/11/02,Canon FD 50mm F1.4 S.S.C.,1,A003,6000,150
-2026/11/10,Nikon FM2 Black Body,1,A004,25000,320
 ,Pentax MX Body,1,A005,9000,
 """
 COSTS = """管理番号,cpass_shipping_jpy,duty_jpy,aucrevo_jpy,ebay_order_id,country
@@ -52,11 +58,25 @@ class TestDashboard(unittest.TestCase):
 
     def test_columns_real_header(self):
         _, cols = bd.read_ledger(self.tmp / "ledger.csv")
-        self.assertEqual(cols["cost_jpy"], "仕入金額(円)")
-        self.assertEqual(cols["price_usd"], "販売金額($)")
+        self.assertEqual(cols["cost_jpy"], "仕入金額(円)送料含む")
+        self.assertEqual(cols["price_usd"], "販売金額($)送料含む")
         self.assertEqual(cols["sku"], "No.")
+        self.assertEqual(cols["supplier"], "アカウント名")
+        self.assertEqual(cols["buy_date"], "購入日")
+
+    def test_old_six_column_ledger(self):
+        (self.tmp / "old.csv").write_text(OLD_LEDGER, encoding="utf-8-sig")
+        rows, cols = bd.read_ledger(self.tmp / "old.csv")
+        self.assertEqual(len(rows), 2)
         self.assertIsNone(cols["supplier"])
         self.assertIsNone(cols["buy_date"])
+
+    def test_supplier_and_days(self):
+        d = self.data()
+        self.assertEqual(d["supplier"][0], {**d["supplier"][0], "label": "acc1", "count": 2})
+        self.assertEqual(d["days_to_sell"]["n"], 4)
+        self.assertEqual(d["stock_days"]["n"], 1)  # 未販売の Pentax MX（購入から96日）
+        self.assertEqual(d["kpi"]["stock_cost"], 9000)
 
     def test_kpi_and_matching(self):
         d = self.data()
@@ -64,8 +84,6 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(d["kpi"]["stock"], 1)
         self.assertEqual(d["kpi"]["matched"], 2)  # 大文字小文字の違い（a003）も一致
         self.assertEqual(d["kpi"]["ship_actual"], 2)
-        self.assertIsNone(d["supplier"])
-        self.assertIsNone(d["days_to_sell"])
         self.assertEqual([m["month"] for m in d["monthly"]], ["2026-10", "2026-11"])
 
     def test_profit_matches_formula(self):
