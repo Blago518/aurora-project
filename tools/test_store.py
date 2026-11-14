@@ -266,3 +266,19 @@ class ConditionAdjust(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShopList(unittest.TestCase):
+    """お店タブの店リスト（store/shops.js）の形が正しいこと."""
+
+    def test_shops_js(self):
+        text = (bs.CORE_JS.parent / "shops.js").read_text(encoding="utf-8")
+        data = json.loads(text.split("var SHOPS = ", 1)[1].rstrip().rstrip(";"))
+        self.assertEqual([a["name"] for a in data["areas"]], ["池袋", "新宿", "吉祥寺", "横浜"])
+        for a in data["areas"]:
+            self.assertTrue(a["shops"])
+            for sh in a["shops"]:
+                for k in ("name", "q", "addr", "floor", "ll", "hours", "stock", "min", "url"):
+                    self.assertIn(k, sh, sh["name"])
+                lat, lng = map(float, sh["ll"].split(","))
+                self.assertTrue(35.3 < lat < 35.8 and 139.4 < lng < 139.8, sh["name"])
