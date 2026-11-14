@@ -347,13 +347,13 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       return `<tr class="${soon ? "soon" : ""}"><td class="m ${cls}">${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
 <div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]</div></td>
-<td class="n"><a class="usd" href="${e.sold}" target="_blank" rel="noopener" title="${esc(tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
+<td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
-    const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→eBay販売済み（高い順）">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th>利益(現在)</th></tr>`;
+    const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th>利益(現在)</th></tr>`;
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">全ページ鑑定（残り${state.total - items.length}件）</button>` : ""}
@@ -364,9 +364,8 @@ ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class=
 <details><summary>要確認（相場はあるが付属品・セット等の可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
 <details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
-<table><tr><th>機種（→eBay販売済み）</th><th>件数</th><th>ヤフオク現在値</th><th></th><th>想定$（送料込）</th></tr>${unpriced.map((g) => `<tr><td><a href="${ebay(g.label).sold}" target="_blank" rel="noopener" title="eBay販売済み（高い順）">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
+<table><tr><th>機種（→Product Research）</th><th>件数</th><th>ヤフオク現在値</th><th>想定$（送料込）</th></tr>${unpriced.map((g) => `<tr><td><a href="${ebay(g.label).pr}" target="_blank" rel="noopener" title="Product Research を開く">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
 <td class="n">${g.n}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
-<td><a href="${ebay(g.label).pr}" target="_blank" rel="noopener" title="Product Research（Best Offer込みの成約）">PR</a></td>
 <td><input data-memo="${esc(g.label)}" placeholder="$"><button data-a="memo" data-k="${esc(g.label)}">登録</button></td></tr>`).join("")}</table>
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
 <span class="s">コピーした内容を data/price_memo.csv に貼るか Claude に送ると、全端末の相場データに取り込めます</span></div></details></div>`;
