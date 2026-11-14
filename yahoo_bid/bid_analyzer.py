@@ -460,7 +460,19 @@ def _tokens(s: str) -> set[str]:
     q = title_to_query(s) if re.search(r"[ぁ-んァ-ン一-龥]", s) else s
     q = unicodedata.normalize("NFKC", q).lower()
     q = re.sub(r"(\d)\s*mm", r"\1mm", q)
-    return {t.strip(".-") for t in re.split(r"[\s/,]+", q) if t.strip(".-") and t not in NOISE_TOKENS}
+    q = re.sub(r"\bf\s*/\s*(\d)", r"f\1", q)  # f/1.4 → f1.4
+    q = re.sub(r"[()\[\]+&]", " ", q)
+    out = set()
+    for t in re.split(r"[\s/,]+", q):
+        t = t.strip(".-")
+        if not t or t in NOISE_TOKENS or t in ("w", "body", "lens", "本体"):
+            continue
+        if re.fullmatch(r"\d{1,2}\.\d", t):  # 1.4 → f1.4（F値の表記ゆれ）
+            t = "f" + t
+        if t in ("ais", "ai-s"):
+            t = "ai-s"
+        out.add(t)
+    return out
 
 
 # eBay Seller Hub の「注文レポート」CSVの列名にも対応する
@@ -497,7 +509,11 @@ def read_sales(path: Path | None) -> list[dict]:
     return rows
 
 
-def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[dict]:
+ACCESSORY_RE = re.compile(r"strap|ストラップ|(?<!w/)\bcase\b|ケース|grip|charger|battery|hood only", re.I)
+PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定"}
+
+
+def match_sales(query: str, sales: list[dict], threshold: float = 0.5) -> list[dict]:
     qt = _tokens(query)
     if not qt:
         return []
@@ -508,11 +524,25 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         qb, rb = qt & brands, rt & brands
         if qb and rb and not (qb & rb):
             continue
-        score = len(qt & rt) / len(qt | rt)
+        # 付属品だけの実績（ストラップ・ケース等）は本体の参考にしない
+        if ACCESSORY_RE.search(row.get("title", "")) and not ACCESSORY_RE.search(query):
+            continue
+        # 限定・チタン・ゴールド等は相場が別物なので、片方にだけあれば除外
+        if (qt & PREMIUM_VARIANTS) != (rt & PREMIUM_VARIANTS):
+            continue
+        # 型番・焦点距離・F値など数字を含む語は、実績側のものが全部一致すること
+        digits = {t for t in rt if re.search(r"\d", t)}
+        if not digits or not digits <= qt:
+            continue
+        inter = len(qt & rt)
+        score = (inter / len(rt) + inter / len(qt | rt)) / 2
         if score >= threshold:
             scored.append((score, row))
-    scored.sort(key=lambda x: -x[0])
-    return [dict(r, _score=round(s, 2)) for s, r in scored[:10]]
+    # 自分の実績を優先し、無ければ頒布会リストなどの参考データを使う
+    own = [x for x in scored if x[1].get("source", "自分の販売実績") == "自分の販売実績"]
+    chosen = own or scored
+    chosen.sort(key=lambda x: -x[0])
+    return [dict(r, _score=round(s, 2)) for s, r in chosen[:10]]
 
 
 # ---------------------------------------------------------------------------
@@ -659,7 +689,9 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
         elif item.history_matches:
             ps = [m["_price"] for m in item.history_matches]
             item.expected_price_usd = round(statistics.median(ps), 2)
-            item.price_source = f"自分の販売実績{len(ps)}件の中央値"
+            src = item.history_matches[0].get("source", "自分の販売実績")
+            label = "自分の販売実績" if src == "自分の販売実績" else "頒布会リスト"
+            item.price_source = f"{label}{len(ps)}件の中央値"
         item.calc = calculate(item, cfg, fx)
 
 
@@ -702,6 +734,11 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "eBay出品中件数": len(it.active_prices_usd) or None,
                 "過去実績件数": len(it.history_matches) or None,
                 "過去実績URL": " ".join(m.get("ebay_url", "") for m in it.history_matches if m.get("ebay_url")),
+                "過去実績の内訳": " / ".join(
+                    f"{m.get('title', '')} ${m['_price']:g}"
+                    + (f" 仕入{int(float(m['purchase_jpy'])):,}円" if str(m.get('purchase_jpy') or '').replace('.', '').isdigit() else "")
+                    + f" [{m.get('source', '自分の販売実績')}]"
+                    for m in it.history_matches[:5]),
                 "想定販売価格USD": it.expected_price_usd,
                 "価格の根拠": it.price_source,
                 "Net販売価格USD": c.get("net_sale_usd"),
@@ -753,7 +790,7 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
             f"- eBay出品中: {r['eBay出品中URL']}",
             f"- eBay Product Research: {r['eBayProductResearchURL']}",
             f"- eBay相場: 販売済み中央値 {_usd(r['eBay販売済み中央値USD'])}（{r['eBay販売済み件数'] or 0}件） / 出品中最安 {_usd(r['eBay出品中最安USD'])}（{r['eBay出品中件数'] or 0}件）",
-            f"- 過去の自分の実績: {r['過去実績件数'] or 0}件 {r['過去実績URL']}",
+            f"- 過去の実績: {r['過去実績件数'] or 0}件 {r['過去実績の内訳']}",
             f"- 想定販売価格: {_usd(r['想定販売価格USD'])}（{r['価格の根拠'] or '根拠なし'}） → 送料差引後Net {_usd(r['Net販売価格USD'])}",
             f"- 仕入価格(現在+国内送料): {_yen(r['仕入価格(現在+国内送料)'])} / eBay手数料 {_yen(r['eBay手数料'])} / 国際送料 {_yen(r['国際送料'])}",
             f"- 利益(現在価格で落札した場合): {_yen(r['利益(現在価格)'])}（{r['利益率%'] if r['利益率%'] is not None else '-'}%）",
@@ -793,6 +830,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
     <div><label>eBay出品中</label><b>{_usd(r['eBay出品中最安USD']) or '-'}</b><small>{r['eBay出品中件数'] or 0}件（最安）</small></div>
   </div>
   <p class="links">{link(r['ヤフオクURL'], 'ヤフオク出品')}{link(r['eBay販売済みURL'], 'eBay販売済み')}{link(r['eBay出品中URL'], 'eBay出品中')}{link(r['eBayProductResearchURL'], 'Product Research')}{hist}</p>
+  {('<p class="meta">参考実績: ' + e(r['過去実績の内訳']) + '</p>') if r['過去実績の内訳'] else ''}
   <p class="meta">検索語: <code>{e(r['eBay検索語'])}</code> ・ 終了: {e(r['終了'] or '-')}{(' ・ ' + e(r['メモ'])) if r['メモ'] else ''}</p>
 </article>""")
     counts = {k: sum(r["判定"] == k for r in rows) for k in ("◎", "○", "要確認", "×")}
@@ -832,7 +870,7 @@ eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['inter
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="ヤフオク入札判断ツール")
     ap.add_argument("input", type=Path, help="ヤフオクURL一覧(.txt) / ブックマークHTML / ウォッチリストHTML / CSV")
-    ap.add_argument("--sales", type=Path, help="過去の販売実績CSV")
+    ap.add_argument("--sales", type=Path, nargs="*", default=[], help="過去の販売実績CSV（複数可）")
     ap.add_argument("--config", type=Path, help="設定ファイル（既定: config.toml）")
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
     ap.add_argument("--offline", action="store_true", help="通信しない（手入力値と販売実績のみで計算）")
@@ -855,7 +893,7 @@ def main(argv: list[str] | None = None) -> int:
     if not items:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1
-    sales = read_sales(args.sales)
+    sales = [row for p in args.sales for row in read_sales(p)]
     analyze(items, sales, cfg, fx, args.offline, not args.no_ebay_fetch, args.delay)
 
     rows = rows_for_output(items)

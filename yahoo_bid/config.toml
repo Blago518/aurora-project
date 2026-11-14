@@ -9,14 +9,15 @@ auto_fetch = true
 conversion_loss_pct = 2.0
 
 [ebay]
-# 落札手数料（Final Value Fee）: カテゴリにより異なる。カメラ・レンズ目安 13.25%
-final_value_fee_pct = 13.25
+# 落札手数料（Final Value Fee）: ebay売上シートの実績では 送料・税込み額の 10.3%（レンズ等）〜13.4%。
+# 買い手の税にも掛かるため、商品＋送料に対する実効率として 12% で計算
+final_value_fee_pct = 12.0
 # 1注文あたりの固定手数料（USD）
-per_order_fee_usd = 0.40
+per_order_fee_usd = 0.44
 # 海外決済手数料（International fee）
-international_fee_pct = 1.65
-# 広告（Promoted Listings）を使う場合の率。使わないなら 0
-ad_rate_pct = 5.0
+international_fee_pct = 1.45
+# 広告（Promoted Listings）。ebay売上シートの広告費は売上の 1〜2% 程度だったため 2% で仮置き
+ad_rate_pct = 2.0
 # 手数料は「商品価格＋買い手負担送料」に掛かる。買い手から受け取る送料（USD）
 buyer_shipping_usd = 0.0
 
