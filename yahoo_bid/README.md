@@ -18,18 +18,18 @@
 | **上限入札額** | この金額で落札しても基準（既定: 利益5,000円以上かつ利益率15%以上）を満たす最大額。ヤフオクの入札単位で切り捨て |
 | 注意 | タイトルから「ジャンク」「光学難あり」「セット品」などを検出 |
 
-## 使い方（Python 3.11以上・追加インストール不要）
+## 使い方（Python 3.9以上・追加インストール不要。Macでは `python3` コマンドを使う）
 
 ```bash
 cd yahoo_bid
 # 1) URL一覧で実行（ヤフオクとeBayから自動取得）
-python bid_analyzer.py samples/bookmarks.txt --sales my_sales.csv
+python3 bid_analyzer.py samples/bookmarks.txt --sales my_sales.csv
 
 # 2) 通信せずに計算だけ（CSVに価格を手入力した場合）
-python bid_analyzer.py samples/items.csv --sales samples/sales_history.csv --offline
+python3 bid_analyzer.py samples/items.csv --sales samples/sales_history.csv --offline
 
 # テスト
-python -m unittest test_bid_analyzer
+python3 -m unittest test_bid_analyzer
 ```
 
 `out/` に `bid_report_日時.html`（スマホで見やすいカード表示）、`.md`（Claudeに貼り付けて相談する用）、`.csv` が出ます。

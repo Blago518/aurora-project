@@ -9,7 +9,7 @@ eBayの販売済み／出品中の相場と過去の販売実績から、想定�
     python bid_analyzer.py bookmarks.html --offline          # 通信せず手入力値と販売実績だけで計算
     python bid_analyzer.py items.csv --fx 152 --out out/     # 為替を指定
 
-標準ライブラリのみで動作する（Python 3.11 以上）。
+標準ライブラリのみで動作する（Python 3.9 以上。Macの標準 python3 でOK）。
 """
 from __future__ import annotations
 
@@ -22,7 +22,6 @@ import re
 import statistics
 import sys
 import time
-import tomllib
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -43,8 +42,35 @@ AUCTION_ID_RE = re.compile(r"auctions\.yahoo\.co\.jp/(?:jp/)?auction/([a-z]?\d{6
 # ---------------------------------------------------------------------------
 
 
+def _parse_simple_toml(text: str) -> dict:
+    """tomllib が無い Python 3.9/3.10 用。config.toml 程度の単純な書式だけ読む."""
+    data: dict = {}
+    section = data
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = data.setdefault(line[1:-1].strip(), {})
+            continue
+        key, _, val = line.partition("=")
+        val = val.strip()
+        if val in ("true", "false"):
+            v = val == "true"
+        elif val.startswith('"') and val.endswith('"'):
+            v = val[1:-1]
+        else:
+            v = float(val) if any(c in val for c in ".eE") else int(val)
+        section[key.strip()] = v
+    return data
+
+
 def load_config(path: Path | None) -> dict:
     path = path or HERE / "config.toml"
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        return _parse_simple_toml(path.read_text(encoding="utf-8"))
     with open(path, "rb") as f:
         return tomllib.load(f)
 
