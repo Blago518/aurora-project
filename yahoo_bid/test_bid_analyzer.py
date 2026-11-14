@@ -192,5 +192,42 @@ class AutoPrice(unittest.TestCase):
         self.assertTrue(items[0].price_source.startswith("eBay販売済み自動"))
 
 
+class UserscriptParity(unittest.TestCase):
+    """ユーザースクリプト（JS）が Python と同じ判定をすることを確認（node が無ければスキップ）."""
+
+    def test_same_verdicts(self):
+        import json, shutil, subprocess
+        import build_userscript as bu
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        titles = ["【美品】ニコン Nikon FM2 ブラック ボディ", "キヤノン Canon FD 28mm f2・8 良品",
+                  "7Artisans 50mm F1.2 マイクロフォーサーズ オリンパス", "Contax TVS III",
+                  "OLYMPUS OM-SYSTEM G.ZUIKO AUTO-W 35mm F2.8", "Pentax 645 ボディキャップ"]
+        sales = [{"title": t, "source": src, "_price": pr, "_tokens": ba._tokens(t)}
+                 for t, src, pr in [("Olympus G.Zuiko 35mm f/2.8", "自分の販売実績", 119.99),
+                                    ("Nikon FM2 Black", "自分の販売実績", 250.0),
+                                    ("Canon FD 28mm f/2.8 S.C.", "自分の販売実績", 79.0),
+                                    ("OLYMPUS ZUIKO AUTO-S 50mm 1.2", "頒布会リスト", 469.99),
+                                    ("Contax TVS", "Chatwork販売実績", 399.99),
+                                    ("Pentax 645 本体", "自分の販売実績", 398.1)]]
+        items = [ba.Item(url=f"u{i}", auction_id=f"x{i}", title=t, current_price_jpy=5000,
+                         domestic_shipping_jpy=800, prefilled=True) for i, t in enumerate(titles)]
+        ba.analyze(items, sales, CFG, 150.0, True, False, 0, [])
+        py = [[ba.judge(it)[0], it.expected_price_usd, (it.calc or {}).get("max_bid_jpy")] for it in items]
+        data = bu.build_data(CFG, 150.0)
+        data["refs"] = [{"title": r["title"], "price": r["_price"], "tier": ba.source_tier(r), "source": r["source"],
+                         "tokens": sorted(r["_tokens"]), "acc": bool(ba.ACCESSORY_RE.search(r["title"]))} for r in sales]
+        data["kantei"] = []
+        tpl = (Path(ba.__file__).parent / "userscript_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"const m=require({json.dumps(str(js))});const it={json.dumps(titles, ensure_ascii=False)}"
+                    ".map((t,i)=>({id:'x'+i,title:t,price:5000,ship:800,bids:0,end:''}));m.evaluate(it,150);"
+                    "console.log(JSON.stringify(it.map(i=>[i.mark,i.usd,i.calc?i.calc.maxBid:null])))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), py)
+
+
 if __name__ == "__main__":
     unittest.main()
