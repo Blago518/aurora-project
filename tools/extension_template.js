@@ -433,6 +433,11 @@
       it.usd = m.length ? Math.round(median(conditionAdjusted(m, it.title, it.flags)) * 100) / 100 : null;
       if (it.usd != null && it.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1)
         it.usd = Math.round(it.usd * DATA.cfg.junkFactor * 100) / 100;
+      // 送料: 検索結果に無ければ出品ページの送料（読めていれば）。どちらも無ければ calculate が既定の額（1,000円）で計算
+      if (it.ship0 === undefined) it.ship0 = it.ship;
+      const pd = state.desc && state.desc[it.id];
+      it.ship = it.ship0 != null ? it.ship0 : (pd && pd.ship != null ? pd.ship : null);
+      it.shipSrc = it.ship0 == null && it.ship != null ? "page" : "";
       it.calc = it.usd != null ? calculate(it, it.usd, fx) : null;
       [it.mark, it.reason] = judge(it);
     }
@@ -465,6 +470,9 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .bd{padding:10px 12px}#yhk table{width:100%;border-collapse:collapse}
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
 #yhk button.bidon{background:#1f7a5c;color:#fff}
+@keyframes yhkflash{0%,100%{background:transparent}30%{background:#ffe08a}}#yhk tr.flash td{animation:yhkflash 1.2s ease 2}
+#yhk-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0b1728;color:#fff;padding:10px 16px;border-radius:10px;
+font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show{opacity:1}
 #yhk .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal{background:#eef3f8;color:#2d4a63}
 #yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
 #yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
@@ -535,7 +543,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
   }
 
   // ------------------------------------------------------------------ 説明文の状態チェック（◎○の出品だけ自動。出品ページを1件ずつ間隔を空けて読む）
-  const LS_DESC = "yhkDescV2";  // 判定の語を変えたら番号を上げて、保存済みの結果を読み直させる
+  const LS_DESC = "yhkDescV3";  // 判定の語を変えたら番号を上げて、保存済みの結果を読み直させる
   const DEFECT_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|剥離|ヤケ|黄変|拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響)/g;
   // 光学の欄で状態を書かず「写真を確認して」とだけ書くのは、写真に難が写っている合図のことが多い
   const PHOTO_ONLY_RE = /光学[^\n]{0,15}\n?(?:[^\n]{0,60}\n?){0,3}?[^\n]{0,40}写真[^\n]{0,10}確認/;
@@ -585,8 +593,16 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
     const text = String(item.descriptionHtml || item.description || "")
       .replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|tr|h\d)>/gi, "\n").replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-    return { t: Date.now(), cond: item.conditionName || "", hits: descHits(text, item.conditionName || "") };
+    return { t: Date.now(), cond: item.conditionName || "", hits: descHits(text, item.conditionName || ""), ship: shipFee(item) };
   }
+  // 出品ページの送料（appraise.py の item_shipping と同じ）: 出品者負担なら0、配送方法の送料（一律）の一番安いもの。分からなければ null
+  function shipFee(item) {
+    if (item.chargeForShipping === "seller") return 0;
+    const fees = (((item.shipping || {}).methods) || []).map((m) => m && m.shippingFee).filter((v) => typeof v === "number" && v >= 0);
+    return fees.length ? Math.min(...fees) : null;
+  }
+  // 送料の表示: 検索結果の送料／出品ページの送料／不明（既定の額で計算）
+  const shipLabel = (i) => (i.ship == null ? `送?→${yen(DATA.cfg.defaultDomestic)}で計算` : `送${yen(i.ship)}${i.shipSrc === "page" ? "（出品ページ）" : ""}`);
   let descBusy = false;
   async function checkDescs(ids) {
     if (descBusy) return;
@@ -599,6 +615,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
         try { state.desc[id] = await readDesc(id); } catch (e) { state.desc[id] = { t: Date.now(), error: String(e.message || e) }; }
         fresh++;
         const all = load(LS_DESC, {}); all[id] = state.desc[id]; save(LS_DESC, all);
+        evaluate(state.items, state.fx);  // 出品ページの送料で計算し直す
         render();
         await new Promise((r) => setTimeout(r, 1500));  // ヤフオクに負荷をかけないよう間隔を空ける
       }
@@ -693,7 +710,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\n送料込みの$と、売れた物の状態を入れると、$${DATA.cfg.deductionUsd}を引いて計算します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
-<td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
+<td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
@@ -711,7 +728,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 <div class="s">機種: ${esc(w.label)} ・ eBay出品中 最安$${Math.round(w.b.min || 0)}・中央値$${Math.round(w.b.med)}×${DATA.cfg.activeFactor}（${w.b.n}件）の安い方 $${w.sg}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} ＝ $${w.usd}で仮計算（sold未確認）</div>
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
 <td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
-<td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
+<td class="n">${yen(i.price)}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
 <td class="n"><b>${yen(c.maxBid)}</b>${bidButton(Object.assign({}, i, { calc: c }), c, w.usd, true)}<div class="s">仮（sold確認前）</div>${atMax(Object.assign({}, i, { calc: c, usd: w.usd }))}<div class="s">分岐 ${yen(c.breakeven)}</div></td>
 <td class="n">${yen(c.profit)}<div class="s">${c.margin != null ? c.margin + "%" : ""}</div>
 <div class="fix" title="sold を見て、売れた価格（送料込$）がこの額以上なら、そのまま［登録］。低ければ直して［登録］。同じ機種の今後の出品にも効きます">${memoInputs(w.label, `value="${w.sg}" class="sug"`, "登録")}</div></td></tr>`;
@@ -736,6 +753,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
 <span class="s">「直す」「登録」した相場は ダウンロード/aurora_price_memo.csv に自動保存されます。Mac で build_store.py か build_extension.py を実行すると data/price_memo.csv に取り込まれ、スマホにも反映されます</span></div></details></div>`;
     badges();
+    applyFlash();
     if (!state.loading) fetchBrowse(groupList.slice(0, DATA.cfg.browseMaxModels).map((g) => g.label));
     checkDescs(good.map((i) => i.id));
   }
@@ -754,7 +772,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo };
+    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee };
     return;
   }
 
@@ -767,6 +785,39 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
   function saveMemoFile() {
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) return;
     try { chrome.runtime.sendMessage({ type: "saveMemo", csv: memoCsv() }, () => void chrome.runtime.lastError); } catch (e) {}
+  }
+
+  // 描き直しても数秒は光らせる（説明文を読んだ後などに表を描き直すため）
+  function applyFlash() {
+    const f = state.flash;
+    if (!f || Date.now() > f.until) return;
+    const a = document.querySelector(`#yhk a.t[href*="/auction/${CSS.escape(f.id)}"]`);
+    const row = a && a.closest("tr");
+    if (!row) return;
+    const det = row.closest("details");
+    if (det) det.open = true;
+    row.classList.add("flash");
+  }
+  // ［直す］［登録］の後: 出品が移った先へスクロールして光らせ、どの欄に移ったかを表示（たたまれた欄なら開く）
+  function showMoved(id) {
+    const root = document.getElementById("yhk");
+    const it = state.items.find((x) => x.id === id);
+    const a = root && root.querySelector(`a.t[href*="/auction/${CSS.escape(id)}"]`);
+    const row = a && a.closest("tr");
+    const where = !it ? "" : it.mark === "◎" || it.mark === "○" ? `${it.mark}（入札候補${it.trusted ? "・★安心枠" : ""}）`
+      : it.mark === "×" ? "×（見送り: 登録した額では上限額が現在価格に届きません）" : "要確認（付属品・説明文の難などの可能性）";
+    state.flash = { id, until: Date.now() + 3000 };
+    if (row) {
+      const det = row.closest("details");
+      if (det) det.open = true;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    applyFlash();
+    let t = document.getElementById("yhk-toast");
+    if (!t) { t = document.createElement("div"); t.id = "yhk-toast"; document.body.appendChild(t); }
+    t.textContent = `登録しました → ${where || "相場に反映"}`;
+    t.className = "show";
+    clearTimeout(t._h); t._h = setTimeout(() => (t.className = ""), 3500);
   }
 
   document.addEventListener("click", async (ev) => {
@@ -799,8 +850,12 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       const v = Number((inp && inp.value || "").replace(/[$,\s]/g, ""));
       if (!v) return;
       const memo = load(LS_MEMO, {}); memo[k] = { usd: v, cond: sel ? sel.value : "" }; save(LS_MEMO, memo);
+      // 押した行の出品（登録すると判定が変わって別の欄へ移るので、移った先を見せる）
+      const link = btn.closest("tr") && btn.closest("tr").querySelector('a[href*="/auction/"]');
+      const id = link ? (link.getAttribute("href").match(/auction\/([^/?#]+)/) || [])[1] : "";
       evaluate(state.items, state.fx); render();
       saveMemoFile();
+      if (id) showMoved(id);
     }
     if (a === "desc") { btn.disabled = true; btn.textContent = "確認中…"; checkDescs([btn.dataset.id]); }
     if (a === "memocopy") {

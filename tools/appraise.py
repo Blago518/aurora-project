@@ -494,9 +494,9 @@ FLAG_RULES = [
     ("アダプター等", r"アダプタ|adapter|コンバーター|converter|接写リング|中間リング|エクステンション|テレプラス|"
                    r"teleplus|テレコンバーター|テレコン|ムター|mutar|エクステンダー|extender|塗料|ペイント|マウント変換|→|"
                    r"^(?!.*\d\s*mm).*(?:adapt-?all|アダプトール)"),  # タムロンの交換マウント。焦点距離があればレンズ本体なので除く
-    ("付属品のみ?", r"(?:キャップ|ストラップ|ケース|フード|フィルター|背面|裏蓋|データバック|ファインダー)"
-                   r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|取扱説明書|説明書のみ|\bback\b|"
-                   r"ポーチ|月号|雑誌|ムック|書籍|magazine|マグニファイ|アイピース|ルーペ|アイカップ|接眼|magnifier|eyepiece"),
+    ("付属品のみ?", r"(?:キャップ|ストラップ|ケース|フード|フィルター|背面|裏蓋|データバック|ファインダー|使用説明書|説明書)"
+                   r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|説明書のみ|\bback\b|"
+                   r"ポーチ|月号|雑誌|ムック|書籍|写真集|カメラスタイル|\bP-?FILTER\b|magazine|マグニファイ|アイピース|ルーペ|アイカップ|接眼|magnifier|eyepiece"),
 ]
 
 
@@ -1138,17 +1138,44 @@ def read_description(page: str) -> tuple[str, str]:
     return text, str(item.get("conditionName") or "")
 
 
-def check_descriptions(items: list[Item], delay: float) -> int:
-    """◎○の出品だけ説明文を読み、カビ・クモリ等があれば要確認にする. 読んだ件数を返す."""
+CONFIG_DEFAULT_SHIP = 1000  # 表示用。計算は config.toml の default_domestic_shipping_jpy（main で上書き）
+
+
+def item_shipping(page: str) -> int | None:
+    """出品ページの送料（extension_template.js の shipFee と同じ）: 出品者負担なら0、配送方法の送料（一律）の一番安いもの。分からなければ None."""
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
+    if not m:
+        return None
+    props = json.loads(m.group(1)).get("props") or {}
+    st = (props.get("pageProps") or {}).get("initialState") or props.get("initialState") or {}
+    item = (((st.get("item") or {}).get("detail") or {}).get("item")) or {}
+    if item.get("chargeForShipping") == "seller":
+        return 0
+    fees = [x.get("shippingFee") for x in ((item.get("shipping") or {}).get("methods") or []) if isinstance(x, dict)]
+    fees = [int(v) for v in fees if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0]
+    return min(fees) if fees else None
+
+
+def check_descriptions(items: list[Item], delay: float, cfg: dict | None = None, fx: float | None = None) -> int:
+    """◎○の出品だけ出品ページを読み、説明文にカビ・クモリ等があれば要確認にする. 検索結果に送料が無ければ、
+    出品ページの送料で計算し直す（無ければ既定の額のまま）. 読んだ件数を返す."""
     n = 0
     for it in items:
         if not it.auction_id or judge(it)[0] not in ("◎", "○"):
             continue
         try:
-            text, cond = read_description(http_get(it.url))
+            page = http_get(it.url)
+            text, cond = read_description(page)
         except Exception as e:  # 読めなくても判定は続ける
             it.fetch_note += f"説明文を読めませんでした（{e}） "
             continue
+        if it.domestic_shipping_jpy is None:
+            ship = item_shipping(page)
+            if ship is not None:
+                it.domestic_shipping_jpy = ship
+                it.fetch_note += "送料は出品ページ "
+                if cfg and it.expected_price_usd is not None:
+                    it.calc = calculate(it, cfg, fx)
         it.desc_hits = desc_hits(text, cond)
         n += 1
         time.sleep(delay)
@@ -1246,6 +1273,9 @@ def rows_for_output(items: list[Item]) -> list[dict]:
             {
                 "判定": mark,
                 "枠": "安心" if it.trusted else "チャレンジ",
+                "国内送料": it.domestic_shipping_jpy,
+                "国内送料の根拠": ("出品ページ" if "送料は出品ページ" in it.fetch_note else "検索結果")
+                if it.domestic_shipping_jpy is not None else f"不明→{_yen(int(CONFIG_DEFAULT_SHIP))}で計算",
                 "仮判定": it.tentative.get("mark", ""),
                 "仮の上限入札額": it.tentative.get("max_bid"),
                 "仮の想定USD": it.tentative.get("usd"),
@@ -1417,7 +1447,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
     <div class="hl"><label>入札する上限額（このまま入札）</label><b>{_yen(r['上限入札額']) or '-'}</b><small>{e(r["入札額の税"])} ・ 損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
     <div><label>想定販売価格</label><b>{_usd(r['想定販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ Net {_usd(r['Net販売価格USD'])}</small></div>
     <div><label>利益（現在価格）</label><b>{_yen(r['利益(現在価格)']) or '-'}</b><small>利益率 {r['利益率%'] if r['利益率%'] is not None else '-'}%</small></div>
-    <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料</small></div>
+    <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料（{e(r["国内送料の根拠"])}）</small></div>
     <div><label>eBay手数料／国際送料</label><b>{_yen(r['eBay手数料']) or '-'}</b><small>送料 {_yen(r['国際送料']) or '-'}</small></div>
   </div>
   <p class="links">{link(r['ヤフオクURL'], 'ヤフオク出品')}{link(r['eBay販売済みURL'], 'eBay販売済み')}{link(r['eBay出品中URL'], 'eBay出品中')}{link(r['eBayProductResearchURL'], 'Product Research')}{hist}</p>
@@ -1552,7 +1582,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"安心ストア: {len(trusted)}件（出品 {sum(it.trusted for it in items)}件が安心枠）", file=sys.stderr)
     analyze(items, sales, cfg, fx, args.offline, args.delay, kantei)
     if not args.offline:
-        n = check_descriptions(items, args.delay)
+        global CONFIG_DEFAULT_SHIP
+        CONFIG_DEFAULT_SHIP = cfg["yahoo"]["default_domestic_shipping_jpy"]
+        n = check_descriptions(items, args.delay, cfg, fx)
         print(f"説明文チェック: ◎○ {n}件を確認（カビ・クモリ等があれば要確認に）", file=sys.stderr)
         import tentative  # 相場が無い出品を eBay 出品中の価格（公式 Browse API）で仮に判定
         t = tentative.add_tentative(items, cfg, fx)
