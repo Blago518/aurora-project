@@ -36,7 +36,7 @@ font-size:16px;font-weight:800;text-decoration:none;cursor:pointer;padding:0 12p
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .mt{margin-top:10px}.s{font-size:12px;color:var(--sub)}.chk{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink);font-weight:600;margin-top:10px}
 .chk input{width:20px;height:20px}
-.status{font-size:13px;color:var(--sub);margin-top:8px;min-height:1em}
+.status{font-size:13px;color:var(--sub);margin-top:8px;min-height:1em;white-space:pre-line}
 .status.err{color:var(--bad)}
 .photo{display:none;width:100%;max-height:160px;object-fit:contain;border-radius:10px;background:#eef2f6;margin-top:10px}
 .verdict{display:flex;align-items:center;gap:12px}
@@ -220,6 +220,11 @@ function storeReason(r) {  // 拡張機能（ヤフオク向け）の言葉を�
     .replace("現在価格不明", "値札の価格を入れると判定します").replace("上限超過", "買える上限を超えています");
 }
 
+// 過去データの状態（Near MINT $229.99 など）。手で直した相場（相場メモ）は除く
+function conds(refs) {
+  return refs.filter((x) => x.tier <= 2 && !core.isMemo(x)).slice(0, 5)
+    .map((x) => `${esc(core.conditionOf(x) || "記載なし")} ${usd(x.price)}`).join("<br>");
+}
 function renderResult(name, price, r) {
   const el = $("result");
   if (!name.trim()) { el.hidden = true; return; }
@@ -237,6 +242,7 @@ function renderResult(name, price, r) {
       <dt>損益ゼロになる値段（税込）</dt><dd>${yen(c.breakeven)}</dd>
       <dt>想定販売価格（eBay）</dt><dd>${usd(r.usd)}${r.flags.includes("ジャンク") ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
       <dt>根拠</dt><dd>${esc(SRC[tier] || "")} ${r.refs.length}件の中央値</dd>
+      ${conds(r.refs) ? `<dt>状態</dt><dd>${conds(r.refs)}</dd>` : ""}
       ${price != null ? `<dt>値札で買ったときの利益</dt><dd class="${c.profit >= 0 ? "g" : "x"}">${yen(c.profit)}（${c.margin}%）</dd>` : ""}
     </dl>`;
     if (tier >= 2) h += `<div class="note">根拠が弱いデータです（${esc(SRC[tier])}）。eBay の販売済みで必ず確認してください。</div>`;
@@ -421,7 +427,7 @@ const TAG_SCHEMA = {
     search_query: { type: "string", description: "eBayで検索する英語の語（メーカー＋型番。状態や色は入れない）" },
     price_tax_included_jpy: { anyOf: [{ type: "integer" }, { type: "null" }], description: "お店に払う税込価格。税抜しか書いていなければ×1.1して四捨五入。価格が読めなければnull" },
     junk: { type: "boolean", description: "ジャンク・現状品・難あり等の表記があるか" },
-    notes: { type: "string", description: "状態の表記（カビ、クモリ、動作未確認など）を日本語で短く。無ければ空" },
+    notes: { type: "string", description: "値札に書かれた状態の表記だけ（例: カビあり、動作未確認、美品）。30字以内、文末に句点は付けない。無ければ空" },
   },
 };
 const TAG_PROMPT = "中古カメラ店の値札（または商品）の写真です。書かれているメーカー・型番・価格・状態を読み取ってください。" +
@@ -488,7 +494,9 @@ $("camFile").onchange = async (e) => {
     if (t.price_tax_included_jpy) $("price").value = t.price_tax_included_jpy;
     $("junk").checked = !!t.junk;
     look(); remember();
-    st.textContent = `読み取り: ${name}${t.price_tax_included_jpy ? "／" + yen(t.price_tax_included_jpy) + "（税込）" : "／価格は読めず"}${t.notes ? "／" + t.notes : ""}。違っていたら直してください。`;
+    const note = String(t.notes || "").trim().replace(/[。.．\s]+$/, "");
+    st.textContent = `読み取り: ${name}${t.price_tax_included_jpy ? "／" + yen(t.price_tax_included_jpy) + "（税込）" : "／価格は読めず"}。違っていたら直してください。` +
+      (note ? `\n状態のメモ: ${note.length > 40 ? note.slice(0, 40) + "…" : note}` : "");
   } catch (err) { st.className = "status err"; st.textContent = err.message; }
   finally { $("camBtn").disabled = false; }
 };
