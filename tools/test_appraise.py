@@ -77,6 +77,17 @@ class Calculation(unittest.TestCase):
         be = ba.calculate(self.item(current_price_jpy=c["breakeven_bid_jpy"]), CFG, 150)
         self.assertTrue(0 <= be["profit_now_jpy"] < 1000)
 
+    def test_store_bid_is_tax_excluded(self):
+        # ストア: 上限入札額（税抜）で落札 → 支払いは×1.1。それでも基準の利益が残ること
+        c = ba.calculate(self.item(store_tax=True), CFG, 150)
+        paid_display = round(c["max_bid_jpy"] * 1.1)  # ヤフオクの表示（税込）
+        at_max = ba.calculate(self.item(store_tax=True, current_price_jpy=paid_display), CFG, 150)
+        self.assertGreaterEqual(at_max["profit_now_jpy"], CFG["judge"]["min_profit_jpy"] - 5)
+        self.assertGreaterEqual(at_max["margin_now_pct"], CFG["judge"]["min_margin_pct"] - 0.1)
+        # 個人出品より上限が約1割低い
+        indiv = ba.calculate(self.item(), CFG, 150)
+        self.assertLess(c["max_bid_jpy"], indiv["max_bid_jpy"] * 0.95)
+
     def test_increment(self):
         self.assertEqual(ba.round_down_to_increment(999), 990)
         self.assertEqual(ba.round_down_to_increment(4999), 4900)

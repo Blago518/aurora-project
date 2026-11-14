@@ -156,13 +156,15 @@
     const revJpy = rev * fx;
     const dom = it.ship == null ? g.defaultDomestic : it.ship;
     const intl = Math.round(g.deductionUsd * fx);
-    const k = (1 + g.storeTaxPct / 100) * (1 - g.refundRatio);
+    const tm = it.tax ? 1 + g.storeTaxPct / 100 : 1;  // ストアは入札が税抜、支払いは×1.1
+    const k = tm * (1 - g.refundRatio);
     const fixed = net - dom - intl - g.packing;
     const maxBid = Math.max(0, roundDown(Math.min((fixed - g.minProfit) / k, (fixed - g.minMarginPct / 100 * revJpy) / k)));
     const be = Math.max(0, roundDown(fixed / k));
-    const out = { maxBid, breakeven: be, fees: Math.round(fees * fx), intl, dom, net: Math.round(net), netUsd: usd - g.deductionUsd };
+    const out = { tax: !!it.tax, maxBid, breakeven: be, fees: Math.round(fees * fx), intl, dom, net: Math.round(net), netUsd: usd - g.deductionUsd };
     if (it.price != null) {
-      const p = fixed - it.price * k;
+      out.bidNow = it.price / tm;
+      const p = fixed - out.bidNow * k;
       out.profit = Math.round(p);
       out.margin = Math.round((p / revJpy) * 1000) / 10;
     }
@@ -178,8 +180,8 @@
     if (it.flags.includes("光学難あり")) return ["要確認", pre + "光学難あり（方針では避ける）"];
     if (c.maxBid <= 0) return ["×", pre + "基準を満たす入札額なし"];
     if (it.price == null) return ["要確認", pre + "現在価格不明"];
-    if (it.price <= c.maxBid * 0.8) return ["◎", pre + "余裕あり"];
-    if (it.price <= c.maxBid) return ["○", pre + "上限に近い"];
+    if (c.bidNow <= c.maxBid * 0.8) return ["◎", pre + "余裕あり"];
+    if (c.bidNow <= c.maxBid) return ["○", pre + "上限に近い"];
     return ["×", pre + "上限超過"];
   }
 
@@ -230,7 +232,7 @@
     return l.items.filter((x) => !x.isFleamarketItem).map((x) => ({
       id: x.auctionId, title: x.title || "", price: x.price ?? null, buyNow: x.buyNowPrice || null,
       bids: x.bidCount ?? 0, end: x.endTime || "", ship: x.isFreeShipping ? 0 : (x.currentPriceShippingFee ?? null),
-      watch: x.watchCount ?? 0, store: !!(x.seller && x.seller.isStore),
+      watch: x.watchCount ?? 0, store: !!(x.seller && x.seller.isStore), tax: x.taxFlag === 1,
     }));
   }
 
@@ -300,6 +302,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}
 #yhk a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}
 #yhk a.now,#yhk a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}
+#yhk .taxb{display:inline-block;font-size:10px;font-weight:700;color:#8a5a00;background:#fff1cc;border-radius:5px;padding:0 5px}
 #yhk .pills{display:flex;gap:4px;justify-content:flex-end}#yhk a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}
 #yhk td.m{white-space:nowrap;width:58px}#yhk tr.soon td{background:#fff6ec}#yhk .hot{color:#c0392b;font-weight:700}
 #yhk .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
@@ -346,8 +349,8 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 <div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]</div></td>
 <td class="n"><a class="usd" href="${e.sold}" target="_blank" rel="noopener" title="${esc(tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div></td>
-<td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
-<td class="n"><b>${yen(c && c.maxBid)}</b><div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
+<td class="n">${yen(i.price)}${i.tax ? `<div class="s">税抜 ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
+<td class="n"><b>${yen(c && c.maxBid)}</b>${i.tax ? `<div><span class="taxb" title="ストアは税抜で入札。支払いは入札額×1.1">税抜で入札</span></div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→eBay販売済み（高い順）">eBay相場</th><th>現在</th><th>上限入札</th><th>利益(現在)</th></tr>`;
@@ -377,7 +380,7 @@ ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class=
       if (!a || a.parentElement.querySelector(".yhk-badge")) continue;
       const b = document.createElement("span");
       b.className = "yhk-badge " + (i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x");
-      b.textContent = `${i.mark} 上限${yen(i.calc.maxBid)}`;
+      b.textContent = `${i.mark} 上限${yen(i.calc.maxBid)}${i.tax ? "(税抜)" : ""}`;
       a.insertAdjacentElement("afterend", b);
     }
   }
@@ -425,7 +428,7 @@ ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class=
     }
     if (a === "copy") {
       const good = state.items.filter((i) => i.mark === "◎" || i.mark === "○").sort((x, y) => (x.end < y.end ? -1 : 1));
-      const txt = good.map((i) => `${i.mark} ${endStr(i.end)} 上限${yen(i.calc.maxBid)} 現在${yen(i.price)} ${i.title}\nhttps://auctions.yahoo.co.jp/jp/auction/${i.id}\nsold: ${ebay(i.query).sold}\nnow: ${ebay(i.query).now}`).join("\n\n");
+      const txt = good.map((i) => `${i.mark} ${endStr(i.end)} 上限${yen(i.calc.maxBid)}${i.tax ? "(税抜・ストア)" : ""} 現在${yen(i.price)} ${i.title}\nhttps://auctions.yahoo.co.jp/jp/auction/${i.id}\nsold: ${ebay(i.query).sold}\nnow: ${ebay(i.query).now}`).join("\n\n");
       await navigator.clipboard.writeText(txt).catch(() => {});
       btn.textContent = "コピーしました";
     }

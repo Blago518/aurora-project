@@ -94,6 +94,7 @@ class Item:
     domestic_shipping_jpy: int | None = None
     image: str = ""
     watch: int | None = None
+    store_tax: bool = False  # ストア出品: 入札は税抜、支払いは税込（×1.1）
     prefilled: bool = False  # 検索結果ページから価格等を取得済み（個別ページを開かない）
     # 手入力の上書き
     ebay_query: str = ""
@@ -299,6 +300,7 @@ def parse_listing_page(page: str) -> tuple[list[Item], int | None]:
             image=x.get("imageUrl") or "",
             watch=_int_or_none(x.get("watchCount")),
             prefilled=True,
+            store_tax=x.get("taxFlag") == 1,
             memo="ストア" if (x.get("seller") or {}).get("isStore") else "",
         ))
     return items, total
@@ -372,6 +374,8 @@ def parse_yahoo_page(page: str) -> dict:
             if not has_id or not any(k in d for k in ("price", "taxinPrice", "currentPrice")):
                 continue
             price = _pick(d, "taxinPrice", "currentPrice", "price")
+            if d.get("taxinPrice") and d.get("price") and _int_or_none(d["taxinPrice"]) != _int_or_none(d["price"]):
+                out["store_tax"] = True
             out.setdefault("current_price_jpy", _int_or_none(price))
             bin_ = _pick(d, "taxinBidorbuy", "bidorbuy", "buyNowPrice", "winPrice")
             if bin_ and _int_or_none(bin_):
@@ -412,6 +416,9 @@ def enrich_from_yahoo(item: Item) -> None:
         item.fetch_note += f"ヤフオク取得失敗({e.__class__.__name__}) "
         return
     for k, v in info.items():
+        if k == "store_tax":
+            item.store_tax = bool(v)
+            continue
         if v in (None, ""):
             continue
         if getattr(item, k) in (None, ""):  # 手入力値を優先
@@ -780,7 +787,8 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
     dom = int(y["default_domestic_shipping_jpy"]) if dom is None else dom
     ship = intl_shipping(item, cfg, fx)
     pack = int(cfg["shipping"]["packing_jpy"])
-    tax_mult = 1 + y["store_tax_pct"] / 100
+    # ストア出品は入札額が税抜。入札1円あたり (1+税率) 円を払う。個人出品は税なし
+    tax_mult = 1 + y["store_tax_pct"] / 100 if item.store_tax else 1.0
     refund_ratio = (
         t["consumption_tax_pct"] / (100 + t["consumption_tax_pct"])
         if t["include_consumption_tax_refund"]
@@ -799,8 +807,11 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
     max_bid = max(0, round_down_to_increment(min(by_profit, by_margin)))
     breakeven = max(0, round_down_to_increment(fixed / k))
 
-    price_now = item.current_price_jpy
+    price_now = item.current_price_jpy  # ヤフオクの表示価格（ストアは税込）
+    bid_now = price_now / tax_mult if price_now is not None else None  # 入札額の基準（ストアは税抜）
     out = {
+        "tax_excl_bid": item.store_tax,
+        "bid_now": bid_now,
         "fx": fx,
         "net_sale_usd": round(item.expected_price_usd - cfg["shipping"].get("deduction_usd", 0), 2),
         "revenue_jpy": round(revenue_jpy),
@@ -813,16 +824,16 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
         "breakeven_bid_jpy": breakeven,
     }
     if price_now is not None:
-        purchase = round(price_now * tax_mult + dom)
-        p = profit_at(price_now)
+        purchase = round(price_now + dom)
+        p = profit_at(bid_now)
         out.update(
             purchase_jpy=purchase,
             profit_now_jpy=round(p),
             margin_now_pct=round(p / revenue_jpy * 100, 1) if revenue_jpy else None,
-            headroom_jpy=max_bid - price_now,
+            headroom_jpy=round(max_bid - bid_now),
         )
     if item.buy_now_jpy:
-        out["profit_buy_now_jpy"] = round(profit_at(item.buy_now_jpy))
+        out["profit_buy_now_jpy"] = round(profit_at(item.buy_now_jpy / tax_mult))
     return out
 
 
@@ -841,14 +852,15 @@ def judge(item: Item) -> tuple[str, str]:
         return "要確認", prefix + "光学難あり（方針では避ける）。写真で程度を確認してください"
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
-    now = item.current_price_jpy
+    now = c.get("bid_now")
+    lim = f"{c['max_bid_jpy']:,}円" + ("（税抜）" if c.get("tax_excl_bid") else "")
     if now is None:
-        return "要確認", prefix + f"現在価格不明。上限 {c['max_bid_jpy']:,}円 まで"
+        return "要確認", prefix + f"現在価格不明。上限 {lim} まで"
     if now <= c["max_bid_jpy"] * 0.8:
-        return "◎", prefix + f"上限 {c['max_bid_jpy']:,}円 まで余裕あり"
+        return "◎", prefix + f"上限 {lim} まで余裕あり"
     if now <= c["max_bid_jpy"]:
-        return "○", prefix + f"上限 {c['max_bid_jpy']:,}円 に近い。終了間際の競り上がりに注意"
-    return "×", prefix + f"現在価格が上限 {c['max_bid_jpy']:,}円 を超過"
+        return "○", prefix + f"上限 {lim} に近い。終了間際の競り上がりに注意"
+    return "×", prefix + f"現在価格が上限 {lim} を超過"
 
 
 # ---------------------------------------------------------------------------
@@ -952,6 +964,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "利益(現在価格)": c.get("profit_now_jpy"),
                 "利益率%": c.get("margin_now_pct"),
                 "上限入札額": c.get("max_bid_jpy"),
+                "入札額の税": ("税抜（ストア・支払いは×1.1）" if c.get("tax_excl_bid") else "税込（個人）") if c else "",
                 "損益分岐入札額": c.get("breakeven_bid_jpy"),
                 "上限までの余裕": c.get("headroom_jpy"),
                 "注意": " / ".join(it.flags),
@@ -999,7 +1012,7 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
             f"- 想定販売価格: {_usd(r['想定販売価格USD'])}（{r['価格の根拠'] or '根拠なし'}） → 送料差引後Net {_usd(r['Net販売価格USD'])}",
             f"- 仕入価格(現在+国内送料): {_yen(r['仕入価格(現在+国内送料)'])} / eBay手数料 {_yen(r['eBay手数料'])} / 国際送料 {_yen(r['国際送料'])}",
             f"- 利益(現在価格で落札した場合): {_yen(r['利益(現在価格)'])}（{r['利益率%'] if r['利益率%'] is not None else '-'}%）",
-            f"- **上限入札額: {_yen(r['上限入札額'])}**（損益分岐 {_yen(r['損益分岐入札額'])}）",
+            f"- **上限入札額: {_yen(r['上限入札額'])}{'（税抜・ストア）' if r['入札額の税'].startswith('税抜') else ''}**（損益分岐 {_yen(r['損益分岐入札額'])}）",
         ]
         if r["注意"]:
             lines.append(f"- 注意: {r['注意']}")
@@ -1080,7 +1093,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
   <p class="reason">{e(r['理由'])}{(' ・ ⚠ ' + e(r['注意'])) if r['注意'] else ''}</p>
   <div class="grid">
     <div><label>現在価格</label><b>{_yen(r['現在価格']) or '-'}</b><small>入札{r['入札数'] if r['入札数'] is not None else '-'}・即決{_yen(r['即決価格']) or '-'}</small></div>
-    <div class="hl"><label>上限入札額</label><b>{_yen(r['上限入札額']) or '-'}</b><small>損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
+    <div class="hl"><label>上限入札額{"（税抜）" if r["入札額の税"].startswith("税抜") else ""}</label><b>{_yen(r['上限入札額']) or '-'}</b><small>損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
     <div><label>想定販売価格</label><b>{_usd(r['想定販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ Net {_usd(r['Net販売価格USD'])}</small></div>
     <div><label>利益（現在価格）</label><b>{_yen(r['利益(現在価格)']) or '-'}</b><small>利益率 {r['利益率%'] if r['利益率%'] is not None else '-'}%</small></div>
     <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料</small></div>
