@@ -165,11 +165,20 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <div class="status" id="keyMsg"></div>
     <p class="s">モデル: Claude Haiku 5.5（1枚 約0.03〜0.05円）。キーはこの iPhone の中だけに保存し、写真と一緒に Anthropic（api.anthropic.com）にだけ送ります。</p>
   </div>
+  <div class="card">
+    <h2>アプリの版</h2>
+    <div class="s">版 <b id="appVer"></b>（新しい機能が届かないときは下のボタン）</div>
+    <button class="btn sec mt" id="reloadApp" type="button">最新版に更新</button>
+  </div>
 </section>
 </main>
 
-<script src="core.js"></script>
-<script src="sync.js"></script>
+<script>
+  // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
+  var APP_VERSION = "2026.11.15.2";
+  var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
+  document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script>');
+</script>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -584,6 +593,8 @@ function showTab(t) {
 for (const b of document.querySelectorAll("nav button")) b.onclick = () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); };
 
 renderHist();
+$("appVer").textContent = APP_VERSION;
+$("reloadApp").onclick = () => { location.replace(location.pathname + "?r=" + Date.now()); };
 renderExChips();
 updateLinks();
 idbGet("data").then((d) => { if (d) useData(d); else if (!lsGet(LS_AUTO, null)) showTab(lsGet(LS_HIST, []).length ? "look" : "set"); })
