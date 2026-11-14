@@ -353,11 +353,13 @@ NOISE_TOKENS = {
     "n", "a", "b", "c", "ab", "aa", "aaa", "s", "sale", "free", "shipping", "used", "ok",
 }
 FLAG_RULES = [
-    ("ジャンク", r"ジャンク|部品取り|現状品|動作未確認|for\s*parts"),
+    ("ジャンク", r"ジャンク|部品取り|現状品|動作未確認|動作不良|不具合|故障|for\s*parts"),
     ("光学難あり", r"カビ|クモリ|曇り|バルサム|ヤケ|傷あり|キズあり|拭き傷"),
     ("動作品", r"動作確認済|動作品|動作良好|完動"),
     ("美品", r"超美品|極上|美品|新品同様|未使用"),
     ("セット品", r"セット|まとめ|おまとめ|大量|\d+\s*点"),
+    ("付属品のみ?", r"(?:ボディ|レンズ|リア|フロント)?キャップ(?!付|あり|有)|ストラップ(?!付|あり|有)|"
+                   r"(?<!付属)ケース(?!付|あり|有)|フード(?!付|あり|有)|カタログ|取扱説明書|説明書のみ|フィルター(?!付)"),
 ]
 
 
@@ -365,8 +367,13 @@ def detect_flags(title: str) -> list[str]:
     return [name for name, pat in FLAG_RULES if re.search(pat, title, re.I)]
 
 
-def title_to_query(title: str) -> str:
+def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
+    t = re.sub(r"(\d)\s*[・･]\s*(\d)", r"\1.\2", t)        # f2・8 → f2.8
+    t = re.sub(r"\b[fF]\s*/\s*(\d)", r"F\1", t)              # f/2.8 → F2.8
+    t = re.sub(r"\b1\s*:\s*(\d(?:\.\d)?)\b", r"F\1", t)      # 1:1.8 → F1.8
+    t = re.sub(r"\b(EF-S|EF|RF|FD|XF|FE)(\d)", r"\1 \2", t, flags=re.I)  # EF135mm → EF 135mm
+    t = re.sub(r"\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b", r"\1 \2", t)  # F2L → F2 L
     t = re.sub(r"[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+", " ", t)
     brand = ""
     for ja, en in BRANDS_JA:
@@ -391,7 +398,7 @@ def title_to_query(title: str) -> str:
         if not any(x.lower() == low for x in tokens):
             tokens.append(tok)
     words = ([brand] if brand else []) + tokens
-    return " ".join(words[:7])
+    return " ".join(words[:max_tokens])
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +464,7 @@ def trim_outliers(values: list[float]) -> list[float]:
 
 
 def _tokens(s: str) -> set[str]:
-    q = title_to_query(s) if re.search(r"[ぁ-んァ-ン一-龥]", s) else s
+    q = title_to_query(s, max_tokens=20)
     q = unicodedata.normalize("NFKC", q).lower()
     q = re.sub(r"(\d)\s*mm", r"\1mm", q)
     q = re.sub(r"\bf\s*/\s*(\d)", r"f\1", q)  # f/1.4 → f1.4
@@ -509,11 +516,11 @@ def read_sales(path: Path | None) -> list[dict]:
     return rows
 
 
-ACCESSORY_RE = re.compile(r"strap|ストラップ|(?<!w/)\bcase\b|ケース|grip|charger|battery|hood only", re.I)
-PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定"}
+ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)
+PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定", "whiteface", "af"}
 
 
-def match_sales(query: str, sales: list[dict], threshold: float = 0.5) -> list[dict]:
+def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[dict]:
     qt = _tokens(query)
     if not qt:
         return []
@@ -532,10 +539,12 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.5) -> list[d
             continue
         # 型番・焦点距離・F値など数字を含む語は、実績側のものが全部一致すること
         digits = {t for t in rt if re.search(r"\d", t)}
-        if not digits or not digits <= qt:
+        if not digits <= qt:
             continue
-        inter = len(qt & rt)
-        score = (inter / len(rt) + inter / len(qt | rt)) / 2
+        if not digits and len(qt & rt) < 2:  # 型番に数字が無い機種（Rolleicord Vb 等）
+            continue
+        # 実績側の語がどれだけ含まれるか（ヤフオクのタイトルは余計な語が多いので片側で見る）
+        score = len(qt & rt) / len(rt)
         if score >= threshold:
             scored.append((score, row))
     # 自分の実績を優先し、無ければ頒布会リストなどの参考データを使う
@@ -637,6 +646,9 @@ def judge(item: Item) -> tuple[str, str]:
         prefix = "ジャンク品: 動作・状態リスクあり。"
     else:
         prefix = ""
+    now = item.current_price_jpy
+    if "付属品のみ?" in item.flags and (now is None or now < c["breakeven_bid_jpy"] * 0.3):
+        return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
     now = item.current_price_jpy
@@ -669,7 +681,8 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
             item.fetch_note += "検索語を作れません（title か ebay_query を入力） "
             continue
 
-        item.history_matches = match_sales(item.ebay_query, sales)
+        # 照合はタイトル全体（検索語は7語に絞っているため）
+        item.history_matches = match_sales(f"{item.ebay_query} {item.title}", sales)
 
         if not offline and fetch_ebay:
             links = ebay_links(item.ebay_query)

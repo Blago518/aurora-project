@@ -11,7 +11,7 @@
 | eBay販売済みリンク | 最近終了した順。取得できれば販売済み価格の中央値と件数 |
 | eBay出品中リンク | 安い順。取得できれば最安値と件数（競合の数） |
 | eBay Product Research | Best Offer込みの実成約を確認する用 |
-| 想定販売価格（USD） | 手入力 ＞ eBay販売済み ＞ 自分の販売実績 の優先順で決定 |
+| 想定販売価格（USD） | 手入力 ＞ eBay販売済み ＞ 自分の販売実績 ＞ 頒布会リスト の優先順で決定。送料$30を引いた Net 販売価格も表示 |
 | 仕入価格 | 現在価格＋国内送料 |
 | eBay手数料・国際送料 | `config.toml` の率で計算 |
 | 利益・利益率 | 今の価格で落札した場合 |
@@ -45,6 +45,23 @@ python3 -m unittest test_bid_analyzer
   - `ship_size`: `small` / `medium` / `large`（国際送料の目安を切り替え）
   - `intl_shipping_jpy`: 国際送料を個別指定
 
+### 過去の販売実績をまとめる（build_sales.py）
+
+古物台帳と頒布会の商品リストから、照合用の `sales.csv` を作ります。
+
+1. Googleスプレッドシート「古物台帳_推奨価格自動更新」の **古物台帳** シートを開き、ファイル → ダウンロード → CSV で保存
+2. 頒布会の商品リスト（xlsx）と一緒に `data/` フォルダに置いて実行
+
+```bash
+python3 build_sales.py --ledger data/古物台帳.csv --hanpu data/頒布会_2026_09.xlsx data/頒布会_2026_10.xlsx -o data/sales.csv
+python3 bid_analyzer.py "Safari Bookmarks.html" --sales data/sales.csv
+```
+
+- 古物台帳: 販売日が入っている行だけを「自分の販売実績」として使います（販売金額$は送料込み）。
+- 頒布会リスト: 販売金額($)を参考相場として使います。自分の実績で一致するものがあればそちらを優先します。
+- 照合ルール: 型番・焦点距離・F値など数字を含む語が一致すること。付属品だけの実績や、チタン・ゴールド・限定・AF/MFの違いは別物として除外。
+- `data/` フォルダは個人データなので Git には含めません。
+
 ### 過去の販売実績（--sales）
 
 - eBay Seller Hub → 注文 → **注文レポートをダウンロード** したCSVをそのまま読めます（`Item Title` / `Sold For` / `Item Number` 列）。
@@ -52,7 +69,7 @@ python3 -m unittest test_bid_analyzer
 
 ## 設定（config.toml）
 
-為替（自動取得できなければ `usd_jpy`）、eBay手数料率、広告率、国際送料、判定基準（最低利益額・利益率・想定価格に使う分位）を変更できます。
+為替（自動取得できなければ `usd_jpy`）、eBay手数料率、広告率、国際送料、判定基準（最低利益額（既定3,000円）・利益率（既定10%）・想定価格に使う分位）を変更できます。
 消費税還付を利益に含める場合は `include_consumption_tax_refund = true`。
 
 ## 注意
