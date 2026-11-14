@@ -272,25 +272,64 @@ const EX_PRESETS = [["strap", "ストラップ"], ["case", "ケース"], ["cap",
   ["manual", "説明書"], ["box", "箱"], ["adapter", "アダプター"], ["battery", "電池"], ["charger", "充電器"],
   ["lens", "レンズ付き"], ["parts", "ジャンク"], ["lot", "まとめ売り"]];
 const ex = lsGet(LS_EX, { on: [], custom: "" });
+if (ex.autoLens === undefined) ex.autoLens = true;
 $("exCustom").value = ex.custom || "";
 function renderExChips() {
-  $("exChips").innerHTML = EX_PRESETS.map(([w, ja]) =>
-    `<button class="chip" data-ex="${w}" aria-pressed="${ex.on.includes(w)}">${w} <span class="s">${ja}</span></button>`).join("");
+  $("exChips").innerHTML = `<button class="chip" data-ex="@lens" aria-pressed="${ex.autoLens}">他の焦点距離・F値 <span class="s">レンズのとき</span></button>` +
+    EX_PRESETS.map(([w, ja]) =>
+      `<button class="chip" data-ex="${w}" aria-pressed="${ex.on.includes(w)}">${w} <span class="s">${ja}</span></button>`).join("");
+}
+
+// レンズの「他の焦点距離・F値」の除外語。消してはいけない語が消える語は使わない:
+// ・35mm（説明文の「35mm フィルム」）、55mm・58mm（フィルター径）は除外しない
+// ・整数のF値（F2・F4…）は除外しない（-2 は型番の 2、-f4 は「for Nikon F4」などボディ名も消すため）
+const LENS_FOCALS = [14, 15, 16, 17, 18, 20, 21, 24, 25, 28, 40, 45, 50, 60, 75, 80, 85, 90, 100, 105, 110, 135, 150, 180, 200, 300, 400];
+const LENS_FNUMS = ["0.95", "1.2", "1.4", "1.7", "1.8", "2.0", "2.5", "2.8", "3.5", "4.5", "5.6"];
+function lensSpec(base) {
+  const t = base.toLowerCase();
+  const focals = [...t.matchAll(/(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?\s*mm\b/g)];
+  const fnums = [...t.matchAll(/(?:\bf\s*\/?\s*|\b1\s*:\s*)(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?/g)];
+  if (!focals.length || (!fnums.length && !/\blens\b/.test(t))) return null;
+  const nums = (ms) => ms.flatMap((m) => [m[1], m[2]]).filter(Boolean).map(Number);
+  return { focals: nums(focals), prime: focals.length === 1 && !focals[0][2], fnums: nums(fnums) };
+}
+function lensExcludes(base) {
+  const s = lensSpec(base);
+  if (!s) return [];
+  // 長さの上限で切るときに残す順: F値 → 調べたい焦点距離に近い順
+  const out = [];
+  if (s.fnums.length) for (const v of LENS_FNUMS) if (!s.fnums.includes(Number(v))) out.push("f" + v, v);
+  if (s.prime) {
+    const me = s.focals[0];
+    out.push(...LENS_FOCALS.filter((f) => f !== me).sort((a, b) => Math.abs(Math.log(a / me)) - Math.abs(Math.log(b / me))).map((f) => f + "mm"));
+  }
+  return out;
 }
 function excludeWords(base) {
   const inBase = new Set(base.toLowerCase().split(/\s+/));
+  const isLens = !!lensSpec(base);
   const custom = String(ex.custom || "").normalize("NFKC").split(/[\s,、]+/).map((w) => w.replace(/^-+/, "").toLowerCase());
-  return [...new Set(ex.on.concat(custom))].filter((w) => w && /^[\x21-\x7E]+$/.test(w) && !inBase.has(w));
+  const auto = ex.autoLens ? lensExcludes(base) : [];
+  return [...new Set(ex.on.filter((w) => !(isLens && w === "lens")).concat(custom, auto))]
+    .filter((w) => w && /^[\x21-\x7E]+$/.test(w) && !inBase.has(w));
 }
 $("exChips").onclick = (e) => {
   const b = e.target.closest("[data-ex]"); if (!b) return;
   const w = b.dataset.ex;
-  ex.on = ex.on.includes(w) ? ex.on.filter((x) => x !== w) : ex.on.concat(w);
+  if (w === "@lens") ex.autoLens = !ex.autoLens;
+  else ex.on = ex.on.includes(w) ? ex.on.filter((x) => x !== w) : ex.on.concat(w);
   lsSet(LS_EX, ex); renderExChips(); updateLinks(); renderRecs();
 };
 $("exCustom").addEventListener("input", () => { ex.custom = $("exCustom").value; lsSet(LS_EX, ex); updateLinks(); renderRecs(); });
 
-const withEx = (base) => (base ? [base].concat(excludeWords(base).map((w) => "-" + w)).join(" ") : "");
+// eBay の検索語が長すぎると後ろが切れるので、300文字に収まる分だけ除外語を付ける（自分で選んだ語が優先）
+const MAX_QUERY = 300;
+function withEx(base) {
+  if (!base) return "";
+  let q = base;
+  for (const w of excludeWords(base)) if (q.length + w.length + 2 <= MAX_QUERY) q += " -" + w;
+  return q;
+}
 let queryTouched = false;
 function updateLinks() {
   const q = withEx($("query").value.trim());
