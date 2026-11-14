@@ -4,9 +4,11 @@
 "use strict";
 
 function parseSetupCode(code) {
-  const m = String(code || "").trim().match(/^AURORA1:([A-Za-z0-9_-]+)$/);
+  // メモ経由のコピーで混ざる改行・空白・見えない文字（ゼロ幅スペース等）を除き、AURORA1: の部分だけを読む
+  const t = String(code || "").normalize("NFKC").replace(/[\s\u200B-\u200D\u2060\uFEFF]+/g, "");
+  const m = t.match(/AURORA1:([A-Za-z0-9_\-+/]+)/i);
   if (!m) return null;
-  let s = m[1].replace(/-/g, "+").replace(/_/g, "/");
+  let s = m[1].replace(/=+$/, "").replace(/-/g, "+").replace(/_/g, "/");
   while (s.length % 4) s += "=";
   try {
     const bytes = Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -34,4 +36,14 @@ async function fetchStore(cfg) {
   return decryptStore(await res.text(), cfg.pass);
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { parseSetupCode, decryptStore };
+// 設定コードが読めなかったときの説明（何を貼ったのか）
+function setupCodeHint(code) {
+  const t = String(code || "").trim();
+  if (!t) return "空です。Mac の setup のあと、欄を長押し →［ペースト］してください";
+  if (/^gh[pousr]_/.test(t)) return "これは GitHub のトークンです。setup の最後にクリップボードに入る AURORA1: で始まるコードを貼ってください";
+  if (/^sk-ant-/.test(t)) return "これは Claude の APIキーです（③の欄に入れるもの）";
+  if (!/AURORA1/i.test(t)) return `AURORA1: で始まるコードではありません（貼られたのは「${t.slice(0, 8)}…」で始まる${t.length}文字）`;
+  return "コードが途中で切れているようです。もう一度コピーして貼ってください";
+}
+
+if (typeof module !== "undefined" && module.exports) module.exports = { parseSetupCode, decryptStore, setupCodeHint };

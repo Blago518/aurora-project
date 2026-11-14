@@ -46,6 +46,17 @@ class Encryption(unittest.TestCase):
                               ".then(()=>process.exit(0),()=>process.exit(3))"], capture_output=True)
         self.assertEqual(bad.returncode, 3)  # 合言葉が違えば読めない
 
+    def test_setup_code_tolerates_paste(self):
+        """メモ経由のコピーで混ざる改行・見えない文字・前後の文があっても読める."""
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        c = sp.setup_code("https://gist.githubusercontent.com/u/abc/raw/store_data.enc", "p-1")
+        variants = [c, "\n " + c + " \n", c[:20] + "\n" + c[20:], c[:10] + "\u200b" + c[10:], "設定コード: " + c + "。"]
+        js = (f"const s=require({json.dumps(str(STORE / 'sync.js'))});"
+              f"console.log(JSON.stringify({json.dumps(variants, ensure_ascii=False)}.map(v=>(s.parseSetupCode(v)||{{}}).pass)))")
+        out = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out, ["p-1"] * len(variants))
+
     def test_setup_code_rejects_garbage(self):
         if not shutil.which("node"):
             self.skipTest("node がありません")

@@ -138,7 +138,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <h2>① 自動更新（おすすめ）</h2>
     <div id="autoInfo" class="s">未設定。設定すると、アプリを開くたびに最新の相場データを自動で読み込みます（②の手作業が不要）。</div>
     <label for="autoCode">設定コード（AURORA1: で始まる）</label>
-    <input id="autoCode" type="password" placeholder="Mac の store_publish.py setup で表示されたコードを貼り付け" autocomplete="off" autocapitalize="off">
+    <input id="autoCode" type="text" placeholder="AURORA1: で始まるコードを貼り付け" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <div class="grid2 mt">
       <button class="btn" id="autoSave" type="button">保存して読み込む</button>
       <button class="btn sec" id="autoDel" type="button">解除</button>
@@ -234,7 +234,7 @@ async function autoUpdate(manual) {
 }
 $("autoSave").onclick = () => {
   const cfg = parseSetupCode($("autoCode").value);
-  if (!cfg) { $("autoMsg").className = "status err"; $("autoMsg").textContent = "設定コードが違います（AURORA1: で始まる1行を全部貼り付け）"; return; }
+  if (!cfg) { $("autoMsg").className = "status err"; $("autoMsg").textContent = "設定コードを読めません: " + setupCodeHint($("autoCode").value); return; }
   lsSet(LS_AUTO, cfg); $("autoCode").value = "";
   autoUpdate(true);
 };
