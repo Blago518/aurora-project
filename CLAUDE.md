@@ -20,7 +20,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `extension/` | 生成した Chrome拡張機能（相場データ入り） | **しない** |
 | `reports/` | 鑑定レポート（HTML/CSV/MD） | **しない** |
 | `.claude/` | ルール・手順書・担当者 | する（事業の数字は書かない） |
-| `index.html` ほか | 店舗仕入れ用の相場リサーチWebアプリ（GitHub Pages。iPhoneのホーム画面から使うので移動しない） | する |
+| `ebay-auth.html`・`privacy.html` | eBay API の許可後の戻り先とプライバシーポリシー（GitHub Pages で公開。eBay に URL を登録済みなので移動・削除しない） | する |
 
 ## プログラム（tools/）
 | ファイル | 役割 |
