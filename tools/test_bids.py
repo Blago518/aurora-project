@@ -69,5 +69,21 @@ class Flow(unittest.TestCase):
         self.assertTrue(any("入札がまだ少ない" in t for t in tips))
 
 
+class Aucfan(unittest.TestCase):
+    def test_import_snipes(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            dl, log = d / "dl", d / "bid_log.csv"
+            dl.mkdir()
+            br._write([dict(ROW)], log)
+            (dl / "aurora_snipes.csv").write_text(
+                'auction_id,title,max_bid,current,seen_at\n"a1","Nikon FM2","21000","15000","2026-11-15T01:00:00Z"\n'
+                '"x9","SONY FE 35mm F1.8","12800","39000","2026-11-15T01:00:00Z"\n', encoding="utf-8")
+            self.assertEqual(br.import_aucfan_snipes(dl, log), 1)
+            rows = {r["auction_id"]: r for r in br._read(log)}
+        self.assertEqual(rows["a1"]["max_bid"], "21000")  # オークファンで変えた入札設定に合わせる
+        self.assertEqual(rows["x9"]["max_bid"], "12800")
+
+
 if __name__ == "__main__":
     unittest.main()

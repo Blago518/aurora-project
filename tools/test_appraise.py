@@ -308,7 +308,9 @@ class NoScraping(unittest.TestCase):
         """出品中の相場は公式 Browse API（api.ebay.com）だけ。www.ebay.com のページは取りに行かない."""
         bg = (Path(ba.__file__).parent / "extension_background.js").read_text(encoding="utf-8")
         hosts = set(__import__("re").findall(r"https://([a-z.]+)/", bg))
-        self.assertEqual(hosts, {"api.ebay.com"})
+        # eBay で通信するのは公式 API だけ（tools.aucfan.com は入札予約のタブを開くだけで、読み取りはしない）
+        self.assertEqual({h for h in hosts if "ebay" in h}, {"api.ebay.com"})
+        self.assertTrue(hosts <= {"api.ebay.com", "tools.aucfan.com"}, hosts)
 
 
 class ExtensionBrowse(unittest.TestCase):
@@ -333,7 +335,7 @@ class ExtensionBrowse(unittest.TestCase):
         self.assertNotIn("host_permissions", man)  # キーが無ければ eBay への通信権限は付けない
         # background.js は相場メモの自動保存（ダウンロード/aurora_price_memo.csv）のため常に入る。キーは入らない
         self.assertIn("const APP_ID = null;", bg)
-        self.assertEqual(man["permissions"], ["downloads"])
+        self.assertEqual(man["permissions"], ["downloads", "storage"])
 
 
 if __name__ == "__main__":

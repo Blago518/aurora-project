@@ -68,6 +68,29 @@ def import_extension_bids(downloads: Path | None = None, dest: Path | None = Non
     return added
 
 
+def import_aucfan_snipes(downloads: Path | None = None, dest: Path | None = None) -> int:
+    """オークファンの予約一覧（拡張機能が保存した aurora_snipes.csv）を入札の記録に足す. 追加件数を返す."""
+    downloads = downloads or Path.home() / "Downloads"
+    dest = dest or LOG
+    files = sorted(downloads.glob("aurora_snipes*.csv"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        return 0
+    rows = {r["auction_id"]: r for r in _read(dest)}
+    added = 0
+    for s in _read(files[-1]):
+        aid = (s.get("auction_id") or "").strip()
+        if not aid:
+            continue
+        if aid not in rows:
+            rows[aid] = {"auction_id": aid, "title": s.get("title", ""), "max_bid": s.get("max_bid", ""),
+                         "pay_max": s.get("max_bid", ""), "bid_at": s.get("seen_at", ""), "tentative": "0"}
+            added += 1
+        elif not rows[aid].get("result") and s.get("max_bid"):
+            rows[aid]["max_bid"] = s["max_bid"]  # オークファンで入札設定を変えたら合わせる
+    _write(list(rows.values()), dest)
+    return added
+
+
 def _num(v) -> float | None:
     try:
         return float(v)
@@ -208,7 +231,7 @@ def write_report(rows: list[dict], path: Path | None = None) -> dict:
 def run(cfg: dict | None = None, fx: float | None = None) -> dict | None:
     cfg = cfg or ba.load_config(None)
     fx = fx or float(cfg["fx"]["usd_jpy"])
-    added = import_extension_bids()
+    added = import_extension_bids() + import_aucfan_snipes()
     rows = _read(LOG)
     if not rows:
         print("入札の結果: まだ記録がありません（拡張機能で入札したら［入札した］を押す）", file=sys.stderr)
