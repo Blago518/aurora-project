@@ -17,9 +17,21 @@ open reports
 ```bash
 python3 tools/build_reference_prices.py   # data/ledger.csv（古物台帳）+ data/hanpukai_*.xlsx → data/reference_prices.csv
 python3 tools/build_extension.py          # → extension/（chrome://extensions で ↻）
+python3 tools/build_store.py              # → 店舗アプリのデータ（iCloud Drive › aurora › store_data.json）
 python3 tools/build_knowledge.py          # → knowledge/相場/・knowledge/機種/
 python3 -m unittest discover -s tools     # テスト
 ```
+
+## 店舗リサーチ（iPhone アプリ）
+`store/`（GitHub Pages: https://blago518.github.io/aurora-project/store/ ）。お店で使う。
+- 調べる: 商品名（または📷で値札を撮影）→ 判定・「この値段以下なら買い（税込）」・eBay 販売済み／出品中（高い順）／Product Research
+- おすすめ: メーカー＋カメラ/レンズ → 過去の平均利益×販売回数の上位20機種
+- 判定は拡張機能と同じ（`store/core.js` は `extension_template.js` の `@core-start`〜`@core-end` のコピー。直接編集しない）
+- 店頭は国内送料0円・値札は税込の支払額として計算
+- 値札読み取りは Claude API（Haiku 5.5）。APIキーと相場データは iPhone の中だけに保存
+
+初回: Safari で上のURL → 共有 → ホーム画面に追加 → 設定タブで store_data.json と APIキーを入れる。
+データ更新: `python3 tools/build_store.py` → アプリの設定タブでファイルを選び直す。
 
 ## Chrome拡張機能を入れる（初回）
 1. `chrome://extensions` → 右上「デベロッパー モード」をオン

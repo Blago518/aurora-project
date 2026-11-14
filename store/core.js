@@ -1,0 +1,196 @@
+// 自動生成ファイル: tools/build_store.py が tools/extension_template.js の @core 部分をコピーしたもの。
+// 直接編集しない（拡張機能と判定を一致させるため）。データは入っていない。
+function makeCore(DATA) {
+  "use strict";
+  const C = DATA.consts;
+  // ------------------------------------------------------------------ 文字列処理（appraise.py と同じ規則）
+  const BRAND_SET = new Set(Object.values(C.brandsEn).map((b) => b.toLowerCase()));
+  const NOISE = new Set(C.noise), THIRD = new Set(C.thirdParty), COLORS = new Set(C.colors);
+  const GENS = new Set(C.generations), PREMIUM = new Set(C.premium);
+  const ACCESSORY_RE = new RegExp(C.accessoryRe, "i");
+  const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
+  const KANTEI = DATA.kantei.map((r) => ({ ...r, re: r.patterns.map((p) => { try { return new RegExp(p, "i"); } catch (e) { return null; } }) }));
+
+  function titleToQuery(title, maxTokens = 7) {
+    let t = title.normalize("NFKC");
+    t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
+    t = t.replace(/\d+円[~〜～]?/g, " ");
+    t = t.replace(/\b[wW]\s*\/\s*/g, " ");
+    t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
+    t = t.replace(/[①-⑳]/g, " ");
+    t = t.replace(/非\s*-?\s*A[iI](?![-sS])/g, " nonAi ");
+    t = t.replace(/[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b/g, " ");
+    t = t.replace(/(\d)\s*[・･]\s*(\d)/g, "$1.$2");
+    t = t.replace(/\b[fF]\s*\/\s*(\d)/g, "F$1");
+    t = t.replace(/\b1\s*:\s*(\d(?:\.\d)?)\b/g, "F$1");
+    t = t.replace(/\b(EF-S|EF|RF|FD|XF|FE)(\d)/gi, "$1 $2");
+    t = t.replace(/\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b/g, "$1 $2");
+    t = t.replace(/[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+/g, " ");
+    let brand = "";
+    const allBrands = [];
+    for (const [ja, en] of C.brandsJa) {
+      if (t.includes(ja)) { brand = brand || en; allBrands.push(en); t = t.split(ja).join(" "); }
+    }
+    for (const [ja, en] of C.wordsJa) t = t.split(ja).join(` ${en} `);
+    const tokens = [];
+    for (const m of t.matchAll(/[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*/g)) {
+      const tok = m[0];
+      const low = tok.toLowerCase().replace(/^[.\-]+|[.\-]+$/g, "");
+      if (!low || NOISE.has(low)) continue;
+      if (/^\d+$/.test(low) && ((low.length < 2 && maxTokens <= 7) || low.length >= 4)) continue;
+      if (/^no\.?\d+$/.test(low)) continue;
+      const line = low.replace(/^[a-z]\./, "");
+      if (C.lensLines[line]) brand = brand || C.lensLines[line];
+      if (C.brandsEn[low]) {
+        brand = brand || C.brandsEn[low];
+        allBrands.push(C.brandsEn[low]);
+        if (C.brandsEn[low] !== "Carl") continue;
+      }
+      if (!tokens.some((x) => x.toLowerCase() === low)) tokens.push(tok);
+    }
+    const makers = allBrands.filter((b) => C.lensMakers.includes(b.toLowerCase()));
+    if (makers.length) brand = makers[0];
+    const toks = maxTokens <= 7 ? tokens.map((x) => (x === "nonAi" ? "Non-Ai" : x)) : tokens;
+    const words = (brand ? [brand] : []).concat(toks);
+    if (maxTokens > 7) { for (const b of new Set(allBrands)) if (b !== brand) words.push(b); return words.join(" "); }
+    return words.slice(0, maxTokens).join(" ");
+  }
+
+  function tokensOf(s) {
+    let q = titleToQuery(s, 20).normalize("NFKC").toLowerCase();
+    q = q.replace(/(\d)\s*mm/g, "$1mm").replace(/\bf\s*\/\s*(\d)/g, "f$1").replace(/[()\[\]+&]/g, " ");
+    const out = new Set();
+    for (let t of q.split(/[\s/,]+/)) {
+      t = t.replace(/^[.\-]+|[.\-]+$/g, "");
+      if (!t || NOISE.has(t) || t === "body" || t === "lens" || t === "本体") continue;
+      if (/^\d{1,2}\.\d$/.test(t)) t = "f" + t;
+      if (t === "ais" || t === "ai-s") t = "ai-s";
+      out.add(t);
+    }
+    return out;
+  }
+
+  const has = (set, pred) => { for (const x of set) if (pred(x)) return true; return false; };
+  const sub = (a, b) => { for (const x of a) if (!b.has(x)) return false; return true; };
+  const inter = (a, b) => { let n = 0; for (const x of a) if (b.has(x)) n++; return n; };
+  const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
+
+  function detectFlags(title) {
+    return FLAG_RES.filter(([, re]) => re.test(title)).map(([n]) => n);
+  }
+
+  function matchRefs(query, refs) {
+    const qt = tokensOf(query);
+    if (!qt.size) return [];
+    const qmm = has(qt, (t) => t.endsWith("mm"));
+    const qAcc = ACCESSORY_RE.test(query);
+    const scored = [];
+    for (const r of refs) {
+      const rt = r.tset || (r.tset = new Set(r.tokens));
+      if ([...qt].some((t) => THIRD.has(t) && !rt.has(t))) continue;
+      const rb = [...rt].filter((t) => BRAND_SET.has(t));
+      if (rb.length && !rb.some((t) => qt.has(t))) continue;
+      if (qmm !== has(rt, (t) => t.endsWith("mm"))) continue;
+      if (r.acc && !qAcc) continue;
+      if (pick(qt, PREMIUM) !== pick(rt, PREMIUM)) continue;
+      if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
+      if (pick(qt, GENS) !== pick(rt, GENS)) continue;
+      const digits = new Set([...rt].filter((t) => /\d/.test(t)));
+      if (!sub(digits, qt)) continue;
+      if (!digits.size) {
+        const core = new Set([...rt].filter((t) => !COLORS.has(t)));
+        if (![...core].some((t) => !BRAND_SET.has(t)) || !sub(core, qt)) continue;
+      }
+      const score = inter(qt, rt) / rt.size;
+      if (score >= 0.6) scored.push([score, r]);
+    }
+    for (const tier of [0, 1, 2]) {
+      const c = scored.filter(([, r]) => r.tier === tier);
+      if (c.length) return c.sort((a, b) => b[0] - a[0]).slice(0, 10).map(([, r]) => r);
+    }
+    return [];
+  }
+
+  function matchKantei(title) {
+    const t = title.normalize("NFKC").toLowerCase();
+    const qt = tokensOf(title);
+    const qmm = has(qt, (x) => x.endsWith("mm"));
+    for (const r of KANTEI) {
+      if (!r.re.every((re) => re && re.test(t))) continue;
+      const rt = new Set(r.tokens);
+      if ([...qt].some((x) => THIRD.has(x) && !rt.has(x))) continue;
+      if (qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) continue;
+      if (qmm !== has(rt, (x) => x.endsWith("mm"))) continue;
+      const model = [...rt].filter((x) => /\d/.test(x) && !x.endsWith("mm") && !x.startsWith("f"));
+      if (model.length && !model.every((x) => qt.has(x))) continue;
+      return [r];
+    }
+    return [];
+  }
+
+  // ------------------------------------------------------------------ 利益計算
+  function roundDown(p) {
+    for (const [limit, step] of C.increments) if (p < (limit || Infinity)) return Math.floor(p / step) * step;
+    return Math.floor(p);
+  }
+
+  function calculate(it, usd, fx) {
+    const g = DATA.cfg;
+    const rev = usd + g.buyerShippingUsd;
+    const fees = rev * g.feePct / 100 + g.perOrderUsd;
+    const net = (rev - fees) * fx * (1 - g.convLossPct / 100);
+    const revJpy = rev * fx;
+    const dom = it.ship == null ? g.defaultDomestic : it.ship;
+    const intl = Math.round(g.deductionUsd * fx);
+    const tm = it.tax ? 1 + g.storeTaxPct / 100 : 1;  // ストアは入札が税抜、支払いは×1.1
+    const k = tm * (1 - g.refundRatio);
+    const fixed = net - dom - intl - g.packing;
+    const maxBid = Math.max(0, roundDown(Math.min((fixed - g.minProfit) / k, (fixed - g.minMarginPct / 100 * revJpy) / k)));
+    const be = Math.max(0, roundDown(fixed / k));
+    const out = { tax: !!it.tax, maxBid, breakeven: be, fees: Math.round(fees * fx), intl, dom, net: Math.round(net), netUsd: usd - g.deductionUsd };
+    if (it.price != null) {
+      out.bidNow = it.price / tm;
+      const p = fixed - out.bidNow * k;
+      out.profit = Math.round(p);
+      out.margin = Math.round((p / revJpy) * 1000) / 10;
+    }
+    return out;
+  }
+
+  function judge(it) {
+    const c = it.calc;
+    if (!c) return ["要確認", "相場なし"];
+    const pre = it.flags.includes("ジャンク") ? "ジャンク・" : "";
+    if (it.flags.some((f) => f === "付属品のみ?" || f === "アダプター等" || f === "セット品"))
+      return ["要確認", pre + it.flags.filter((f) => f !== "ジャンク").join("・") + "の可能性"];
+    if (it.flags.includes("光学難あり")) return ["要確認", pre + "光学難あり（方針では避ける）"];
+    if (c.maxBid <= 0) return ["×", pre + "基準を満たす入札額なし"];
+    if (it.price == null) return ["要確認", pre + "現在価格不明"];
+    if (c.bidNow <= c.maxBid * 0.8) return ["◎", pre + "余裕あり"];
+    if (c.bidNow <= c.maxBid) return ["○", pre + "上限に近い"];
+    return ["×", pre + "上限超過"];
+  }
+
+  function modelKey(title) {
+    const toks = titleToQuery(title, 20).split(" ").filter(Boolean);
+    const brand = toks.length && BRAND_SET.has(toks[0].toLowerCase()) ? toks[0] : "";
+    const rest = brand ? toks.slice(1) : toks;
+    const keyToks = rest.filter((t) => /\d/.test(t)).slice(0, 3);
+    const label = (brand ? [brand] : []).concat(keyToks.length ? keyToks : rest.slice(0, 2)).join(" ");
+    const norm = label.toLowerCase().split(" ").map((t) => {
+      if (/^f\/?\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t)) t = t.replace(/^f\/?/, "");
+      return /^\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t) && t.includes(".") ? "f" + t : t;
+    });
+    return [label, norm.join(" ")];
+  }
+
+  const ebay = (q) => ({
+    sold: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&LH_Sold=1&LH_Complete=1&_sop=16&_ipg=120",
+    now: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&_sop=16&_ipg=120",
+    pr: "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=" + encodeURIComponent(q) + "&dayRange=90&tabName=SOLD",
+  });
+
+  const median = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown };
+}
+if (typeof module !== "undefined" && module.exports) module.exports = { makeCore };

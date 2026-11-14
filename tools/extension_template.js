@@ -17,6 +17,7 @@
   const C = DATA.consts;
   const LS_MEMO = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
 
+  // @core-start（ここから @core-end までは store/core.js にそのままコピーされる。tools/build_store.py）
   // ------------------------------------------------------------------ 文字列処理（appraise.py と同じ規則）
   const BRAND_SET = new Set(Object.values(C.brandsEn).map((b) => b.toLowerCase()));
   const NOISE = new Set(C.noise), THIRD = new Set(C.thirdParty), COLORS = new Set(C.colors);
@@ -185,15 +186,6 @@
     return ["×", pre + "上限超過"];
   }
 
-  // ------------------------------------------------------------------ 相場メモ（このブラウザに保存）
-  const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
-  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-  function memoRefs() {
-    return Object.entries(load(LS_MEMO, {})).map(([title, usd]) => ({
-      title, price: Number(usd), tier: 0, source: "相場メモ", tokens: [...tokensOf(title)], acc: false,
-    }));
-  }
-
   function modelKey(title) {
     const toks = titleToQuery(title, 20).split(" ").filter(Boolean);
     const brand = toks.length && BRAND_SET.has(toks[0].toLowerCase()) ? toks[0] : "";
@@ -212,6 +204,18 @@
     now: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&_sop=16&_ipg=120",
     pr: "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=" + encodeURIComponent(q) + "&dayRange=90&tabName=SOLD",
   });
+
+  const median = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+  // @core-end
+
+  // ------------------------------------------------------------------ 相場メモ（このブラウザに保存）
+  const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
+  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  function memoRefs() {
+    return Object.entries(load(LS_MEMO, {})).map(([title, usd]) => ({
+      title, price: Number(usd), tier: 0, source: "相場メモ", tokens: [...tokensOf(title)], acc: false,
+    }));
+  }
 
   // ------------------------------------------------------------------ ページの出品データ
   function listingFromNextData(json) {
@@ -267,7 +271,6 @@
     }
     return items;
   }
-  const median = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
 
   // ------------------------------------------------------------------ 表示
   const yen = (v) => (v == null ? "-" : v.toLocaleString("ja-JP") + "円");
