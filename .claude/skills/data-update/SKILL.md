@@ -16,7 +16,7 @@ description: 古物台帳・頒布会リスト・Chatworkの販売報告を取�
    - **頒布会**: 商品リストの xlsx（シート「カメラ商品一覧」）をダウンロードフォルダに保存 → `data/hanpukai_YYYY-MM.xlsx`
    - CPaSS・オークレボの明細 → `data/statements/`（import_downloads.py）
    - 拡張機能で［直す］［登録］した相場（`aurora_price_memo.csv`）→ `data/price_memo.csv`
-2. **Chatwork**: 販売報告と、添付された頒布会リスト（xlsx）を公式 API で取り込む（`chatwork_sync.py`。メッセージは最新100件まで）
+2. **Chatwork**: 販売報告を公式 API で取り込む（`chatwork_sync.py`。メッセージは最新100件まで。頒布会リストは Excel でダウンロードフォルダへ → 1. で取り込み）
 3. 作り直す: `build_reference_prices.py` → `build_extension.py` → `build_store.py` → `build_knowledge.py`
 
 ユーザーに頼むこと（コマンドは毎回そのまま貼れる形で示す）:

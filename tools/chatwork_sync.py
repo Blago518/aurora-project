@@ -3,7 +3,8 @@
 
 スクレイピングではなく Chatwork の公式 API（https://api.chatwork.com/v2）だけを使う。
 API トークンはこのファイルにもチャットにも書かず、Mac のキーチェーンに保存する（keychain.py）。
-頒布会の商品リスト（xlsx。シート「カメラ商品一覧」）がルームに添付されたら、それも data/hanpukai_YYYY-MM.xlsx に取り込む。
+頒布会の商品リスト（xlsx。シート「カメラ商品一覧」）が専用のルームに添付される場合は、それも data/hanpukai_YYYY-MM.xlsx に取り込む
+（setup でそのルームを指定したときだけ。Excel で受け取るなら、ダウンロードフォルダに置けば update_all.py が取り込む）。
 API で読めるのは、そのルームの最新100件のメッセージまで。こまめに実行すれば取りこぼさない（update_all.py が毎回実行する）。
 100件より前の報告はスクショを Claude に送って取り込む（.claude/skills/chatwork-import）。
 
@@ -232,8 +233,10 @@ def sync(dry_run: bool = False) -> int:
         print(f"  + {r['date']} ${r['sold_price_usd']} {r['title'][:60]}（{r['source']}）", file=sys.stderr)
     print(f"Chatwork: 販売報告 {len(rows)}件を確認、新しく {len(new)}件を{'追記予定' if dry_run else '追記'}"
           f"（{OUT.relative_to(ROOT)}）", file=sys.stderr)
-    # 頒布会の商品リスト（添付の xlsx）
-    froom = secret_get("files_room") or room
+    # 頒布会の商品リスト（添付の xlsx）。専用のルームを設定したときだけ（日報チャットの添付は見ない）
+    froom = secret_get("files_room")
+    if not froom or froom == room:
+        return len(new)
     try:
         got = sync_files(token, froom, dry_run=dry_run)
         if got:
@@ -252,11 +255,11 @@ def cmd_setup() -> None:
     if not token or not m:
         print("トークンかルームの URL が読み取れませんでした。もう一度実行してください。")
         sys.exit(1)
-    furl = input("頒布会の商品リスト（xlsx）が添付されるルームの URL（日報チャットと同じなら何も入れずに Enter）: ").strip()
+    furl = input("頒布会の商品リスト（xlsx）が添付されるルームの URL（Chatwork で受け取っていなければ何も入れずに Enter）: ").strip()
     fm = re.search(r"rid(\d+)", furl) or re.fullmatch(r"(\d+)", furl)
     secret_set("token", token)
     secret_set("room", m.group(1))
-    secret_set("files_room", fm.group(1) if fm else m.group(1))
+    secret_set("files_room", fm.group(1) if fm else "")  # 空＝添付は見ない（頒布会の Excel はダウンロードフォルダに置けば update_all.py が取り込む）
     print("保存しました。試しに読み込みます…")
     sync(dry_run=True)
 
