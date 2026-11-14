@@ -956,6 +956,53 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
     item.calc = calculate(item, cfg, fx)
 
 
+MEMO_DOWNLOAD = "aurora_price_memo.csv"  # 拡張機能が「直す」「登録」のたびに ダウンロード/ に上書き保存する
+MEMO_FIELDS = ["title", "sold_price_usd", "source", "memo"]
+
+
+def import_extension_memo(downloads: Path | None = None, dest: Path | None = None) -> tuple[int, int]:
+    """拡張機能が保存した相場メモ（ダウンロード/aurora_price_memo.csv）を data/price_memo.csv に取り込む.
+
+    同じ機種（title）の相場メモは金額を新しい値に更新し、無ければ追加する。相場メモ以外の行はそのまま残す。
+    戻り値: (追加した件数, 更新した件数)。ファイルが無ければ (0, 0)。
+    """
+    downloads = downloads or Path.home() / "Downloads"
+    dest = dest or DATA / "price_memo.csv"
+    files = sorted(downloads.glob("aurora_price_memo*.csv"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        return 0, 0
+    new = {}
+    for r in csv.DictReader(files[-1].read_text(encoding="utf-8-sig").splitlines()):
+        t, v = (r.get("title") or "").strip(), _float_or_none(r.get("sold_price_usd"))
+        if t and v:
+            new[t] = v
+    rows, fields = [], list(MEMO_FIELDS)
+    if dest.exists():
+        rd = csv.DictReader(dest.read_text(encoding="utf-8-sig").splitlines())
+        fields = list(rd.fieldnames or MEMO_FIELDS) + [f for f in MEMO_FIELDS if f not in (rd.fieldnames or [])]
+        rows = list(rd)
+    added = updated = 0
+    today = datetime.now().strftime("%Y-%m-%d")
+    for r in rows:
+        t = (r.get("title") or "").strip()
+        if t in new and is_memo(r):
+            if _float_or_none(r.get("sold_price_usd")) != new[t]:
+                r["sold_price_usd"], r["memo"] = f"{new[t]:g}", f"拡張機能で直した {today}"
+                updated += 1
+            del new[t]
+    for t, v in new.items():
+        rows.append({"title": t, "sold_price_usd": f"{v:g}", "source": "相場メモ", "memo": f"拡張機能で直した {today}"})
+        added += 1
+    if added or updated:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        print(f"相場メモを取り込み: 追加 {added}件・更新 {updated}件（{files[-1].name} → {dest.name}）", file=sys.stderr)
+    return added, updated
+
+
 def is_memo(row: dict) -> bool:
     """相場メモ（手で直した相場）. 過去データより優先する（extension_template.js の isMemo と同じ）."""
     return str(row.get("source") or "").startswith("相場メモ")
@@ -1278,6 +1325,7 @@ def main(argv: list[str] | None = None) -> int:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1
     if args.sales is None:
+        import_extension_memo()
         args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
                       if p.exists()]
     if args.kantei is None:

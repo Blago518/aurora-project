@@ -13,6 +13,10 @@ python3 tools/appraise.py          # data/search_urls.txt の検索URLを全部�
 open reports
 ```
 
+## 拡張機能で相場を直したとき
+各行の［直す］（送料込み$を入れる。$30引いて計算）や［登録］を押すと、その相場メモが `ダウンロード/aurora_price_memo.csv` に自動保存される。
+`build_store.py`・`build_extension.py`・`appraise.py` を実行すると `data/price_memo.csv` に自動で取り込まれ（同じ機種は金額を更新）、スマホにも反映される。直した相場は同じ機種の過去データより優先される。
+
 ## データを更新したとき
 ```bash
 python3 tools/build_reference_prices.py   # data/ledger.csv（古物台帳）+ data/hanpukai_*.xlsx → data/reference_prices.csv
