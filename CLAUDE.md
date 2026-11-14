@@ -1,7 +1,8 @@
 # aurora ― カメラ輸出事業の作業フォルダ
 
 ヤフオク・頒布会・店舗などで中古カメラ・レンズを仕入れ、eBay で販売する事業のための作業場所。
-GitHub 上のリポジトリ名は `aurora-research`（**公開**）。事業の詳細・方針・目標は非公開の `knowledge/` にあり、下で読み込む。
+このプロジェクトの位置付けは**事業全体の管理**（古物台帳・相場データ・仕入判定・eBay API 連携・数字の管理など）。単体のアプリ作りではない。
+GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の詳細・方針・目標は非公開の `knowledge/` にあり、下で読み込む。
 
 @knowledge/CLAUDE.md
 
@@ -20,7 +21,7 @@ GitHub 上のリポジトリ名は `aurora-research`（**公開**）。事業の
 | `extension/` | 生成した Chrome拡張機能（相場データ入り） | **しない** |
 | `reports/` | 鑑定レポート（HTML/CSV/MD） | **しない** |
 | `.claude/` | ルール・手順書・担当者 | する（事業の数字は書かない） |
-| `index.html` ほか | 店舗仕入れ用の相場リサーチWebアプリ（GitHub Pages。iPhoneのホーム画面から使うので移動しない） | する |
+| `ebay-auth.html`・`privacy.html` | eBay API の許可後の戻り先とプライバシーポリシー（GitHub Pages で公開。eBay に URL を登録済みなので移動・削除しない） | する |
 
 ## プログラム（tools/）
 | ファイル | 役割 |
