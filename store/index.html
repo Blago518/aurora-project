@@ -94,6 +94,8 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <h2>eBayで確認（高い順）</h2>
     <label for="query" style="margin-top:0">検索語（英語・直してOK）</label>
     <input id="query" type="search" placeholder="商品名を入れると自動で入ります" autocomplete="off">
+    <label>eBayのカテゴリ（商品名から自動。違えばタップ）</label>
+    <div class="chips" id="catChips"></div>
     <label>除外キーワード（タップでオン／オフ。次回も覚えています）</label>
     <div class="chips" id="exChips"></div>
     <input id="exCustom" type="text" class="mt" placeholder="ほかに除外する語（英語・スペース区切り）例: FM2N mount" autocomplete="off" autocapitalize="off">
@@ -261,6 +263,7 @@ function ebayQuery(name) {
   const seen = new Set(), out = [];
   for (const w of t.split(/\s+/)) {
     const k = w.toLowerCase();
+    if (/^\d{4,}$/.test(w)) continue;  // 出品者の管理番号（例: 5019）。照合と同じく数字だけ4桁以上は使わない
     if (w && !seen.has(k)) { seen.add(k); out.push(w); }
   }
   return out.join(" ");
@@ -287,11 +290,13 @@ const LENS_FOCALS = [14, 15, 16, 17, 18, 20, 21, 24, 25, 28, 40, 45, 50, 60, 75,
 const LENS_FNUMS = ["0.95", "1.2", "1.4", "1.7", "1.8", "2.0", "2.5", "2.8", "3.5", "4.5", "5.6"];
 function lensSpec(base) {
   const t = base.toLowerCase();
-  const focals = [...t.matchAll(/(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?\s*mm\b/g)];
+  // 焦点距離は mm と cm（古いレンズの 7.5cm など）。cm は mm に直す
+  const focals = [...t.matchAll(/(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?\s*(mm|cm)\b/g)];
   const fnums = [...t.matchAll(/(?:\bf\s*\/?\s*|\b1\s*:\s*)(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?/g)];
   if (!focals.length || (!fnums.length && !/\blens\b/.test(t))) return null;
   const nums = (ms) => ms.flatMap((m) => [m[1], m[2]]).filter(Boolean).map(Number);
-  return { focals: nums(focals), prime: focals.length === 1 && !focals[0][2], fnums: nums(fnums) };
+  const mm = focals.flatMap((m) => [m[1], m[2]].filter(Boolean).map((v) => Math.round(Number(v) * (m[3] === "cm" ? 10 : 1))));
+  return { focals: mm, prime: focals.length === 1 && !focals[0][2], fnums: nums(fnums) };
 }
 function lensExcludes(base) {
   const s = lensSpec(base);
@@ -330,11 +335,37 @@ function withEx(base) {
   for (const w of excludeWords(base)) if (q.length + w.length + 2 <= MAX_QUERY) q += " -" + w;
   return q;
 }
+// eBay のカテゴリ（店舗アプリだけ）。商品名から自動で決め、ボタンで変えられる
+const CATS = [["auto", "自動"], ["0", "すべて"], ["3323", "レンズ"], ["15230", "フィルムカメラ"], ["31388", "デジタルカメラ"]];
+const DIGITAL_RE = /\b(digital|dslr|mirrorless|coolpix|powershot|cyber-?shot|lumix|finepix|ixy|ixus|exilim|dsc-?\w+|ilce-?\d+|nex-?\d+|eos\s*(?:r\d*|kiss\s*[xm]\w*|\d+d\w*)|d\d{2,4}[a-z]?|z\s?\d{1,2}|z\s?f[c]?|x-?t\d+|x-?e\d|x-?h\d|x-?s\d+|x100\w*|x-?pro\d|gfx\w*|gr\s*(?:ii|iii|iv|digital)|om-?d|e-?m\d+|e-?pl?\d+|a\d{4}|k-(?:1|3|5|7|30|50|70)\b|kp|m(?:8|9|10|11)\b|q\d?|sl2?)\b|(?:^|\s)α\s?\d/i;
+let catSel = "auto";
+function autoCat(base) {
+  if (!base) return "0";
+  if (lensSpec(base)) return "3323";
+  return DIGITAL_RE.test(base) ? "31388" : "15230";
+}
+const catOf = (base) => (catSel === "auto" ? autoCat(base) : catSel);
+const catName = (id) => (CATS.find(([k]) => k === id) || ["", ""])[1];
+function renderCatChips() {
+  const a = autoCat($("query").value.trim());
+  $("catChips").innerHTML = CATS.map(([k, n]) =>
+    `<button class="chip" data-cat="${k}" aria-pressed="${k === catSel}">${k === "auto" ? `自動 <span class="s">${esc(catName(a))}</span>` : n}</button>`).join("");
+}
+$("catChips").onclick = (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catSel = b.dataset.cat; updateLinks(); };
+// core.js の ebay() のリンクにカテゴリを付ける（販売済み・出品中は _sacat、Product Research は categoryId）
+function linksWithCat(q, cat) {
+  const L = core ? core.ebay(q) : ebayLinks(q);
+  if (cat === "0") return L;
+  return { sold: L.sold + "&_sacat=" + cat, now: L.now + "&_sacat=" + cat, pr: L.pr + "&categoryId=" + cat };
+}
+
 let queryTouched = false;
 function updateLinks() {
   const q = withEx($("query").value.trim());
-  $("qPreview").textContent = q ? "eBayで検索する語: " + q : "";
-  const L = core ? core.ebay(q) : ebayLinks(q);
+  const cat = catOf($("query").value.trim());
+  renderCatChips();
+  $("qPreview").textContent = q ? `eBayで検索する語: ${q}（カテゴリ: ${catName(cat)}）` : "";
+  const L = linksWithCat(q, cat);
   for (const [id, k] of [["lSold", "sold"], ["lNow", "now"], ["lPr", "pr"]]) {
     const a = $(id);
     a.classList.toggle("off", !q);
@@ -349,7 +380,7 @@ function look() {
   renderResult(name, price, r);
 }
 function parsePrice(s) { const n = Number(String(s).normalize("NFKC").replace(/[^\d]/g, "")); return n > 0 ? n : null; }
-$("name").addEventListener("input", () => { queryTouched = false; look(); });
+$("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; look(); });
 $("price").addEventListener("input", look);
 $("junk").addEventListener("change", look);
 $("query").addEventListener("input", () => { queryTouched = true; updateLinks(); });
@@ -374,7 +405,7 @@ $("hist").onclick = (e) => {
   setInput(x.name, x.price);
 };
 function setInput(name, price) {
-  $("name").value = name; $("price").value = price || ""; $("junk").checked = false; queryTouched = false;
+  $("name").value = name; $("price").value = price || ""; $("junk").checked = false; queryTouched = false; catSel = "auto";
   look(); showTab("look"); window.scrollTo({ top: 0 });
 }
 
@@ -453,7 +484,7 @@ $("camFile").onchange = async (e) => {
     const t = await readTag(f);
     if (!t.found || !(t.search_query || t.model)) { st.className = "status err"; st.textContent = "型番を読み取れませんでした。値札に近づいて撮り直すか、手で入力してください。"; return; }
     const name = t.search_query || [t.maker, t.model].filter(Boolean).join(" ");
-    $("name").value = name; queryTouched = false;
+    $("name").value = name; queryTouched = false; catSel = "auto";
     if (t.price_tax_included_jpy) $("price").value = t.price_tax_included_jpy;
     $("junk").checked = !!t.junk;
     look(); remember();
@@ -486,7 +517,7 @@ function renderRecs() {
   const list = DATA.recs.filter((r) => r.brand === recSel.brand && r.kind === recSel.kind).slice(0, 20);
   $("recTitle").textContent = `${recSel.brand} の${recSel.kind === "lens" ? "レンズ" : "カメラ"} おすすめ ${list.length}品`;
   $("recList").innerHTML = list.length ? list.map((r, i) => {
-    const L = core.ebay(withEx(r.label));
+    const L = linksWithCat(withEx(r.label), r.kind === "lens" ? "3323" : DIGITAL_RE.test(r.label) ? "31388" : "15230");
     return `<div class="rec"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
       <div class="buy">税込 <strong>${yen(r.maxBuy)}</strong> 以下なら買い <span class="s">／想定${usd(r.usd)}${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
       <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">販売済み</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">出品中</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
