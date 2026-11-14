@@ -956,8 +956,19 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
     item.calc = calculate(item, cfg, fx)
 
 
+def is_memo(row: dict) -> bool:
+    """相場メモ（手で直した相場）. 過去データより優先する（extension_template.js の isMemo と同じ）."""
+    return str(row.get("source") or "").startswith("相場メモ")
+
+
+def match_prefer_memo(query: str, memo: list[dict], others: list[dict]) -> list[dict]:
+    return match_sales(query, memo) or match_sales(query, others)
+
+
 def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline: bool,
             delay: float, kantei: list[dict] | None = None) -> None:
+    memo = [s for s in sales if is_memo(s)]
+    others = [s for s in sales if not is_memo(s)]
     for i, item in enumerate(items, 1):
         if not item.prefilled:
             print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)
@@ -972,7 +983,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
             continue
 
         # 照合はタイトル全体（検索語は7語に絞っているため）
-        item.history_matches = match_sales(f"{item.ebay_query} {item.title}", sales)
+        item.history_matches = match_prefer_memo(f"{item.ebay_query} {item.title}", memo, others)
         if not item.history_matches and kantei:
             item.history_matches = match_kantei(item.title, kantei)
 

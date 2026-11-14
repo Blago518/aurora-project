@@ -232,7 +232,7 @@
     const rest = brand ? toks.slice(1) : toks;
     // 管理番号らしい語（C-2436・OL4709・IC0144・A-164、レンズの機種名に混ざった 3桁以上の数字）は機種名に入れない
     const isLens = rest.some((t) => /mm$/i.test(t));
-    const code = (t) => /^[A-Za-z]{1,2}-\d{3,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
+    const code = (t) => /^[A-Za-z]{1,2}-\d{3,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || /^\d{4,}-\d{1,3}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
     const keyToks = rest.filter((t) => /\d/.test(t) && !code(t)).slice(0, 3);
     const vt = variantOf(tokensOf(title));
     const label = (brand ? [brand] : []).concat(keyToks.length ? keyToks : rest.slice(0, 2))
@@ -251,6 +251,30 @@
   });
 
   const median = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+  // 相場メモ（手で直した相場）は過去データより優先する。appraise.py の analyze() と同じ
+  const isMemo = (r) => String(r.source || "").startsWith("相場メモ");
+  function matchPreferMemo(query, memoRefsList, otherRefs) {
+    const m = matchRefs(query, memoRefsList);
+    return m.length ? m : matchRefs(query, otherRefs);
+  }
+
+  // 過去データの状態（商品名の MINT・Exc+++ など。頒布会リストはコンディション欄）。表示用
+  const COND_RULES = [
+    [/\b(?:top|t)[\s.\-]*mint\b/i, "TOP MINT"],
+    [/\b(?:near|n)[\s.\-]*mint\b|\bnmint\b/i, "Near MINT"],
+    [/\b(?:unused|brand\s*new|new\s*in\s*box)\b|未使用|新品/i, "未使用"],
+    [/\bmint\b/i, "MINT"],
+    [/\bexc(?:ellent)?\s*\+\s*([1-9])\b/i, (m) => "Exc+" + m[1]],
+    [/\bexc(?:ellent)?\s*(\+{1,9})/i, (m) => "Exc" + m[1]],
+    [/\bexc(?:ellent)?\b/i, "Exc"],
+    [/\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り/i, "ジャンク"],
+  ];
+  function conditionOf(r) {
+    const t = String(r.title || "").normalize("NFKC");
+    for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return typeof out === "function" ? out(m) : out; }
+    const h = String(r.source || "").match(/^頒布会リスト\(([^\s)]+)/);
+    return h ? h[1] : "";
+  }
   // @core-end
 
   // ------------------------------------------------------------------ 相場メモ（このブラウザに保存）
@@ -302,11 +326,12 @@
   // ------------------------------------------------------------------ 鑑定
   function evaluate(items, fx) {
     const refs = DATA.refs.concat(memoRefs());
+    const memoPool = refs.filter(isMemo), otherPool = refs.filter((r) => !isMemo(r));
     for (const it of items) {
       it.flags = detectFlags(it.title);
       it.query = titleToQuery(it.title);
       it.eq = ebaySearchQuery(it.query, it.title);  // eBay のリンク用（型と除外語入り）
-      let m = matchRefs(it.query + " " + it.title, refs);
+      let m = matchPreferMemo(it.query + " " + it.title, memoPool, otherPool);
       if (!m.length) m = matchKantei(it.title);
       it.refs = m;
       it.usd = m.length ? median(m.map((r) => r.price)) : null;
@@ -343,6 +368,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .hd button{background:#24496a;color:#fff}
 #yhk .bd{padding:10px 12px}#yhk table{width:100%;border-collapse:collapse}
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
+#yhk .fix{margin-top:4px;white-space:nowrap}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix button{padding:3px 6px;margin-left:2px}
 #yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
 #yhk a{color:#0b5d8c;text-decoration:none}#yhk .m{font-size:15px;font-weight:800}
 #yhk .g{color:#1f7a5c}#yhk .o{color:#1b6387}#yhk .x{color:#a4473a}#yhk .s{font-size:11px;color:#6a7c8e}
@@ -484,6 +510,12 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
     if (!d.hits.length) return `<div class="s g">✓ 説明文に光学難・故障の記載なし${d.cond ? `（${esc(d.cond)}）` : ""}</div>`;
     return `<div class="s x">⚠ 説明文: ${d.hits.map((h) => `「…${esc(h.snip)}…」`).join(" ")}</div>`;
   }
+  // 過去データの状態（自分・Chatwork の販売実績と頒布会リスト）。例: 状態: Near MINT $255 ・ Exc+++ $265
+  function condLine(i) {
+    const rs = (i.refs || []).filter((r) => r.tier <= 2 && !isMemo(r)).slice(0, 5);
+    if (!rs.length) return "";
+    return `<div class="s">状態: ${rs.map((r) => `${esc(conditionOf(r) || "記載なし")} $${r.price}`).join(" ・ ")}</div>`;
+  }
   function applyDesc(items) {
     for (const i of items) {
       const d = state.desc[i.id];
@@ -544,9 +576,10 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       const [left, soon] = remain(i.end);
       return `<tr class="${soon ? "soon" : ""}"><td class="m ${cls}">${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]</div>${descLine(i.id)}</td>
+<div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}</div>${condLine(i)}${descLine(i.id)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
-<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div></td>
+<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div>
+<div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\n送料込みの$を入れると、$${DATA.cfg.deductionUsd}を引いて計算します。同じ機種の過去データより優先されます`)}"><input data-memo="${esc(modelKey(i.title)[0])}" placeholder="直す$"><button data-a="memo" data-k="${esc(modelKey(i.title)[0])}">直す</button></div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
@@ -604,7 +637,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict };
+    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo };
     return;
   }
 

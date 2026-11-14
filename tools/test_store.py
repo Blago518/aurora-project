@@ -79,5 +79,56 @@ class StoreParity(unittest.TestCase):
         self.assertEqual(json.loads(out), py)
 
 
+class MemoAndCondition(unittest.TestCase):
+    """手で直した相場（相場メモ）が過去データより優先されること（Python と JS で同じ）と、状態の読み取り."""
+
+    REFS = [("Olympus Lens 35mm f/2", "頒布会リスト(A 美品)", 229.99),
+            ("Olympus 35mm F2", "相場メモ", 139.99),
+            ("Nikon FM2 Black Near Mint", "自分の販売実績", 265.0)]
+    TITLES = ["オリンパス OM ZUIKO 35mm F2 美品", "オリンパス ZUIKO 35mm F2.8", "ニコン Nikon FM2"]
+
+    def test_python_prefers_memo(self):
+        sales = [{"title": t, "source": s, "_price": p, "_tokens": ba._tokens(t)} for t, s, p in self.REFS]
+        items = [ba.Item(url=f"u{i}", title=t, current_price_jpy=5000, domestic_shipping_jpy=800, prefilled=True)
+                 for i, t in enumerate(self.TITLES)]
+        ba.analyze(items, sales, CFG, 150.0, True, 0, [])
+        self.assertEqual([it.expected_price_usd for it in items], [139.99, None, 265.0])
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(CFG, 150.0)
+        data["kantei"] = []
+        data["refs"] = [{"title": t, "price": p, "tier": ba.source_tier({"source": s}), "source": s,
+                         "tokens": sorted(ba._tokens(t)), "acc": False} for t, s, p in self.REFS]
+        with tempfile.TemporaryDirectory() as d:
+            dp = Path(d) / "d.json"
+            dp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            code = (f"const {{makeCore}}=require({json.dumps(str(bs.CORE_JS))});const D=require({json.dumps(str(dp))});"
+                    "const c=makeCore(D);const mp=D.refs.filter(c.isMemo),op=D.refs.filter(r=>!c.isMemo(r));"
+                    f"console.log(JSON.stringify({json.dumps(self.TITLES, ensure_ascii=False)}.map(t=>{{"
+                    "const m=c.matchPreferMemo(c.titleToQuery(t)+' '+t,mp,op);return m.length?c.median(m.map(r=>r.price)):null;})))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), [139.99, None, 265.0])
+
+    def test_condition(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        cases = {"Nikon F3 TOP MINT": "TOP MINT", "Canon AE-1 [N MINT]": "Near MINT", "Leica M6 Exc+5": "Exc+5",
+                 "Pentax 67 Exc++++": "Exc++++", "Mamiya 7 MINT-": "MINT", "Olympus OM-1 For Parts": "ジャンク",
+                 "Nikon FE": ""}
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        with tempfile.TemporaryDirectory() as d:
+            dp = Path(d) / "d.json"
+            dp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            code = (f"const {{makeCore}}=require({json.dumps(str(bs.CORE_JS))});const c=makeCore(require({json.dumps(str(dp))}));"
+                    f"console.log(JSON.stringify({json.dumps(list(cases), ensure_ascii=False)}.map(t=>c.conditionOf({{title:t}}))"
+                    ".concat([c.conditionOf({title:'Olympus 35mm',source:'頒布会リスト(AB 小傷)'})])))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), list(cases.values()) + ["AB"])
+
 if __name__ == "__main__":
     unittest.main()

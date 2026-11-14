@@ -205,7 +205,7 @@ function lookup(name, price, junkBox) {
   const q = core.titleToQuery(name) || name.trim();
   const flags = core.detectFlags(name);
   if (junkBox && !flags.includes("ジャンク")) flags.push("ジャンク");
-  let refs = core.matchRefs(q + " " + name, DATA.refs);
+  let refs = core.matchPreferMemo(q + " " + name, DATA.refs.filter(core.isMemo), DATA.refs.filter((r) => !core.isMemo(r)));
   if (!refs.length) refs = core.matchKantei(name);
   let u = refs.length ? core.median(refs.map((r) => r.price)) : null;
   if (u != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) u = Math.round(u * DATA.cfg.junkFactor * 100) / 100;
@@ -243,7 +243,7 @@ function renderResult(name, price, r) {
     const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
     if (warn.length) h += `<div class="note">注意: ${esc(warn.join("・"))}</div>`;
     h += `<details><summary>一致した過去データ ${r.refs.length}件</summary>${r.refs.map((x) =>
-      `<div class="ref"><span>${esc(x.title)}</span><span>${usd(x.price)}</span><span class="s">${esc((x.source || "").replace(/\(.*$/, ""))}</span></div>`).join("")}</details>`;
+      `<div class="ref"><span>${esc(x.title)}</span><span>${esc(core.conditionOf(x) || "")}</span><span>${usd(x.price)}</span><span class="s">${esc((x.source || "").replace(/\(.*$/, ""))}</span></div>`).join("")}</details>`;
   }
   el.innerHTML = h;
 }

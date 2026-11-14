@@ -217,7 +217,7 @@ function makeCore(DATA) {
     const rest = brand ? toks.slice(1) : toks;
     // 管理番号らしい語（C-2436・OL4709・IC0144・A-164、レンズの機種名に混ざった 3桁以上の数字）は機種名に入れない
     const isLens = rest.some((t) => /mm$/i.test(t));
-    const code = (t) => /^[A-Za-z]{1,2}-\d{3,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
+    const code = (t) => /^[A-Za-z]{1,2}-\d{3,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || /^\d{4,}-\d{1,3}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
     const keyToks = rest.filter((t) => /\d/.test(t) && !code(t)).slice(0, 3);
     const vt = variantOf(tokensOf(title));
     const label = (brand ? [brand] : []).concat(keyToks.length ? keyToks : rest.slice(0, 2))
@@ -236,6 +236,30 @@ function makeCore(DATA) {
   });
 
   const median = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
-  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown };
+  // 相場メモ（手で直した相場）は過去データより優先する。appraise.py の analyze() と同じ
+  const isMemo = (r) => String(r.source || "").startsWith("相場メモ");
+  function matchPreferMemo(query, memoRefsList, otherRefs) {
+    const m = matchRefs(query, memoRefsList);
+    return m.length ? m : matchRefs(query, otherRefs);
+  }
+
+  // 過去データの状態（商品名の MINT・Exc+++ など。頒布会リストはコンディション欄）。表示用
+  const COND_RULES = [
+    [/\b(?:top|t)[\s.\-]*mint\b/i, "TOP MINT"],
+    [/\b(?:near|n)[\s.\-]*mint\b|\bnmint\b/i, "Near MINT"],
+    [/\b(?:unused|brand\s*new|new\s*in\s*box)\b|未使用|新品/i, "未使用"],
+    [/\bmint\b/i, "MINT"],
+    [/\bexc(?:ellent)?\s*\+\s*([1-9])\b/i, (m) => "Exc+" + m[1]],
+    [/\bexc(?:ellent)?\s*(\+{1,9})/i, (m) => "Exc" + m[1]],
+    [/\bexc(?:ellent)?\b/i, "Exc"],
+    [/\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り/i, "ジャンク"],
+  ];
+  function conditionOf(r) {
+    const t = String(r.title || "").normalize("NFKC");
+    for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return typeof out === "function" ? out(m) : out; }
+    const h = String(r.source || "").match(/^頒布会リスト\(([^\s)]+)/);
+    return h ? h[1] : "";
+  }
+  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { makeCore };
