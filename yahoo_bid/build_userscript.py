@@ -67,9 +67,32 @@ def build_data(cfg: dict, fx: float) -> dict:
     }
 
 
+def write_chrome_extension(js: str, folder: Path) -> None:
+    """自作のChrome拡張機能（Manifest V3）を作る。ヤフオクのページでだけ動き、外部への通信はしない."""
+    folder.mkdir(parents=True, exist_ok=True)
+    version = datetime.now().strftime("%Y.%-m.%-d.%-H%M") if sys.platform != "win32" else "1.0.0"
+    manifest = {
+        "manifest_version": 3,
+        "name": "ヤフオク入札鑑定（自作）",
+        "version": version,
+        "description": "ヤフオクの検索結果・出品者ページで、販売実績と照合して上限入札額と利益を表示します。",
+        "content_scripts": [{
+            "matches": ["https://auctions.yahoo.co.jp/search/*", "https://auctions.yahoo.co.jp/seller/*",
+                        "https://auctions.yahoo.co.jp/category/*"],
+            "js": ["content.js"],
+            "run_at": "document_idle",
+        }],
+    }
+    (folder / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    (folder / "content.js").write_text(js, encoding="utf-8")
+    print(f"Chrome拡張機能: {folder}", file=sys.stderr)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="ヤフオク入札鑑定ユーザースクリプトを作る")
     ap.add_argument("-o", "--out", type=Path, default=HERE / "out" / "yahoo_kantei.user.js")
+    ap.add_argument("--chrome", type=Path, nargs="?", const=HERE / "out" / "chrome_extension",
+                    help="Chrome拡張機能（フォルダ）も作る。Chromeの「パッケージ化されていない拡張機能を読み込む」で指定")
     ap.add_argument("--fx", type=float, help="為替（省略時は自動取得、失敗時は config.toml）")
     args = ap.parse_args(argv)
     cfg = ba.load_config(None)
@@ -78,6 +101,8 @@ def main(argv=None) -> int:
     tpl = (HERE / "userscript_template.js").read_text(encoding="utf-8")
     js = tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     js = js.replace("__VERSION__", datetime.now().strftime("%Y.%m.%d.%H%M"))
+    if args.chrome:
+        write_chrome_extension(js, args.chrome)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(js, encoding="utf-8")
     print(f"出力: {args.out}（相場 {len(data['refs'])}件・鑑定表 {len(data['kantei'])}件・為替 {fx:.2f}円・"
