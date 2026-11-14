@@ -58,6 +58,8 @@ def build_data(cfg: dict, fx: float) -> dict:
                             if t["include_consumption_tax_refund"] else 0.0),
             "minProfit": j["min_profit_jpy"], "minMarginPct": j["min_margin_pct"],
             "junkFactor": j.get("junk_price_factor", 1.0),
+            "activeFactor": j.get("active_price_factor", 0.7), "activeMinCount": j.get("active_min_count", 3),
+            "browse": False,  # eBay のキーがあれば main() で True にする
         },
         "consts": {
             "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN,
@@ -70,8 +72,22 @@ def build_data(cfg: dict, fx: float) -> dict:
     }
 
 
-def write_chrome_extension(js: str, folder: Path) -> None:
-    """自作のChrome拡張機能（Manifest V3）を作る。ヤフオクのページでだけ動き、外部への通信はしない."""
+def ebay_keys() -> tuple[str, str] | None:
+    """eBay の App ID・Cert ID（ebay_api.py setup で保存したもの）。無ければ None."""
+    try:
+        import ebay_api
+        app, cert = ebay_api.secret_get("app_id"), ebay_api.secret_get("cert_id")
+    except Exception:
+        return None
+    return (app, cert) if app and cert else None
+
+
+def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None = None) -> None:
+    """自作のChrome拡張機能（Manifest V3）を作る。ヤフオクのページで動く.
+
+    eBay のキーがあれば、出品中の相場を公式 Browse API で調べる background.js も入れる（通信先は api.ebay.com だけ）。
+    キーは extension/ の中だけに入る（extension/ はコミットしない）。
+    """
     folder.mkdir(parents=True, exist_ok=True)
     version = datetime.now().strftime("%Y.%-m.%-d.%-H%M") if sys.platform != "win32" else "1.0.0"
     manifest = {
@@ -88,6 +104,16 @@ def write_chrome_extension(js: str, folder: Path) -> None:
             "run_at": "document_idle",
         }],
     }
+    bg = folder / "background.js"
+    if keys:
+        manifest["background"] = {"service_worker": "background.js"}
+        manifest["host_permissions"] = ["https://api.ebay.com/*"]
+        manifest["permissions"] = ["storage"]
+        tpl = (HERE / "extension_background.js").read_text(encoding="utf-8")
+        bg.write_text(tpl.replace("__APP_ID__", json.dumps(keys[0])).replace("__CERT_ID__", json.dumps(keys[1])),
+                      encoding="utf-8")
+    elif bg.exists():
+        bg.unlink()
     (folder / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     (folder / "content.js").write_text(js, encoding="utf-8")
     (folder / "icons").mkdir(exist_ok=True)
@@ -106,15 +132,19 @@ def main(argv=None) -> int:
     cfg = ba.load_config(None)
     fx = args.fx or (cfg["fx"].get("auto_fetch") and ba.fetch_fx()) or float(cfg["fx"]["usd_jpy"])
     data = build_data(cfg, fx)
+    keys = ebay_keys()
+    data["cfg"]["browse"] = bool(keys)
     tpl = (HERE / "extension_template.js").read_text(encoding="utf-8")
     js = tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     js = js.replace("__VERSION__", datetime.now().strftime("%Y.%m.%d.%H%M"))
-    write_chrome_extension(js, args.out)
+    write_chrome_extension(js, args.out, keys)
     if args.userscript:
         args.userscript.parent.mkdir(parents=True, exist_ok=True)
         args.userscript.write_text(js, encoding="utf-8")
     print(f"出力: {args.out}（相場 {len(data['refs'])}件・鑑定表 {len(data['kantei'])}件・為替 {fx:.2f}円・"
           f"{len(js.encode()) // 1024}KB）", file=sys.stderr)
+    print("eBay出品中の相場（Browse API）: " + ("有効" if keys else "無効（python3 tools/ebay_api.py setup でキーを保存すると有効）"),
+          file=sys.stderr)
     return 0
 
 

@@ -27,6 +27,7 @@ GitHub 上のリポジトリ名は `aurora-research`（**公開**）。事業の
 |---|---|
 | `appraise.py` | 鑑定の本体。検索URL→出品一覧→相場照合→利益・上限入札額→レポート |
 | `extension_template.js` | Chrome拡張機能の中身（判定は appraise.py と同一） |
+| `extension_background.js` | 拡張機能の裏方。未登録の機種の eBay 出品中価格を公式 Browse API で調べる（キーがあるときだけ入る） |
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv` |
 | `build_knowledge.py` | data/ から `knowledge/相場/`・`knowledge/機種/` を自動生成 |

@@ -294,7 +294,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .hd button{background:#24496a;color:#fff}
 #yhk .bd{padding:10px 12px}#yhk table{width:100%;border-collapse:collapse}
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
-#yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td.n{text-align:right;white-space:nowrap}
+#yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
 #yhk a{color:#0b5d8c;text-decoration:none}#yhk .m{font-size:15px;font-weight:800}
 #yhk .g{color:#1f7a5c}#yhk .o{color:#1b6387}#yhk .x{color:#a4473a}#yhk .s{font-size:11px;color:#6a7c8e}
 #yhk details{margin-top:10px}#yhk summary{cursor:pointer;font-weight:700}
@@ -311,7 +311,44 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 @media (prefers-color-scheme:dark){#yhk tr.soon td{background:#2a2216}#yhk{background:#152231;color:#e2eaf2}#yhk th,#yhk td{border-color:#26394b}#yhk a{color:#7cc4ee}
 #yhk button{background:#24384c;color:#d6e6f2}#yhk input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}}`;
 
-  let state = { items: [], total: null, fx: Number(load(LS_FX, DATA.cfg.fx)) || DATA.cfg.fx, loading: "" };
+  let state = { items: [], total: null, fx: Number(load(LS_FX, DATA.cfg.fx)) || DATA.cfg.fx, loading: "", browse: {} };
+
+  // ------------------------------------------------------------------ eBay出品中の相場（公式 Browse API・裏方の background.js 経由）
+  const canBrowse = () => DATA.cfg.browse && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id;
+  function suggestUsd(b) {
+    return b && b.med && b.n >= DATA.cfg.activeMinCount ? Math.floor(b.med * DATA.cfg.activeFactor) : null;
+  }
+  function browseCell(label) {
+    const b = state.browse[label];
+    if (!b) return '<span class="s">…</span>';
+    if (b.error) return `<span class="s" title="${esc(b.error)}">取得できず</span>`;
+    if (!b.n) return '<span class="s">出品なし</span>';
+    const sg = suggestUsd(b);
+    return `中央値 $${Math.round(b.med)}<div class="s">最安 $${Math.round(b.min)}・${b.n}件${b.jp ? `（日本から${b.jp}）` : ""}</div>` +
+      (sg ? `<div class="s">案 $${sg}（中央値×${DATA.cfg.activeFactor}）</div>` : `<div class="s">件数が少なく案なし</div>`);
+  }
+  let browsing = false;
+  async function fetchBrowse(labels) {
+    if (!canBrowse() || browsing) return;
+    browsing = true;
+    try {
+      for (const label of labels) {
+        if (state.browse[label]) continue;
+        const res = await new Promise((ok) => {
+          try {
+            chrome.runtime.sendMessage({ type: "browse", q: label },
+              (r) => ok(r || { error: (chrome.runtime.lastError || {}).message || "応答なし" }));
+          } catch (e) { ok({ error: String(e.message || e) }); }
+        });
+        state.browse[label] = res;
+        const td = document.querySelector(`#yhk td[data-browse="${CSS.escape(label)}"]`);
+        if (td) td.innerHTML = browseCell(label);
+        const inp = document.querySelector(`#yhk input[data-memo="${CSS.escape(label)}"]`);
+        const sg = suggestUsd(res);
+        if (inp && sg && !inp.value) { inp.value = sg; inp.classList.add("sug"); }
+      }
+    } finally { browsing = false; }
+  }
 
   function render() {
     let root = document.getElementById("yhk");
@@ -364,12 +401,15 @@ ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class=
 <details><summary>要確認（相場はあるが付属品・セット等の可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
 <details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
-<table><tr><th>機種（→Product Research）</th><th>件数</th><th>ヤフオク現在値</th><th>想定$（送料込）</th></tr>${unpriced.map((g) => `<tr><td><a href="${ebay(g.label).pr}" target="_blank" rel="noopener" title="Product Research を開く">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
+${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式APIで調べた<b>出品中</b>の価格（送料込・米国向け・中古）。売れた価格より高めなので、想定$には中央値×${DATA.cfg.activeFactor}を<b>案</b>として入れています。<b>sold を見て確認してから［登録］</b>してください（登録するまで判定には使いません）。</div>` : ""}
+<table><tr><th>機種（→Product Research）</th><th>件数</th><th>ヤフオク現在値</th>${canBrowse() ? "<th>eBay出品中</th>" : ""}<th>想定$（送料込）</th></tr>${unpriced.map((g) => `<tr><td><a href="${ebay(g.label).pr}" target="_blank" rel="noopener" title="Product Research を開く">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
 <td class="n">${g.n}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
-<td><input data-memo="${esc(g.label)}" placeholder="$"><button data-a="memo" data-k="${esc(g.label)}">登録</button></td></tr>`).join("")}</table>
+${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.label)}</td>` : ""}
+<td><input data-memo="${esc(g.label)}" placeholder="$"${suggestUsd(state.browse[g.label]) ? ` class="sug" value="${suggestUsd(state.browse[g.label])}"` : ""}><button data-a="memo" data-k="${esc(g.label)}">登録</button></td></tr>`).join("")}</table>
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
 <span class="s">コピーした内容を data/price_memo.csv に貼るか Claude に送ると、全端末の相場データに取り込めます</span></div></details></div>`;
     badges();
+    fetchBrowse(unpriced.map((g) => g.label));
   }
 
   function badges() {

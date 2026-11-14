@@ -216,6 +216,35 @@ class NoScraping(unittest.TestCase):
     def test_mutar_is_adapter(self):
         self.assertIn("アダプター等", ba.detect_flags("CONTAX RTSムター？2X(中古品)"))
 
+    def test_background_uses_official_api_only(self):
+        """出品中の相場は公式 Browse API（api.ebay.com）だけ。www.ebay.com のページは取りに行かない."""
+        bg = (Path(ba.__file__).parent / "extension_background.js").read_text(encoding="utf-8")
+        hosts = set(__import__("re").findall(r"https://([a-z.]+)/", bg))
+        self.assertEqual(hosts, {"api.ebay.com"})
+
+
+class ExtensionBrowse(unittest.TestCase):
+    """eBay のキーがあるときだけ、出品中の相場を調べる裏方（background.js）が入る."""
+
+    def _build(self, keys):
+        import build_extension as bu
+        with tempfile.TemporaryDirectory() as d:
+            bu.write_chrome_extension("// test", Path(d), keys)
+            man = json.loads((Path(d) / "manifest.json").read_text(encoding="utf-8"))
+            bg = (Path(d) / "background.js").read_text(encoding="utf-8") if (Path(d) / "background.js").exists() else None
+        return man, bg
+
+    def test_with_keys(self):
+        man, bg = self._build(("APP-X", "CERT-Y"))
+        self.assertEqual(man["host_permissions"], ["https://api.ebay.com/*"])
+        self.assertIn('const APP_ID = "APP-X";', bg)
+        self.assertNotIn("__CERT_ID__", bg)
+
+    def test_without_keys(self):
+        man, bg = self._build(None)
+        self.assertNotIn("host_permissions", man)
+        self.assertIsNone(bg)
+
 
 if __name__ == "__main__":
     unittest.main()

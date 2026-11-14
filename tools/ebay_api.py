@@ -8,9 +8,9 @@
     python3 tools/ebay_api.py setup        # App ID・Cert ID・RuName を入力してキーチェーンに保存（初回）
     python3 tools/ebay_api.py login        # ブラウザで自分の eBay アカウントの利用を許可（初回・約1年半ごと）
     python3 tools/ebay_api.py check        # 接続確認
-    python3 tools/ebay_api.py orders       # 自分の売上（直近90日）→ data/ebay_sales.csv（相場データに自動で入る）
+    python3 tools/ebay_api.py orders       # 自分の売上（直近90日）→ reports/ebay_orders_*.csv（金額は currency 列の通貨）
     python3 tools/ebay_api.py listings     # 自分の出品中の一覧（在庫日数順）→ reports/listings_*.csv
-    python3 tools/ebay_api.py fees         # 実際の手数料率を集計 → config.toml に入れる値を提案
+    python3 tools/ebay_api.py fees         # 取引明細 → reports/ebay_finances_*.csv、手数料率を通貨ごとに集計
     python3 tools/ebay_api.py browse "Nikon FM2"   # 出品中の相場（公式 Browse API）
 
 保存しない情報: 購入者の名前・住所・ユーザー名（国だけ保存）。
