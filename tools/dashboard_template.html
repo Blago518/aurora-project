@@ -302,7 +302,7 @@ const empty = (parent, html) => parent.insertAdjacentHTML("beforeend", `<div cla
 function draw() {
   app.innerHTML = ""; toc.innerHTML = ""; Q = [];
   const K = D.kpi;
-  $("#meta").innerHTML = `作成 ${esc(D.generated)}・為替 1ドル＝${D.fx}円で円にしています・販売 ${esc(K.first)}〜${esc(K.last)}<br>販売の数え方: ${D.source === "api" ? `<b>eBay API の注文</b>（${esc(D.api_date)} 取得。全額返金・キャンセルは除く）` : "<b>古物台帳</b>の販売日（eBay API の注文が無いため）"}`;
+  $("#meta").innerHTML = `作成 ${esc(D.generated)}・為替 1ドル＝${D.fx}円で円にしています・販売 ${esc(K.first)}〜${esc(K.last)}<br>販売の数え方: ${D.source === "api" ? `<b>${esc(D.source_name)}</b>（${esc(D.api_date)}。全額返金・キャンセルは除く）` : "<b>古物台帳</b>の販売日（eBay の注文データが無いため）"}`;
 
   // ---- 概要
   const s0 = section("kpi", "概要", "利益＝eBay の手取り（eBay API の取引明細か ebay売上シートで分かる販売は実額、分からない販売は config.toml の手数料率で推定）× 為替 − 円転ロス − 国際送料・関税・発送代行（明細があれば実額、無ければ一律 $" + D.deduction_usd + "）− 仕入金額。消費税還付は含めません");
@@ -444,7 +444,7 @@ function draw() {
   }
 
   // ---- 実際の手取り（ebay売上シート）
-  const sa = section("actual", "実際の手取り・返品", D.actual ? (D.source === "api" ? `eBay API の取引明細（${esc(D.fin_date)} 取得）と注文番号が一致した ${D.actual.n}件` : `ebay売上シート（eBay の取引レポート。${esc(D.actual.since)}〜）と台帳の No. が一致した ${D.actual.n}件`) : "");
+  const sa = section("actual", "実際の手取り・返品", D.actual ? (D.source === "api" ? `${esc(D.source_name)}の手取り（${esc(D.fin_date)}）と注文番号が一致した ${D.actual.n}件` : `ebay売上シート（eBay の取引レポート。${esc(D.actual.since)}〜）と台帳の No. が一致した ${D.actual.n}件`) : "");
   if (D.actual) {
     const A = D.actual, diff = A.profit - A.profit_est;
     sa.insertAdjacentHTML("beforeend", `<div class="grid k">` + [
@@ -467,7 +467,7 @@ function draw() {
   if (D.ebay_not_in_ledger && D.ebay_not_in_ledger.length) {
     const X = D.ebay_not_in_ledger;
     sa.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>⚠ eBay で売れたのに古物台帳に販売の記録が無い（${X.length}件）</h3>` +
-      `<p class="note" style="margin:0">${D.source === "api" ? "eBay API の注文から数えているのでグラフには入っています。古物台帳（古物営業法の帳簿）に販売日・販売金額を記入してください" : "このページの件数・売上・利益に入っていません。古物台帳の販売日・販売金額を記入すると入ります"}</p>` +
+      `<p class="note" style="margin:0">${D.source === "api" ? "eBay の注文から数えているのでグラフには入っています。古物台帳（古物営業法の帳簿）に販売日・販売金額を記入してください" : "このページの件数・売上・利益に入っていません。古物台帳の販売日・販売金額を記入すると入ります"}</p>` +
       `<p style="margin:6px 0 0;font-size:13px">${X.map(x => `${esc(x.label)}（$${x.usd}${x.in_ledger ? "" : "・台帳に行が無い"}）`).join("、")}</p></div>`);
   }
   if (D.unfixed && D.unfixed.length) {

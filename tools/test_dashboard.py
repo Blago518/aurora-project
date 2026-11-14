@@ -248,6 +248,25 @@ class TestDashboard(unittest.TestCase):
         new = [{**orders[0], "date": "2026-08-18", "order_id": "NEW1", "sku": "A001"}]
         self.assertEqual(bd.sales_from_api(new, {}, ledger, {}, 150.0)["sales"][0]["cost_jpy"], 8000)
 
+    def test_brand_never_unknown(self):
+        cases = {"Rolleiflex 2.8 gx": "Rollei", "Rolleicord Vb Whiteface": "Rollei", "Yongnuo EF 35mm 2": "Yongnuo",
+                 "leotax F + Topcor-S 50mm 2 L39": "Leotax", "Topcon 35-S Topcor 44mm f/2": "Topcon",
+                 "Canon FD 50mm F1.4": "Canon", "Carl Zeiss Planar 50mm": "Zeiss", "ニコン FM2 ボディ": "Nikon",
+                 "Asahi Takumar 55mm": "Pentax", "Zorki 4K": "Zorki"}
+        for title, brand in cases.items():
+            self.assertEqual(bd.brand_of(title), brand, title)
+
+    def test_report_as_orders(self):
+        rows = bd._csv_rows(self.tmp / "ebay.csv")
+        orders, fin = bd.report_to_api(rows)
+        self.assertEqual([(o["order_id"], o["sku"], o["payment_status"]) for o in orders],
+                         [("O-1", "A001", "PAID"), ("O-2", "A002", "FULLY_REFUNDED")])
+        self.assertAlmostEqual(fin["per"]["O-1"]["net"], 150.0)  # 注文155 − 広告5（Hold は数えない）
+        ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
+        api = {**bd.sales_from_api(orders, fin, ledger, {}, 150.0), "fin": fin, "name": "ebay売上シート"}
+        d = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14), api=api)
+        self.assertEqual((d["source"], d["kpi"]["count"], d["source_name"]), ("api", 1, "ebay売上シート"))
+
     def test_ebay_date(self):
         self.assertEqual(bd.parse_date("17-Aug-26"), date(2026, 8, 17))
 
