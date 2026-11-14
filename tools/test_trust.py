@@ -133,5 +133,25 @@ class Shipping(unittest.TestCase):
         self.assertEqual(it.calc["profit_now_jpy"], before + 90)  # 1,000円 → 910円
 
 
+class AccessoryOnly(unittest.TestCase):
+    """説明書・本・フィルターだけの出品は付属品。本体＋付属（説明書付・フィルター付き）は除かない."""
+    CASES = {"コンタックス　NX　使用説明書　キ38": True, "ニコン 取扱説明書": True, "キヤノン AE-1 説明書のみ": True,
+             "カメラスタイル21 やっぱりこれですね！ カールツァイス・レンズは": True, "【美品】CONTAX 55mm P-FILTER シルバー": True,
+             "Nikon F3 取扱説明書付 美品": False, "CONTAX NX ボディ 説明書付き": False, "Contax 50mm F1.4 説明書あり": False,
+             "Contax Planar 50mm F1.4 フィルター付き": False}
+
+    def test_python(self):
+        for t, acc in self.CASES.items():
+            self.assertEqual("付属品のみ?" in ba.detect_flags(t), acc, t)
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(list(self.CASES), ensure_ascii=False)}.map(t=>m.detectFlags(t).includes('付属品のみ?'))))")
+        self.assertEqual(out, list(self.CASES.values()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -470,6 +470,9 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .bd{padding:10px 12px}#yhk table{width:100%;border-collapse:collapse}
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
 #yhk button.bidon{background:#1f7a5c;color:#fff}
+@keyframes yhkflash{0%,100%{background:transparent}30%{background:#ffe08a}}#yhk tr.flash td{animation:yhkflash 1.2s ease 2}
+#yhk-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0b1728;color:#fff;padding:10px 16px;border-radius:10px;
+font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show{opacity:1}
 #yhk .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal{background:#eef3f8;color:#2d4a63}
 #yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
 #yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
@@ -750,6 +753,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
 <span class="s">「直す」「登録」した相場は ダウンロード/aurora_price_memo.csv に自動保存されます。Mac で build_store.py か build_extension.py を実行すると data/price_memo.csv に取り込まれ、スマホにも反映されます</span></div></details></div>`;
     badges();
+    applyFlash();
     if (!state.loading) fetchBrowse(groupList.slice(0, DATA.cfg.browseMaxModels).map((g) => g.label));
     checkDescs(good.map((i) => i.id));
   }
@@ -783,6 +787,39 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     try { chrome.runtime.sendMessage({ type: "saveMemo", csv: memoCsv() }, () => void chrome.runtime.lastError); } catch (e) {}
   }
 
+  // 描き直しても数秒は光らせる（説明文を読んだ後などに表を描き直すため）
+  function applyFlash() {
+    const f = state.flash;
+    if (!f || Date.now() > f.until) return;
+    const a = document.querySelector(`#yhk a.t[href*="/auction/${CSS.escape(f.id)}"]`);
+    const row = a && a.closest("tr");
+    if (!row) return;
+    const det = row.closest("details");
+    if (det) det.open = true;
+    row.classList.add("flash");
+  }
+  // ［直す］［登録］の後: 出品が移った先へスクロールして光らせ、どの欄に移ったかを表示（たたまれた欄なら開く）
+  function showMoved(id) {
+    const root = document.getElementById("yhk");
+    const it = state.items.find((x) => x.id === id);
+    const a = root && root.querySelector(`a.t[href*="/auction/${CSS.escape(id)}"]`);
+    const row = a && a.closest("tr");
+    const where = !it ? "" : it.mark === "◎" || it.mark === "○" ? `${it.mark}（入札候補${it.trusted ? "・★安心枠" : ""}）`
+      : it.mark === "×" ? "×（見送り: 登録した額では上限額が現在価格に届きません）" : "要確認（付属品・説明文の難などの可能性）";
+    state.flash = { id, until: Date.now() + 3000 };
+    if (row) {
+      const det = row.closest("details");
+      if (det) det.open = true;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    applyFlash();
+    let t = document.getElementById("yhk-toast");
+    if (!t) { t = document.createElement("div"); t.id = "yhk-toast"; document.body.appendChild(t); }
+    t.textContent = `登録しました → ${where || "相場に反映"}`;
+    t.className = "show";
+    clearTimeout(t._h); t._h = setTimeout(() => (t.className = ""), 3500);
+  }
+
   document.addEventListener("click", async (ev) => {
     const btn = ev.target.closest && ev.target.closest("#yhk button");
     if (!btn) return;
@@ -813,8 +850,12 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       const v = Number((inp && inp.value || "").replace(/[$,\s]/g, ""));
       if (!v) return;
       const memo = load(LS_MEMO, {}); memo[k] = { usd: v, cond: sel ? sel.value : "" }; save(LS_MEMO, memo);
+      // 押した行の出品（登録すると判定が変わって別の欄へ移るので、移った先を見せる）
+      const link = btn.closest("tr") && btn.closest("tr").querySelector('a[href*="/auction/"]');
+      const id = link ? (link.getAttribute("href").match(/auction\/([^/?#]+)/) || [])[1] : "";
       evaluate(state.items, state.fx); render();
       saveMemoFile();
+      if (id) showMoved(id);
     }
     if (a === "desc") { btn.disabled = true; btn.textContent = "確認中…"; checkDescs([btn.dataset.id]); }
     if (a === "memocopy") {
