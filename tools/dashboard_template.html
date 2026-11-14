@@ -12,7 +12,7 @@
   --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --good-text: #006300;
-  --q1: #0d366b; --q2: #104281; --q3: #184f95; --q4: #1c5cab; --q5: #256abf; --q6: #2a78d6; --q7: #3987e5; --q8: #6da7ec;
+  --q1: #0d366b; --q2: #104281; --q3: #184f95; --q4: #1c5cab; --q5: #256abf; --q6: #2a78d6; --q7: #3987e5; --q8: #5598e7; --q9: #6da7ec;
   --neutral: #b5b3ab;
 }
 @media (prefers-color-scheme: dark) {
@@ -22,7 +22,7 @@
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
     --good-text: #0ca30c;
-    --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #256abf;
+    --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #2a78d6; --q9: #256abf;
     --neutral: #5f5e59;
   }
 }
@@ -32,7 +32,7 @@
   --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
   --good-text: #0ca30c;
-  --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #256abf;
+  --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #2a78d6; --q9: #256abf;
   --neutral: #5f5e59;
 }
 * { box-sizing: border-box; }
@@ -310,18 +310,43 @@ function draw() {
   ];
   g0.innerHTML = tiles.map(([l, v, h]) => `<div class="card tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="hint">${esc(h)}</div></div>`).join("");
 
-  // ---- 1. 出品中の状態
-  const s1 = section("cond", "出品中の状態の割合", D.listings_date ? `eBay の出品中一覧（${esc(D.listings_date)} 取得・${D.listings_unique}件。UK・豪州に複製した出品は1件として数える）。状態は出品タイトルの MINT・Exc+ などの表記から` : "");
-  if (!D.conditions) empty(s1, "eBay の出品中一覧がありません。Mac で <code>python3 tools/ebay_api.py listings</code> を実行すると作れます（update_all.py でも自動で取得します）。");
-  else {
-    const g1 = grid(s1);
-    const condColor = l => ({"未使用": "--q1", "TOP MINT": "--q2", "MINT": "--q3", "Near MINT": "--q4", "Exc+5": "--q5", "Exc+4": "--q6", "Exc+3": "--q7", "Exc+2以下": "--q8", "ジャンク": "--s2", "表記なし": "--neutral"})[l];
-    const a = card(g1, "状態の割合", "濃い青ほど良い状態");
+  // ---- 1. 状態
+  const condColor = l => ({"未使用": "--q1", "TOP MINT": "--q2", "MINT": "--q3", "Almost MINT": "--q4", "Near MINT": "--q5", "Exc+5": "--q6", "Exc+4": "--q7", "Exc+3": "--q8", "Exc+2以下": "--q9", "ジャンク": "--s2", "その他": "--neutral", "表記なし": "--neutral"})[l];
+  const isDark = document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const s1 = section("cond", "状態の割合（MINT 何%）", `${isDark ? "明るい" : "濃い"}青ほど良い状態。マウスを乗せると件数`);
+  const g1 = grid(s1);
+  if (D.conditions) {
+    const a = card(g1, "出品中", `eBay の出品中一覧（${esc(D.listings_date)} 取得・${D.listings_unique}件。UK・豪州の複製は1件）。出品タイトルの MINT・Exc+ などの表記から`);
     donut(a.box, {items: D.conditions, colors: D.conditions.map(c => condColor(c.label))});
     a.card.insertAdjacentHTML("beforeend", table([{h: "状態", f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "割合", n: 1, f: r => pct(r.count / D.listings_unique * 100)}, {h: "平均ウォッチ", n: 1, f: r => r.avg_watch}, {h: "平均出品日数", n: 1, f: r => r.avg_days + "日"}], D.conditions));
-    const b = card(g1, "状態別の平均ウォッチ数", "ウォッチが多い状態＝関心を集めやすい");
+  } else empty(g1, "出品中: eBay の出品中一覧がありません。Mac で <code>python3 tools/ebay_api.py listings</code> を実行すると作れます（update_all.py でも自動で取得します）。");
+  if (D.sold_conditions && D.sold_conditions.length) {
+    const SC = D.sold_conditions;
+    const b = card(g1, "売れた商品", `管理シートの状態欄から（台帳の No. と一致した ${D.sold_cond_matched} / ${K.count}件）`);
+    donut(b.box, {items: SC, colors: SC.map(c => condColor(c.label))});
+    b.card.insertAdjacentHTML("beforeend", table([{h: "状態", f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "割合", n: 1, f: r => pct(r.count / D.sold_cond_matched * 100)}, {h: "推定利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], SC));
+  } else empty(g1, D.has_kanri ? "売れた商品: 管理シートの No. と台帳の No. が一致しませんでした。" : "売れた商品: 管理シートの状態がまだ取り込まれていません。Mac で <code>python3 tools/ledger_sync.py script</code> を実行し、表示に従ってスプレッドシートの Apps Script を貼り替えてください（1回だけ）。");
+  if (D.sold_conditions && D.sold_conditions.length) {
+    const SC = D.sold_conditions;
+    const tipC = i => `<b>${esc(SC[i].label)}</b>${SC[i].count}件・1件あたり ${yen(SC[i].avg_profit)}・利益率 ${pct(SC[i].margin)}`;
+    hbars(card(g1, "状態別の1件あたり推定利益（売れた商品）").box, {labels: SC.map(c => c.label), values: SC.map(c => c.avg_profit), fmt: man, colorFn: (v, i) => v < 0 ? "--critical" : condColor(SC[i].label), tipFn: tipC});
+    hbars(card(g1, "状態別の利益率（売れた商品）", `判断基準 ${D.min_margin}%`).box, {labels: SC.map(c => c.label), values: SC.map(c => c.margin ?? 0), fmt: pct, colorFn: (v, i) => v < D.min_margin ? "--critical" : condColor(SC[i].label), tipFn: tipC});
+  }
+  if (D.conditions) {
+    const b = card(g1, "状態別の平均ウォッチ数（出品中）", "ウォッチが多い状態＝関心を集めやすい");
     hbars(b.box, {labels: D.conditions.map(c => c.label), values: D.conditions.map(c => c.avg_watch), fmt: v => v.toFixed(1), colorFn: (v, i) => condColor(D.conditions[i].label),
       tipFn: i => `<b>${esc(D.conditions[i].label)}</b>平均ウォッチ ${D.conditions[i].avg_watch}・平均 ${D.conditions[i].avg_days}日・${D.conditions[i].count}件`});
+  }
+  if (D.stock_conditions && D.stock_conditions.length) {
+    const c = card(g1, "在庫（未販売）", "管理シートで販売日が空の商品");
+    donut(c.box, {items: D.stock_conditions, colors: D.stock_conditions.map(x => condColor(x.label))});
+  }
+  if (D.optical && D.optical.n + D.optical.clean_n) {
+    const O = D.optical;
+    s1.insertAdjacentHTML("beforeend", `<div class="grid k" style="margin-top:16px">` +
+      `<div class="card tile"><div class="label">カビ・曇りの記載ありで売れた</div><div class="value">${O.n}件</div><div class="hint">1件あたり ${yen(O.avg)}・利益率 ${pct(O.margin)}</div></div>` +
+      `<div class="card tile"><div class="label">記載なしで売れた</div><div class="value">${O.clean_n}件</div><div class="hint">1件あたり ${yen(O.clean_avg)}・利益率 ${pct(O.clean_margin)}</div></div></div>` +
+      `<p class="note">状態欄に「カビ・曇り・クモリ・バルサム」の文字がある商品。光学難の仕入れが割に合うかの目安</p>`);
   }
 
   // ---- 2. 月別

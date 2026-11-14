@@ -80,12 +80,23 @@ class Encryption(unittest.TestCase):
 class LedgerSync(unittest.TestCase):
     CSV = '"管理番号","品目(商品名)","仕入金額","販売日","販売金額($)"\n"1","Nikon F3","10000","2026/11/01","200"\n'
 
+    KANRI = ('"番号","商品名","No.","状態","購入日","販売日","アカウント名(仕入元)","ヤフオクURL"\n'
+             '"1","Nikon F3","A1","MINT/点カビ","2026/07/26","2026/09/01","someone","https://x"\n'
+             '"","","","","",""\n')
+    new_script = True
+
     def setUp(self):
-        csv_text = self.CSV
+        csv_text, kanri, case = self.CSV, self.KANRI, self
 
         class H(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                body = (csv_text if "key=k1" in self.path else "forbidden").encode()
+                if "key=k1" not in self.path:
+                    body = "forbidden"
+                elif "sheet=" in self.path and case.new_script:
+                    body = kanri
+                else:  # 古いスクリプトは sheet= を無視して古物台帳を返す
+                    body = csv_text
+                body = body.encode()
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(body)
@@ -105,6 +116,7 @@ class LedgerSync(unittest.TestCase):
 
     def _sync(self, key):
         with mock.patch.object(ls, "OUT", self.tmp / "ledger.csv"), mock.patch.object(ls, "DATA", self.tmp), \
+                mock.patch.object(ls, "KANRI_OUT", self.tmp / "kanri.csv"), \
                 mock.patch.object(ls, "BACKUP", self.tmp / "backup"), \
                 mock.patch.object(ls.keychain, "get", lambda s, n: {"url": self.url, "key": key}[n]):
             return ls.sync()
@@ -114,6 +126,19 @@ class LedgerSync(unittest.TestCase):
         self.assertTrue(self._sync("k1"))
         self.assertEqual((self.tmp / "ledger.csv").read_text(encoding="utf-8"), self.CSV)
         self.assertFalse(self._sync("k1"))  # 変化なし
+        kanri = (self.tmp / "kanri.csv").read_text(encoding="utf-8")
+        self.assertEqual(kanri.splitlines(), ["No.,状態,購入日,販売日", "A1,MINT/点カビ,2026/07/26,2026/09/01"])
+        self.assertNotIn("someone", kanri)  # アカウント名・URL は保存しない
+
+    def test_old_script_skips_kanri(self):
+        self.new_script = False
+        self.assertTrue(self._sync("k1"))
+        self.assertFalse((self.tmp / "kanri.csv").exists())
+
+    def test_script_text(self):
+        t = ls.script_text("abc")
+        self.assertIn("'古物台帳', '管理'", t)
+        self.assertNotIn("__", t)
 
 
 class HanpukaiFiles(unittest.TestCase):

@@ -31,6 +31,12 @@ COSTS = """管理番号,cpass_shipping_jpy,duty_jpy,aucrevo_jpy,ebay_order_id,co
 A001,3200,0,500,1,US
 a003,2800,400,500,2,GB
 """
+KANRI = """No.,状態,購入日,販売日
+A001,MINT,2026/07/26,2026/10/03
+a002,E5/点カビ(前玉),2026/07/24,2026/10/20
+A003,AlmostMINT/チリ,2026/07/26,2026/11/02
+A005,NMINT,2026/08/10,
+"""
 LISTINGS = """days_listed,title,site,currency,price,watchers,quantity,sku,ebay_url
 90,Nikon F3 Body [Near MINT],US,USD,300,0,1,B1,https://www.ebay.com/itm/1
 90,Nikon F3 Body [Near MINT],UK,GBP,240,0,1,B1,https://www.ebay.com/itm/2
@@ -46,6 +52,7 @@ class TestDashboard(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         (self.tmp / "ledger.csv").write_text(LEDGER, encoding="utf-8-sig")
         (self.tmp / "costs.csv").write_text(COSTS, encoding="utf-8")
+        (self.tmp / "kanri.csv").write_text(KANRI, encoding="utf-8")
         (self.tmp / "reports").mkdir()
         (self.tmp / "reports" / "listings_20261114.csv").write_text(LISTINGS, encoding="utf-8-sig")
         self.cfg = appraise.load_config(None)
@@ -54,7 +61,7 @@ class TestDashboard(unittest.TestCase):
         ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
         listings, ld = bd.latest_listings(self.tmp / "reports")
         return bd.build(ledger, cols, bd.read_costs(self.tmp / "costs.csv"), listings, ld, targets or {},
-                        self.cfg, 150.0, date(2026, 11, 14))
+                        self.cfg, 150.0, date(2026, 11, 14), bd.read_kanri(self.tmp / "kanri.csv"))
 
     def test_columns_real_header(self):
         _, cols = bd.read_ledger(self.tmp / "ledger.csv")
@@ -100,6 +107,19 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(d["listings_unique"], 5)  # UK の複製は数えない
         got = {c["label"]: c["count"] for c in d["conditions"]}
         self.assertEqual(got, {"TOP MINT": 1, "Near MINT": 1, "Exc+5": 1, "ジャンク": 1, "表記なし": 1})
+
+    def test_sold_conditions(self):
+        d = self.data()
+        self.assertEqual([(c["label"], c["count"]) for c in d["sold_conditions"]],
+                         [("MINT", 1), ("Almost MINT", 1), ("Exc+5", 1)])  # A004 は管理シートに無い
+        self.assertEqual(d["sold_cond_matched"], 3)
+        self.assertEqual(d["stock_conditions"], [{"label": "Near MINT", "count": 1}])
+        self.assertEqual((d["optical"]["n"], d["optical"]["clean_n"]), (1, 2))
+
+    def test_no_kanri(self):
+        ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
+        d = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14))
+        self.assertIsNone(d["sold_conditions"])
 
     def test_country_from_costs(self):
         labels = {c["label"] for c in self.data()["country"]}

@@ -5,6 +5,7 @@
     data/ledger.csv            古物台帳（ledger_sync.py / update_all.py が取り込む）
     data/ledger_costs.csv      管理番号ごとの国際送料・関税・発送代行費・販売国（build_ledger_costs.py）
     reports/listings_*.csv     eBay の出品中一覧（python3 tools/ebay_api.py listings）の一番新しいもの
+    data/kanri.csv             管理シートの No.・状態・購入日・販売日（ledger_sync.py が取り込む）→ 売れた商品の状態
     data/targets.toml          目標（任意）。例:
                                    [month]
                                    sales_jpy = 500000
@@ -66,7 +67,20 @@ COUNTRY_JA = {
 }
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
 # 状態の並び（良い順）。Exc+2 以下はまとめる
-COND_ORDER = ["未使用", "TOP MINT", "MINT", "Near MINT", "Exc+5", "Exc+4", "Exc+3", "Exc+2以下", "ジャンク", "表記なし"]
+COND_ORDER = ["未使用", "TOP MINT", "MINT", "Almost MINT", "Near MINT", "Exc+5", "Exc+4", "Exc+3", "Exc+2以下",
+              "ジャンク", "その他", "表記なし"]
+# 管理シートの状態欄（「MINT/点カビ」の / より前）→ 状態. 上から順に見る（空白・記号を除いた小文字で照合）
+SHEET_COND_RULES = [
+    (r"^(unused|未使用|新品)", "未使用"),
+    (r"^(top|t)mint", "TOP MINT"),
+    (r"^(almost|a)mint", "Almost MINT"),
+    (r"^(near|n)mint|^nm", "Near MINT"),
+    (r"^mint", "MINT"),
+    (r"^(e|ex|exc|excellent)\+?(\d)", "Exc+$2"),
+    (r"^(e|ex|exc|excellent)(\+*)$", "Exc$2"),
+    (r"junk|ジャンク|parts", "ジャンク"),
+]
+OPTICAL_RE = re.compile(r"カビ|かび|曇|くもり|クモリ|バルサム|fungus|haze", re.I)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +206,34 @@ def condition_group(title: str) -> str:
     return c if c in COND_ORDER else "表記なし"
 
 
+def sheet_condition(raw: str) -> str:
+    """管理シートの状態欄 → 状態のまとまり（COND_ORDER の名前）."""
+    t = re.sub(r"[\s　.\-]", "", unicodedata.normalize("NFKC", (raw or "").split("/")[0])).lower()
+    if not t:
+        return "表記なし"
+    for pat, out in SHEET_COND_RULES:
+        m = re.search(pat, t)
+        if m:
+            if "$2" in out:
+                g = m.group(2)
+                n = int(g) if g.isdigit() else len(g)
+                return f"Exc+{n}" if n >= 3 else "Exc+2以下"
+            return out
+    return "その他"
+
+
+def read_kanri(path: Path) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    out = {}
+    for r in csv.DictReader(path.read_text(encoding="utf-8-sig").splitlines()):
+        no = norm_sku(r.get("No.", ""))
+        if no:
+            out[no] = {"raw": (r.get("状態") or "").strip(), "cond": sheet_condition(r.get("状態", "")),
+                       "sold": parse_date(r.get("販売日")), "optical": bool(OPTICAL_RE.search(r.get("状態") or ""))}
+    return out
+
+
 def brand_of(title: str) -> str:
     toks = appraise.title_to_query(title, 20).split()
     known = {b.lower() for b in appraise.BRANDS_EN.values()} | {"zeiss", "carl"}
@@ -282,7 +324,7 @@ def _group(rows: list[dict], key, top: int | None = None) -> list[dict]:
 
 
 def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], listings_date: str,
-          targets: dict, cfg: dict, fx: float, today: date) -> dict:
+          targets: dict, cfg: dict, fx: float, today: date, kanri: dict | None = None) -> dict:
     j = cfg["judge"]
     sold = [r for r in ledger if r["sold"]]
     stock = [r for r in ledger if not r["sold"]]
@@ -399,6 +441,29 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
             ("aucrevo", "発送代行"), ("loss", "円転ロス"), ("profit", "利益")]
     d["breakdown"] = [{"key": k, "label": lab, "value": round(sum(r["p"][k] for r in sold))} for k, lab in keys]
 
+    # 売れた商品の状態（管理シートの状態欄。台帳の No. で結び付け、利益も出す）
+    kanri = kanri or {}
+    d["has_kanri"] = bool(kanri)
+    if kanri:
+        for r in sold:
+            k = kanri.get(norm_sku(r["sku"])) if r["sku"] else None
+            r["cond"] = k["cond"] if k else None
+            r["optical"] = k["optical"] if k else None
+        joined = [r for r in sold if r["cond"]]
+        by = {g["label"]: g for g in _group(joined, lambda r: r["cond"])}
+        d["sold_conditions"] = [by[k] for k in COND_ORDER if k in by]
+        d["sold_cond_matched"] = len(joined)
+        stock_c = Counter(k["cond"] for k in kanri.values() if not k["sold"])
+        d["stock_conditions"] = [{"label": k, "count": stock_c[k]} for k in COND_ORDER if stock_c.get(k)]
+        opt = [r for r in joined if r["optical"]]
+        clean = [r for r in joined if not r["optical"]]
+        avg = lambda rs: round(sum(x["p"]["profit"] for x in rs) / len(rs)) if rs else None  # noqa: E731
+        mg = lambda rs: round(sum(x["p"]["profit"] for x in rs) / max(sum(x["p"]["sale"] for x in rs), 1) * 100, 1) if rs else None  # noqa: E731
+        d["optical"] = {"n": len(opt), "avg": avg(opt), "margin": mg(opt), "clean_n": len(clean),
+                        "clean_avg": avg(clean), "clean_margin": mg(clean)}
+    else:
+        d["sold_conditions"] = d["stock_conditions"] = d["optical"] = None
+
     # 出品中（eBay）
     d["listings_date"] = listings_date
     if listings:
@@ -435,6 +500,7 @@ def main(argv=None) -> int:
     ap.add_argument("--costs", type=Path, default=DATA / "ledger_costs.csv")
     ap.add_argument("--reports", type=Path, default=REPORTS)
     ap.add_argument("--targets", type=Path, default=DATA / "targets.toml")
+    ap.add_argument("--kanri", type=Path, default=DATA / "kanri.csv")
     ap.add_argument("-o", "--out", type=Path, default=REPORTS / "dashboard.html")
     ap.add_argument("--no-open", action="store_true")
     args = ap.parse_args(argv)
@@ -443,7 +509,8 @@ def main(argv=None) -> int:
     fx = float(cfg["fx"]["usd_jpy"])
     ledger, cols = read_ledger(args.ledger)
     listings, ldate = latest_listings(args.reports)
-    data = build(ledger, cols, read_costs(args.costs), listings, ldate, read_targets(args.targets), cfg, fx, date.today())
+    data = build(ledger, cols, read_costs(args.costs), listings, ldate, read_targets(args.targets), cfg, fx, date.today(),
+                 read_kanri(args.kanri))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(data), encoding="utf-8")
     missing = [COLUMN_LABEL[k] for k, v in cols.items() if not v and not (k == "country" and data["has_costs"])]
@@ -451,6 +518,8 @@ def main(argv=None) -> int:
           f"{data.get('listings_unique') or 0}件 → {args.out.relative_to(ROOT) if args.out.is_relative_to(ROOT) else args.out}")
     if ledger and missing:
         print(f"  古物台帳に見つからない列: {'・'.join(missing)}（そのグラフは出ません。列名を Claude に伝えると対応します）")
+    if not data["has_kanri"]:
+        print("  売れた商品の状態: data/kanri.csv がありません（python3 tools/ledger_sync.py script でスクリプトを貼り替え）")
     if not listings:
         print("  出品中の状態グラフ: eBay の出品一覧がありません（python3 tools/ebay_api.py listings で作れます）")
     if sys.platform == "darwin" and not args.no_open:
