@@ -221,6 +221,33 @@ class TestDashboard(unittest.TestCase):
         # 台帳で販売済みでも eBay で売れていない（全額返金）A002 は在庫に数えない（台帳の販売日があるため）
         self.assertEqual(d["kpi"]["stock"], 1)
 
+    def test_old_orders_use_fix_table(self):
+        # 8/17 以前の注文: SKU「A002」は間違い（実際は A001 の Canon FL）。SKU は使わない
+        orders = [
+            {"date": "2026-08-10", "order_id": "OLD1", "title": "Canon FL 50mm F1.4 Lens", "sku": "A002",
+             "currency": "USD", "item_price": "180", "shipping": "0", "country": "US", "payment_status": "PAID"},
+            {"date": "2026-08-12", "order_id": "OLD2", "title": "Nikon FM2 Black Body", "sku": "3",
+             "currency": "USD", "item_price": "320", "shipping": "0", "country": "US", "payment_status": "PAID"},
+        ]
+        ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
+        for r in ledger:  # 候補に出るよう、購入日を注文日より前に
+            r["buy"] = date(2026, 7, 1)
+        api = bd.sales_from_api(orders, {}, ledger, {}, 150.0)
+        self.assertEqual([r["cost_jpy"] for r in api["sales"]], [None, None])  # 間違った SKU の仕入額は使わない
+        self.assertEqual([u["order_id"] for u in api["unfixed"]], ["OLD1", "OLD2"])
+        cands = bd.sku_candidates(orders, ledger, {}, {})
+        self.assertEqual(cands[0]["候補1_No."], "A001")
+        self.assertEqual(cands[1]["候補1_No."], "A004")
+        (self.tmp / "fix.csv").write_text("order_id,正しいNo.,メモ\nOLD1,A001,確認済み\n", encoding="utf-8")
+        fix = bd.read_sku_fix(self.tmp / "fix.csv")
+        api = bd.sales_from_api(orders, {}, ledger, {}, 150.0, fix)
+        self.assertEqual(api["sales"][0]["cost_jpy"], 8000)
+        self.assertEqual([u["order_id"] for u in api["unfixed"]], ["OLD2"])
+        self.assertEqual([c["order_id"] for c in bd.sku_candidates(orders, ledger, {}, fix)], ["OLD2"])
+        # 8/18 以降の注文の SKU はそのまま使う
+        new = [{**orders[0], "date": "2026-08-18", "order_id": "NEW1", "sku": "A001"}]
+        self.assertEqual(bd.sales_from_api(new, {}, ledger, {}, 150.0)["sales"][0]["cost_jpy"], 8000)
+
     def test_ebay_date(self):
         self.assertEqual(bd.parse_date("17-Aug-26"), date(2026, 8, 17))
 

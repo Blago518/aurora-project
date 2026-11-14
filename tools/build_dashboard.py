@@ -15,6 +15,9 @@
     data/item_types.csv        出品情報シートの商品種別（Lens / Camera Body）→ 種類別のグラフ
     data/monthly_costs.csv     （任意）月ごとの送料・関税・発送代行の実額（列: 月,CPaSS,関税,オークレボ）。
                                発送明細（ledger_costs.csv）が無いときに、推定（一律 $30）と比べるのに使う
+    data/sku_fix.csv           昔の注文（SKU_TRUSTED_FROM より前）の SKU の対応表（列: order_id,正しいNo.,メモ）。
+                               その頃は eBay の SKU（Custom label）が No. と合っていないので、SKU は使わずこの表で No. を決める。
+                               候補は python3 tools/build_dashboard.py --sku-candidates → reports/sku_fix_candidates.csv
     data/targets.toml          目標（任意）。例:
                                    [month]
                                    sales_jpy = 500000
@@ -26,6 +29,7 @@
 
 使い方（aurora フォルダで）:
     python3 tools/build_dashboard.py           # → reports/dashboard.html（Mac ではブラウザで開く）
+    python3 tools/build_dashboard.py --sku-candidates   # 昔の注文の正しい No. の候補 → reports/sku_fix_candidates.csv
     python3 tools/build_dashboard.py --no-open
 """
 from __future__ import annotations
@@ -74,6 +78,8 @@ COUNTRY_JA = {
     "IL": "イスラエル", "MX": "メキシコ", "BR": "ブラジル", "PL": "ポーランド", "DK": "デンマーク",
     "NO": "ノルウェー", "FI": "フィンランド", "PT": "ポルトガル", "TH": "タイ", "MY": "マレーシア",
 }
+# この日より前の eBay の注文は SKU（Custom label）が No. と合っていない（ユーザー確認 2026-11-15。ebay売上シートの注意書きと同じ）
+SKU_TRUSTED_FROM = date(2026, 8, 18)
 MONTHS_EN = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 KIND_JA = {"lens": "レンズ", "camera body": "カメラ（ボディ）"}
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
@@ -342,18 +348,79 @@ def read_api_finances(rows: list[dict]) -> dict:
     return {"per": dict(per), "unassigned": dict(unassigned), "refunds": refunds, "skipped_currency": skipped}
 
 
-def sales_from_api(orders: list[dict], fin: dict, ledger: list[dict], kanri_full: dict, fx: float) -> dict:
-    """eBay API の注文 → 販売の行（古物台帳の行と同じ形）. 仕入金額・購入日・仕入先は No.（SKU）で台帳・管理シートから."""
+def read_sku_fix(path: Path) -> dict[str, str]:
+    """注文番号 → 正しい No.（data/sku_fix.csv）."""
+    return {r["order_id"].strip(): r["正しいNo."].strip() for r in _csv_rows(path)
+            if (r.get("order_id") or "").strip() and (r.get("正しいNo.") or "").strip()}
+
+
+def _title_tokens(title: str) -> set[str]:
+    return {t.lower() for t in appraise.title_to_query(title or "", 20).split() if len(t) > 1 or t.isdigit()}
+
+
+def sku_candidates(orders: list[dict], ledger: list[dict], kanri_full: dict, fix: dict[str, str],
+                   top: int = 3) -> list[dict]:
+    """SKU が信用できない昔の注文ごとに、商品名が似ている台帳・管理シートの No. を候補として出す（購入日が販売日以前のものだけ）."""
+    items: dict[str, dict] = {}
+    for k, v in kanri_full.items():
+        if v.get("title"):
+            items[k] = {"no": k, "title": v["title"], "buy": v.get("buy"), "cost": v.get("cost")}
+    for r in ledger:
+        if r["sku"]:
+            items[norm_sku(r["sku"])] = {"no": r["sku"], "title": r["title"], "buy": r["buy"], "cost": r["cost_jpy"]}
+    toks = {k: _title_tokens(v["title"]) for k, v in items.items()}
+    out = []
+    for o in orders:
+        day = parse_date(o.get("date"))
+        if not day or day >= SKU_TRUSTED_FROM or o.get("order_id", "") in fix:
+            continue
+        ot = _title_tokens(o.get("title", ""))
+        scored = []
+        for k, it in items.items():
+            if it["buy"] and it["buy"] > day:
+                continue  # 売れた後に買ったものは違う
+            common = ot & toks[k]
+            if not common:
+                continue
+            scored.append((len(common) / len(ot | toks[k]), it))
+        scored.sort(key=lambda x: -x[0])
+        row = {"order_id": o.get("order_id", ""), "注文日": day.strftime("%Y/%m/%d"), "eBayのSKU": o.get("sku", ""),
+               "eBayの商品名": o.get("title", ""), "金額($)": o.get("item_price", "")}
+        for i in range(top):
+            s, it = scored[i] if i < len(scored) else (0, None)
+            row[f"候補{i + 1}_No."] = it["no"] if it else ""
+            row[f"候補{i + 1}_品目"] = it["title"] if it else ""
+            row[f"候補{i + 1}_一致度"] = f"{s * 100:.0f}%" if it else ""
+        out.append(row)
+    return out
+
+
+def sales_from_api(orders: list[dict], fin: dict, ledger: list[dict], kanri_full: dict, fx: float,
+                   fix: dict[str, str] | None = None) -> dict:
+    """eBay API の注文 → 販売の行（古物台帳の行と同じ形）. 仕入金額・購入日・仕入先は No.（SKU）で台帳・管理シートから.
+
+    SKU_TRUSTED_FROM より前の注文は SKU を使わず、data/sku_fix.csv の対応表で No. を決める（無ければ仕入額不明）."""
+    fix = fix or {}
     by_sku = {norm_sku(r["sku"]): r for r in ledger if r["sku"]}
     per = (fin or {}).get("per", {})
-    sales, cancelled, non_usd = [], [], 0
+    sales, cancelled, non_usd, unfixed = [], [], 0, []
     for o in orders:
-        key = norm_sku(o.get("sku", ""))
         day = parse_date(o.get("date"))
         if not day:
             continue
+        oid = o.get("order_id", "")
+        if oid in fix:
+            sku = fix[oid]
+        elif day < SKU_TRUSTED_FROM:
+            sku = ""  # 昔の注文の SKU は信用しない
+        else:
+            sku = o.get("sku", "")
+        key = norm_sku(sku)
         f = per.get(o.get("order_id", ""))
         net = f["net"] if f else None
+        if day < SKU_TRUSTED_FROM and oid not in fix and not ((o.get("payment_status") or "") == "FULLY_REFUNDED"):
+            unfixed.append({"date": day.strftime("%Y/%m/%d"), "order_id": oid, "sku": o.get("sku", ""),
+                            "title": o.get("title", "")})
         if (o.get("payment_status") or "") == "FULLY_REFUNDED" or (o.get("cancel_state") or "").upper().startswith("CANCEL"):
             cancelled.append({"date": day.strftime("%Y/%m/%d"), "label": o.get("sku", ""), "title": o.get("title", ""),
                               "why": "返金" if o.get("payment_status") == "FULLY_REFUNDED" else "キャンセル"})
@@ -362,18 +429,18 @@ def sales_from_api(orders: list[dict], fin: dict, ledger: list[dict], kanri_full
         if (o.get("currency") or "USD") != "USD":
             non_usd += 1
             price = round(price * {"GBP": 1.27, "AUD": 0.66, "EUR": 1.08, "CAD": 0.73}.get(o.get("currency"), 1.0), 2)
-        led = by_sku.get(key, {})
-        k = kanri_full.get(key, {})
+        led = by_sku.get(key, {}) if key else {}
+        k = kanri_full.get(key, {}) if key else {}
         cost = led.get("cost_jpy") if led.get("cost_jpy") is not None else k.get("cost")
         sales.append({
             "title": led.get("title") or o.get("title", ""), "sold": day, "price_usd": price, "cost_jpy": cost,
             "buy": led.get("buy") or k.get("buy"), "supplier": led.get("supplier") or k.get("supplier", ""),
-            "country": (o.get("country") or "").upper(), "sku": o.get("sku", ""), "order_id": o.get("order_id", ""),
+            "country": (o.get("country") or "").upper(), "sku": sku, "order_id": oid,
             "net_usd": net, "api": {"gross": price, "net": net or 0.0, "refund": f["refund"] if f else 0.0,
                                     "promo": f["promo"] if f else 0.0, "orders": 1} if f else None,
-            "in_ledger_sold": bool(led.get("sold")), "in_ledger": bool(led),
+            "in_ledger_sold": bool(led.get("sold")), "in_ledger": bool(led), "old_unfixed": bool(day < SKU_TRUSTED_FROM and oid not in fix),
         })
-    return {"sales": sales, "cancelled": cancelled, "non_usd": non_usd}
+    return {"sales": sales, "cancelled": cancelled, "non_usd": non_usd, "unfixed": unfixed}
 
 
 def read_item_types(path: Path) -> dict[str, str]:
@@ -534,6 +601,7 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
                "has_ledger": bool(ledger), "has_costs": bool(costs), "source": source,
                "api_date": (api or {}).get("date", ""), "fin_date": (api or {}).get("fin_date", ""),
                "cancelled": (api or {}).get("cancelled") or [], "non_usd": (api or {}).get("non_usd", 0),
+               "unfixed": (api or {}).get("unfixed") or [], "sku_trusted_from": SKU_TRUSTED_FROM.strftime("%Y/%m/%d"),
                "deduction_usd": cfg["shipping"].get("deduction_usd", 30)}
 
     # 概要
@@ -703,7 +771,7 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
     if source == "api":
         d["ebay_not_in_ledger"] = sorted(
             ({"label": r["sku"] or "（SKU なし）", "usd": round(r["price_usd"], 2), "in_ledger": r["in_ledger"]}
-             for r in sold if not r["in_ledger_sold"]), key=lambda x: x["label"])
+             for r in sold if not r["in_ledger_sold"] and not r.get("old_unfixed")), key=lambda x: x["label"])
     else:
         ledger_sold = {norm_sku(r["sku"]) for r in sold if r["sku"]}
         d["ebay_not_in_ledger"] = sorted(
@@ -781,6 +849,8 @@ def main(argv=None) -> int:
     ap.add_argument("--item-types", type=Path, default=DATA / "item_types.csv")
     ap.add_argument("--junk", type=Path, default=DATA / "junk.csv")
     ap.add_argument("--monthly-costs", type=Path, default=DATA / "monthly_costs.csv")
+    ap.add_argument("--sku-fix", type=Path, default=DATA / "sku_fix.csv")
+    ap.add_argument("--sku-candidates", action="store_true", help="昔の注文の正しい No. の候補 → reports/sku_fix_candidates.csv")
     ap.add_argument("-o", "--out", type=Path, default=REPORTS / "dashboard.html")
     ap.add_argument("--no-open", action="store_true")
     args = ap.parse_args(argv)
@@ -797,10 +867,25 @@ def main(argv=None) -> int:
     orders, odate = _latest(args.reports, "ebay_orders")
     fin_rows, fdate = _latest(args.reports, "ebay_finances")
     kanri = read_kanri(args.kanri)
+    fix = read_sku_fix(args.sku_fix)
+    if args.sku_candidates:
+        if not orders:
+            print("eBay API の注文がありません。先に python3 tools/ebay_api.py orders --days 730 を実行してください。")
+            return 1
+        rows = sku_candidates(orders, ledger, kanri, fix)
+        out = args.reports / "sku_fix_candidates.csv"
+        args.reports.mkdir(parents=True, exist_ok=True)
+        with open(out, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else ["order_id"])
+            w.writeheader()
+            w.writerows(rows)
+        print(f"{SKU_TRUSTED_FROM:%Y/%m/%d} より前で対応表に無い注文 {len(rows)}件の候補 → {out}")
+        print("確認できたら data/sku_fix.csv（列: order_id,正しいNo.,メモ）に書く。Claude に「候補を確認したい」と言えば一緒に作ります")
+        return 0
     api = None
     if orders:
         fin = read_api_finances(fin_rows) if fin_rows else {}
-        api = {**sales_from_api(orders, fin, ledger, kanri, fx), "date": odate, "fin_date": fdate, "fin": fin}
+        api = {**sales_from_api(orders, fin, ledger, kanri, fx, fix), "date": odate, "fin_date": fdate, "fin": fin}
     data = build(ledger, cols, read_costs(args.costs), listings, ldate, read_targets(args.targets), cfg, fx, date.today(),
                  kanri, read_ebay_sales(args.ebay_sales), read_item_types(args.item_types),
                  read_junk(args.junk), read_monthly_costs(args.monthly_costs), api)
@@ -814,6 +899,9 @@ def main(argv=None) -> int:
     if not data["has_kanri"] or not data["has_ebay"]:
         print("  管理・ebay売上・J管理・出品情報シートが未取り込みです（python3 tools/ledger_sync.py script でスクリプトを貼り替え）")
     print(f"  販売の数え方: {'eBay API の注文（' + odate + ' 取得）' if api else '古物台帳（eBay API の注文が無いため）'}")
+    if api and api["unfixed"]:
+        print(f"  {SKU_TRUSTED_FROM:%Y/%m/%d} より前で No. が分からない注文 {len(api['unfixed'])}件（仕入額不明）"
+              " → python3 tools/build_dashboard.py --sku-candidates で候補を出して data/sku_fix.csv に")
     if data["actual"]:
         print(f"  実際の手取りで計算: {data['actual']['n']} / {data['kpi']['count']}件（{data['actual']['source']}）")
     if not listings:

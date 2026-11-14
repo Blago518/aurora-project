@@ -463,6 +463,12 @@ function draw() {
       `<p class="note" style="margin:0">${D.source === "api" ? "eBay API の注文から数えているのでグラフには入っています。古物台帳（古物営業法の帳簿）に販売日・販売金額を記入してください" : "このページの件数・売上・利益に入っていません。古物台帳の販売日・販売金額を記入すると入ります"}</p>` +
       `<p style="margin:6px 0 0;font-size:13px">${X.map(x => `${esc(x.label)}（$${x.usd}${x.in_ledger ? "" : "・台帳に行が無い"}）`).join("、")}</p></div>`);
   }
+  if (D.unfixed && D.unfixed.length) {
+    sa.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>⚠ No. が分からない昔の注文（${D.unfixed.length}件・${esc(D.sku_trusted_from)} より前）</h3>` +
+      `<p class="note" style="margin:0">この頃の eBay の SKU は No. と合っていないので使っていません。仕入額が分からず、利益は仕入0円で計算されています。` +
+      `<code>python3 tools/build_dashboard.py --sku-candidates</code> で候補を出し、確認したものを data/sku_fix.csv に書くと直ります</p>` +
+      table([{h: "注文日", f: r => r.date}, {h: "eBay の SKU", f: r => r.sku || "—"}, {h: "商品名", f: r => r.title}], D.unfixed) + `</div>`);
+  }
   if (D.cancelled && D.cancelled.length) {
     sa.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>全額返金・キャンセルで販売に数えていない注文（${D.cancelled.length}件）</h3>` +
       table([{h: "日付", f: r => r.date}, {h: "No.", f: r => r.label || "—"}, {h: "理由", f: r => r.why}, {h: "商品", f: r => r.title}], D.cancelled) + `</div>`);
