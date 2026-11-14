@@ -2,16 +2,25 @@
 """古物台帳（Google スプレッドシート）を自動で data/ledger.csv に取り込む.
 
 スプレッドシートに貼った Apps Script（下の APPS_SCRIPT）が、合言葉付きの専用 URL で「古物台帳」シートを CSV で返す。
+?sheet=… を付けると、許可したほかのシートも返す（2026-11-15 追加）。購入者の名前・住所の列（Buyer…・Ship to…）は
+スクリプトの側で取り除いてから返す。ほかのシートからは EXTRA_SHEETS の列だけを data/ に保存する（グラフ用）:
+    管理      → data/kanri.csv        No.・状態・購入日・販売日（売れた商品の状態）
+    ebay売上  → data/ebay_sales.csv   eBay の取引レポートの日付・種類・注文番号・手取り・手数料・Custom label（実際の利益）
+    J管理     → data/junk.csv         ジャンク品のヤフオク再販の仕入・実販売・日付
+    出品情報  → data/item_types.csv   管理番号・商品種別
 Mac はその URL を読むだけ。URL と合言葉はキーチェーンに保存し、GitHub やチャットには書かない。
 スプレッドシートの ID もこのファイルには書かない（スクリプトはそのスプレッドシートの中で動く）。
 
 使い方（aurora フォルダで）:
     python3 tools/ledger_sync.py setup   # 初回: スクリプトをクリップボードにコピー → 貼って公開 → URL を入力
     python3 tools/ledger_sync.py         # 取り込む（update_all.py が毎回実行する）
+    python3 tools/ledger_sync.py script  # スクリプトを新しくしたとき: コピー → 貼り替えて「新バージョン」でデプロイ（URL は同じ）
 """
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import secrets
 import shutil
 import sys
@@ -25,6 +34,16 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 DATA = ROOT / "data"
 OUT = DATA / "ledger.csv"
+# シート名 → (保存先, 保存する列). 列の1つ目と2つ目がある行を見出しとみなす。これ以外の列（アカウント名・URL など）は保存しない
+EXTRA_SHEETS = {
+    "管理": ("kanri.csv", ["No.", "状態", "購入日", "販売日"]),
+    "ebay売上": ("ebay_sales.csv", ["Custom label", "Transaction creation date", "Type", "Order number", "Net amount",
+                                  "Payout currency", "Quantity", "Item subtotal", "Shipping and handling",
+                                  "Final Value Fee - fixed", "Final Value Fee - variable", "International fee",
+                                  "Gross transaction amount", "Transaction currency", "Description"]),
+    "J管理": ("junk.csv", ["No.", "仕入(円)", "実販売(円)", "売上−仕入(円)", "購入日", "販売日", "保管", "ヤフオク出品"]),
+    "出品情報": ("item_types.csv", ["管理番号", "商品種別"]),
+}
 BACKUP = DATA / "backup"
 SERVICE = "aurora-ledger"
 SHEET = "古物台帳"
@@ -34,22 +53,35 @@ import keychain  # noqa: E402
 
 APPS_SCRIPT = """// aurora: 古物台帳を CSV で返す（Mac の tools/ledger_sync.py が読む）。合言葉が一致したときだけ返す
 const KEY = '__KEY__';
-const SHEET = '__SHEET__';
+const SHEETS = [__SHEETS__];  // 返してよいシート（最初のものが既定）
+const DROP = /^(Buyer|Ship to)/;  // 購入者の名前・住所の列は返さない
 function doGet(e) {
   if (!e || !e.parameter || e.parameter.key !== KEY) {
     return ContentService.createTextOutput('forbidden');
   }
-  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET);
-  const rows = sh.getDataRange().getDisplayValues();
+  const name = SHEETS.indexOf(e.parameter.sheet) >= 0 ? e.parameter.sheet : SHEETS[0];
+  const sh = SpreadsheetApp.getActive().getSheetByName(name);
+  let rows = sh.getDataRange().getDisplayValues();
+  const head = rows.slice(0, 10).find(r => r.some(v => DROP.test(v)));
+  if (head) {
+    const keep = head.map((v, i) => DROP.test(v) ? -1 : i).filter(i => i >= 0);
+    rows = rows.map(r => keep.map(i => r[i]));
+  }
   const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\\n');
   return ContentService.createTextOutput(csv).setMimeType(ContentService.MimeType.CSV);
 }
 """
 
 
-def fetch(url: str, key: str) -> str:
+def script_text(key: str) -> str:
+    names = ", ".join(f"'{n}'" for n in [SHEET, *EXTRA_SHEETS])
+    return APPS_SCRIPT.replace("__KEY__", key).replace("__SHEETS__", names)
+
+
+def fetch(url: str, key: str, sheet: str | None = None) -> str:
     sep = "&" if "?" in url else "?"
-    with urllib.request.urlopen(f"{url}{sep}key={urllib.parse.quote(key)}", timeout=60) as res:  # Google は転送（302）してから返す
+    q = f"key={urllib.parse.quote(key)}" + (f"&sheet={urllib.parse.quote(sheet)}" if sheet else "")
+    with urllib.request.urlopen(f"{url}{sep}{q}", timeout=60) as res:  # Google は転送（302）してから返す
         return res.read().decode("utf-8-sig")
 
 
@@ -68,6 +100,7 @@ def sync(dry_run: bool = False) -> bool | None:
         why = "合言葉が違います（setup をやり直す）" if text.strip() == "forbidden" else "古物台帳シートの形ではありません"
         print(f"古物台帳: {why}", file=sys.stderr)
         return None
+    sync_extra(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
     if old == text:
         print("古物台帳: 変化なし", file=sys.stderr)
@@ -85,10 +118,77 @@ def sync(dry_run: bool = False) -> bool | None:
     return True
 
 
+def pick_columns(text: str, columns: list[str]) -> list[dict] | None:
+    """シートの CSV → columns の列だけの行. 見出し（columns の1つ目と2つ目がある行）が無ければ None."""
+    rows = list(csv.reader(io.StringIO(text)))
+    norm = lambda r: [h.replace("\n", "").strip() for h in r]  # noqa: E731
+    i = next((i for i, r in enumerate(rows[:10]) if columns[0] in norm(r) and columns[1] in norm(r)), None)
+    if i is None:
+        return None
+    head = norm(rows[i])
+    idx = {c: head.index(c) for c in columns if c in head}
+    out = []
+    for r in rows[i + 1:]:
+        d = {c: (r[j].strip() if j < len(r) else "") for c, j in idx.items()}
+        if any(d.values()):
+            out.append(d)
+    return out
+
+
+def sync_extra(url: str, key: str, dry_run: bool = False) -> dict[str, int | None]:
+    """古物台帳以外のシートの必要な列 → data/*.csv. 古いスクリプト（そのシートを返さない）なら None."""
+    result: dict[str, int | None] = {}
+    for sheet, (fname, columns) in EXTRA_SHEETS.items():
+        try:
+            rows = pick_columns(fetch(url, key, sheet), columns)
+        except (urllib.error.URLError, OSError) as e:
+            print(f"{sheet}シート: 読み込めませんでした（{e}）", file=sys.stderr)
+            result[sheet] = None
+            continue
+        if rows is None:
+            print(f"{sheet}シート: 取り込めませんでした。スプレッドシートの Apps Script が古いためです"
+                  "（python3 tools/ledger_sync.py script で貼り替え）", file=sys.stderr)
+            result[sheet] = None
+            continue
+        result[sheet] = len(rows)
+        if dry_run:
+            print(f"{sheet}シート: {len(rows)}行を取り込み予定", file=sys.stderr)
+            continue
+        DATA.mkdir(exist_ok=True)
+        with open(DATA / fname, "w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=columns)
+            w.writeheader()
+            w.writerows(rows)
+        print(f"{sheet}シート: {len(rows)}行 → data/{fname}", file=sys.stderr)
+    return result
+
+
+def cmd_script() -> None:
+    """スクリプトを新しくしたとき: 貼り替えて新バージョンでデプロイ（URL・合言葉はそのまま）."""
+    key = keychain.get(SERVICE, "key")
+    if not key or not keychain.get(SERVICE, "url"):
+        print("まだ設定されていません。先に python3 tools/ledger_sync.py setup を実行してください。")
+        sys.exit(1)
+    script = script_text(key)
+    copied = keychain.copy_to_clipboard(script)
+    head = "新しいスクリプトをクリップボードにコピーしました。" if copied else "下のスクリプトをコピーしてください:\n" + script
+    print(f"""
+{head}
+
+ 1. 古物台帳のスプレッドシートを開く → 上のメニュー「拡張機能」→「Apps Script」
+ 2. 中の文字を全部選んで（⌘A）、貼り付け（⌘V）→ 保存（⌘S）
+ 3. 右上「デプロイ」→「デプロイを管理」→ 鉛筆マーク（編集）
+    → バージョン:「新バージョン」→「デプロイ」（URL は変わりません）
+ 4. 終わったら Enter
+""")
+    input("Enter を押すと試しに読み込みます…")
+    sync(dry_run=True)
+
+
 def cmd_setup() -> None:
     key = keychain.get(SERVICE, "key") or secrets.token_urlsafe(24)
     keychain.set(SERVICE, "key", key)
-    script = APPS_SCRIPT.replace("__KEY__", key).replace("__SHEET__", SHEET)
+    script = script_text(key)
     copied = keychain.copy_to_clipboard(script)
     head = "スクリプトをクリップボードにコピーしました。" if copied else "下のスクリプトをコピーしてください:\n" + script
     print(f"""
@@ -113,11 +213,13 @@ def cmd_setup() -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="古物台帳を data/ledger.csv に取り込む")
-    ap.add_argument("cmd", nargs="?", choices=["sync", "setup"], default="sync")
+    ap.add_argument("cmd", nargs="?", choices=["sync", "setup", "script"], default="sync")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
     if args.cmd == "setup":
         cmd_setup()
+    elif args.cmd == "script":
+        cmd_script()
     else:
         sync(args.dry_run)
     return 0
