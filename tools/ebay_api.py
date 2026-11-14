@@ -273,8 +273,8 @@ def cmd_orders(args) -> None:
           + " / ".join(f"{v:,.2f} {k}" for k, v in sorted(by_cur.items())))
     if skipped:
         print(f"  ドル以外の {skipped}件は相場データに入れていません（明細の currency 列を確認）")
-    print(f"→ {sales}（相場データとして自動で使われます）\n→ {detail}（明細）")
-    print("拡張機能に反映するには: python3 tools/build_extension.py")
+    # 拡張機能の相場は古物台帳（data/ledger.csv → reference_prices.csv）から作る。同じ販売を二重に数えないよう、ここの結果は混ぜない
+    print(f"→ {sales}（ドル建ての販売の控え。拡張機能の相場は古物台帳から作るので、ここは混ぜません）\n→ {detail}（明細）")
 
 
 def cmd_listings(_args) -> None:
