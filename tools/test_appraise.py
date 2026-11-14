@@ -58,19 +58,6 @@ class YahooParse(unittest.TestCase):
         self.assertEqual(info["domestic_shipping_jpy"], 0)
 
 
-class EbayParse(unittest.TestCase):
-    def test_prices(self):
-        page = (
-            '<span class="s-item__price">$1,234.50</span>'
-            '<span class="s-item__price">$100.00 to $120.00</span>'
-            '<span class="s-card__price">JPY 15,000</span>'
-        )
-        self.assertEqual(ba.parse_ebay_prices(page, fx=150), [1234.5, 100.0, 100.0])
-
-    def test_trim_outliers(self):
-        self.assertEqual(ba.trim_outliers([100, 110, 90, 105, 5, 900]), [100, 110, 90, 105])
-
-
 class Calculation(unittest.TestCase):
     def item(self, **kw):
         it = ba.Item(url="u", current_price_jpy=20000, domestic_shipping_jpy=1000, ship_size="medium")
@@ -168,30 +155,6 @@ class MatchingRules(unittest.TestCase):
         self.assertEqual([x["_price"] for x in m], [139.99])
 
 
-class AutoPrice(unittest.TestCase):
-    def test_unpriced_group_gets_ebay_price(self):
-        items = []
-        for i, t in enumerate(["オリンパス ZUIKO 50mm F3.5 マクロ", "OLYMPUS Zuiko MC 50mm f/3.5 Macro"]):
-            it = ba.Item(url=f"u{i}", auction_id=f"x{i}", title=t, current_price_jpy=3000,
-                         domestic_shipping_jpy=800, prefilled=True)
-            it.flags = ba.detect_flags(t)
-            it.ebay_query = ba.title_to_query(t)
-            items.append(it)
-        fake = "".join(f'<span class="s-item__price">${p}.00</span>' for p in (100, 110, 120, 130, 140, 900))
-        orig = ba.http_get
-        ba.http_get = lambda url, timeout=20: fake
-        try:
-            with tempfile.TemporaryDirectory() as d:
-                added = ba.auto_price_unpriced(items, CFG, 150, top_n=5, delay=0, cache_path=Path(d) / "c.csv")
-                cached = (Path(d) / "c.csv").read_text(encoding="utf-8-sig")
-        finally:
-            ba.http_get = orig
-        self.assertEqual(added, 2)
-        self.assertEqual(items[0].expected_price_usd, 120.0)  # 900 は外れ値として除外、中央値120
-        self.assertIn("Olympus 50mm", cached)
-        self.assertTrue(items[0].price_source.startswith("eBay販売済み自動"))
-
-
 class UserscriptParity(unittest.TestCase):
     """ユーザースクリプト（JS）が Python と同じ判定をすることを確認（node が無ければスキップ）."""
 
@@ -212,7 +175,7 @@ class UserscriptParity(unittest.TestCase):
                                     ("Pentax 645 本体", "自分の販売実績", 398.1)]]
         items = [ba.Item(url=f"u{i}", auction_id=f"x{i}", title=t, current_price_jpy=5000,
                          domestic_shipping_jpy=800, prefilled=True) for i, t in enumerate(titles)]
-        ba.analyze(items, sales, CFG, 150.0, True, False, 0, [])
+        ba.analyze(items, sales, CFG, 150.0, True, 0, [])
         py = [[ba.judge(it)[0], it.expected_price_usd, (it.calc or {}).get("max_bid_jpy")] for it in items]
         data = bu.build_data(CFG, 150.0)
         data["refs"] = [{"title": r["title"], "price": r["_price"], "tier": ba.source_tier(r), "source": r["source"],
@@ -227,6 +190,20 @@ class UserscriptParity(unittest.TestCase):
                     "console.log(JSON.stringify(it.map(i=>[i.mark,i.usd,i.calc?i.calc.maxBid:null])))")
             out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
         self.assertEqual(json.loads(out), py)
+
+
+class NoScraping(unittest.TestCase):
+    """eBay の規約順守: eBay のページを自動取得するコードが無いこと."""
+
+    def test_no_ebay_fetch(self):
+        src = Path(ba.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("parse_ebay_prices", src)
+        self.assertNotIn("auto_price_unpriced", src)
+        js = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        self.assertNotRegex(js, r"fetch\([^)]*ebay")
+
+    def test_mutar_is_adapter(self):
+        self.assertIn("アダプター等", ba.detect_flags("CONTAX RTSムター？2X(中古品)"))
 
 
 if __name__ == "__main__":

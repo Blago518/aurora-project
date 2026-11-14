@@ -21,7 +21,7 @@ import appraise as ba
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 KNOW = ROOT / "knowledge"
-SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv", "ebay_cache.csv")
+SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv")
 
 
 def safe(name: str) -> str:
@@ -45,7 +45,7 @@ def main() -> int:
         print("data/ に相場データがありません", file=sys.stderr)
         return 1
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    label = lambda r: ba.SOURCE_LABELS[ba.source_tier(r)] if not str(r.get("source", "")).startswith(("相場メモ", "eBay")) \
+    label = lambda r: ba.SOURCE_LABELS[ba.source_tier(r)] if not str(r.get("source", "")).startswith("相場メモ") \
         else str(r["source"])
 
     # 機種ノート（自分・Chatworkの実績がある機種）

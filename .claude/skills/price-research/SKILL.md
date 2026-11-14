@@ -6,8 +6,8 @@ description: 相場が未登録の機種の eBay 相場を調べて相場メモ�
 
 1. 未登録の機種を件数の多い順に並べる（`reports/unpriced_models_*.csv`、または拡張機能の「相場が未登録の機種」）。
 2. 各機種の eBay 販売済み（価格+送料の高い順）を確認する。
-   - ユーザーの Mac なら `python3 tools/appraise.py --ebay-auto 40` で自動取得を試す。
-   - 取れない場合は sold リンクを渡し、ユーザーに数字を確認してもらう。
+   - **eBay のページを自動で読み取らない（スクレイピングは eBay の規約違反）。**
+   - sold リンク・Product Research を渡し、ユーザーに数字を確認してもらう（または画面のスクショを読む）。
 3. 想定販売価格は**中央値より少し下**（保守的に）。ジャンク・難ありの成約は除いて考える。
 4. `data/price_memo.csv` に追記: `title,sold_price_usd,source,memo`（source は「相場メモ」）。
 5. 反映: `python3 tools/build_extension.py` と `python3 tools/build_knowledge.py`。

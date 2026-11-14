@@ -28,7 +28,6 @@ python3 -m unittest discover -s tools     # テスト
 ## 主なオプション（appraise.py）
 | オプション | 意味 |
 |---|---|
-| `--ebay-auto 40` | 相場未登録の上位40機種を eBay 販売済みから自動で相場化（Macで。7日キャッシュ） |
 | `--max-per-search 500` | 検索URL1本あたりの件数上限 |
 | `--offline` | 通信しない（手入力CSVで計算） |
 | `--fx 155` | 為替を指定 |
@@ -43,6 +42,5 @@ python3 -m unittest discover -s tools     # テスト
 | `price_memo.csv` | 自分で調べた相場（title,sold_price_usd,source,memo） |
 | `kantei_bookmarklet.docx` | 旧ブックマークレットの相場表 |
 | `reference_prices.csv` | 自動生成（古物台帳＋頒布会） |
-| `ebay_cache.csv` | 自動生成（eBay自動相場のキャッシュ） |
 
 設定（手数料・送料・判定基準・ジャンク評価率）は `tools/config.toml`。

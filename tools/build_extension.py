@@ -22,7 +22,7 @@ import appraise as ba
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv", "ebay_cache.csv")
+SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv")
 
 
 def build_data(cfg: dict, fx: float) -> dict:

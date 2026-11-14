@@ -104,8 +104,6 @@ class Item:
     # 分析結果
     fetch_note: str = ""
     flags: list[str] = field(default_factory=list)
-    sold_prices_usd: list[float] = field(default_factory=list)
-    active_prices_usd: list[float] = field(default_factory=list)
     history_matches: list[dict] = field(default_factory=list)
     expected_price_usd: float | None = None
     price_source: str = ""
@@ -454,7 +452,7 @@ FLAG_RULES = [
     ("美品", r"超美品|極上|美品|新品同様|未使用"),
     ("セット品", r"セット|まとめ|おまとめ|大量|\d+\s*点"),
     ("アダプター等", r"アダプタ|adapter|コンバーター|converter|接写リング|中間リング|エクステンション|テレプラス|"
-                   r"teleplus|テレコンバーター|塗料|ペイント|マウント変換|→"),
+                   r"teleplus|テレコンバーター|テレコン|ムター|mutar|エクステンダー|extender|塗料|ペイント|マウント変換|→"),
     ("付属品のみ?", r"(?:キャップ|ストラップ|ケース|フード|フィルター|背面|裏蓋|データバック|ファインダー)"
                    r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|取扱説明書|説明書のみ|\bback\b"),
 ]
@@ -540,25 +538,6 @@ def ebay_links(query: str) -> dict:
     }
 
 
-def parse_ebay_prices(page: str, fx: float) -> list[float]:
-    """eBay検索結果HTMLから価格（USD）を抜き出す。円表示なら為替で換算."""
-    prices: list[float] = []
-    for m in re.finditer(
-        r'class="[^"]*s-(?:item|card)__price[^"]*"[^>]*>(.*?)</(?:span|div)>', page, re.S
-    ):
-        txt = html.unescape(re.sub(r"<[^>]+>", " ", m.group(1)))
-        usd = re.search(r"\$\s*([\d,]+(?:\.\d{1,2})?)", txt)
-        jpy = re.search(r"(?:JPY|¥|円)\s*([\d,]+)|([\d,]+)\s*円", txt)
-        if usd:
-            prices.append(float(usd.group(1).replace(",", "")))
-        elif jpy:
-            prices.append(float((jpy.group(1) or jpy.group(2)).replace(",", "")) / fx)
-    # 先頭の「Shop on eBay」ダミー行（$20.00固定）を除外
-    if prices and "Shop on eBay" in page[:200000] and prices[0] == 20.0:
-        prices = prices[1:]
-    return [p for p in prices if p > 0]
-
-
 def quantile(values: list[float], q: float) -> float:
     s = sorted(values)
     if not s:
@@ -566,14 +545,6 @@ def quantile(values: list[float], q: float) -> float:
     pos = (len(s) - 1) * q
     lo, hi = math.floor(pos), math.ceil(pos)
     return s[lo] + (s[hi] - s[lo]) * (pos - lo)
-
-
-def trim_outliers(values: list[float]) -> list[float]:
-    """中央値から大きく外れた価格（付属品だけ・セット品など）を除く."""
-    if len(values) < 5:
-        return values
-    med = statistics.median(values)
-    return [v for v in values if med / 3 <= v <= med * 3]
 
 
 # ---------------------------------------------------------------------------
@@ -650,7 +621,7 @@ def source_tier(row: dict) -> int:
     src = row.get("source") or "自分の販売実績"
     if src.startswith("Chatwork"):
         return 1
-    if src.startswith(("頒布会", "eBay")):
+    if src.startswith("頒布会"):
         return 2
     if src.startswith("鑑定表"):
         return 3
@@ -886,19 +857,18 @@ def judge(item: Item) -> tuple[str, str]:
 
 
 def assign_price(item: Item, cfg: dict, fx: float) -> None:
-    """想定販売価格: 手入力 > eBay販売済み（個別取得） > 実績・相場データ の順に決めて利益を計算."""
-    q_level = cfg["judge"]["sold_price_quantile"]
+    """想定販売価格: 手入力 > 実績・相場データ の順に決めて利益を計算.
+
+    eBay のページを自動で読みに行くこと（スクレイピング）は eBay の規約違反なので行わない。
+    """
     if item.ebay_price_usd is not None:
         item.expected_price_usd, item.price_source = item.ebay_price_usd, "手入力"
-    elif len(item.sold_prices_usd) >= 3:
-        item.expected_price_usd = round(quantile(item.sold_prices_usd, q_level), 2)
-        item.price_source = f"eBay販売済み{len(item.sold_prices_usd)}件の{int(q_level*100)}%点"
     elif item.history_matches:
         ps = [m["_price"] for m in item.history_matches]
         item.expected_price_usd = round(statistics.median(ps), 2)
         src = str(item.history_matches[0].get("source", ""))
         label = SOURCE_LABELS[source_tier(item.history_matches[0])]
-        if src.startswith(("相場メモ", "鑑定表", "eBay")):
+        if src.startswith(("相場メモ", "鑑定表")):
             label = src
         item.price_source = f"{label} {len(ps)}件の中央値" if len(ps) > 1 else label
     if item.expected_price_usd is not None and "ジャンク" in item.flags and item.ebay_price_usd is None:
@@ -910,7 +880,7 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
 
 
 def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline: bool,
-            fetch_ebay: bool, delay: float, kantei: list[dict] | None = None) -> None:
+            delay: float, kantei: list[dict] | None = None) -> None:
     for i, item in enumerate(items, 1):
         if not item.prefilled:
             print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)
@@ -929,80 +899,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
         if not item.history_matches and kantei:
             item.history_matches = match_kantei(item.title, kantei)
 
-        # 個別URLを少数渡したときだけ、出品ごとにeBayを見に行く（検索URLの大量取得では機種単位で行う）
-        if not offline and fetch_ebay and not item.prefilled:
-            links = ebay_links(item.ebay_query)
-            for kind, attr in (("sold", "sold_prices_usd"), ("active", "active_prices_usd")):
-                try:
-                    setattr(item, attr, trim_outliers(parse_ebay_prices(http_get(links[kind]), fx)))
-                except (urllib.error.URLError, TimeoutError, OSError) as e:
-                    item.fetch_note += f"eBay{kind}取得失敗({e.__class__.__name__}) "
-                time.sleep(delay)
         assign_price(item, cfg, fx)
-
-
-# ---------------------------------------------------------------------------
-# 相場未登録の機種を eBay 販売済みから自動で補う（キャッシュ付き）
-# ---------------------------------------------------------------------------
-
-CACHE_FIELDS = ["date", "title", "sold_price_usd", "source", "count", "ebay_url"]
-
-
-def auto_price_unpriced(items: list[Item], cfg: dict, fx: float, top_n: int, delay: float,
-                        cache_path: Path, max_age_days: int = 7) -> int:
-    """相場が無い機種の上位 top_n 件について eBay 販売済み検索を1回ずつ見て相場を作る."""
-    cache: dict[str, dict] = {}
-    if cache_path.exists():
-        with open(cache_path, encoding="utf-8-sig", newline="") as f:
-            for row in csv.DictReader(f):
-                cache[row["title"].lower()] = row
-    today = datetime.now()
-    new_rows: list[dict] = []
-    fetched = 0
-    for m in unpriced_models(items)[:top_n]:
-        label = m["title"]
-        row = cache.get(label.lower())
-        fresh = row and (today - datetime.strptime(row["date"], "%Y-%m-%d")).days <= max_age_days
-        if not fresh:
-            url = ebay_links(label)["sold"] + "&_sacat=625"
-            try:
-                prices = trim_outliers(parse_ebay_prices(http_get(url), fx))
-            except urllib.error.HTTPError as e:
-                print(f"eBayに接続できません（HTTP {e.code}）。自動の相場取得を中止します。", file=sys.stderr)
-                break
-            except (urllib.error.URLError, TimeoutError, OSError) as e:
-                print(f"eBay取得失敗({e.__class__.__name__}): {label}", file=sys.stderr)
-                continue
-            fetched += 1
-            time.sleep(delay)
-            q = cfg["judge"]["sold_price_quantile"]
-            row = {"date": today.strftime("%Y-%m-%d"), "title": label,
-                   "sold_price_usd": round(quantile(prices, q), 2) if len(prices) >= 5 else "",
-                   "source": f"eBay販売済み自動({len(prices)}件)", "count": len(prices), "ebay_url": url}
-            cache[label.lower()] = row
-        if row.get("sold_price_usd"):
-            new_rows.append(row)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(cache_path, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=CACHE_FIELDS)
-        w.writeheader()
-        w.writerows(cache.values())
-    # 取れた相場で、未判定の出品をもう一度照合
-    rows = []
-    for r in new_rows:
-        r = dict(r)
-        r["_price"] = float(r["sold_price_usd"])
-        r["_tokens"] = _tokens(r["title"])
-        rows.append(r)
-    added = 0
-    for it in items:
-        if it.expected_price_usd is None and it.ebay_query:
-            it.history_matches = match_sales(f"{it.ebay_query} {it.title}", rows)
-            if it.history_matches:
-                assign_price(it, cfg, fx)
-                added += 1
-    print(f"eBay自動相場: {fetched}機種を取得、{len(new_rows)}機種で相場あり → {added}件を追加判定", file=sys.stderr)
-    return added
 
 
 # ---------------------------------------------------------------------------
@@ -1038,10 +935,6 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "eBay販売済みURL": links.get("sold", ""),
                 "eBay出品中URL": links.get("active", ""),
                 "eBayProductResearchURL": links.get("research", ""),
-                "eBay販売済み中央値USD": round(statistics.median(it.sold_prices_usd), 2) if it.sold_prices_usd else None,
-                "eBay販売済み件数": len(it.sold_prices_usd) or None,
-                "eBay出品中最安USD": min(it.active_prices_usd) if it.active_prices_usd else None,
-                "eBay出品中件数": len(it.active_prices_usd) or None,
                 "過去実績件数": len(it.history_matches) or None,
                 "過去実績URL": " ".join(m.get("ebay_url", "") for m in it.history_matches if m.get("ebay_url")),
                 "過去実績の内訳": " / ".join(
@@ -1102,7 +995,6 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
             f"- eBay販売済み: {r['eBay販売済みURL']}",
             f"- eBay出品中: {r['eBay出品中URL']}",
             f"- eBay Product Research: {r['eBayProductResearchURL']}",
-            f"- eBay相場: 販売済み中央値 {_usd(r['eBay販売済み中央値USD'])}（{r['eBay販売済み件数'] or 0}件） / 出品中最安 {_usd(r['eBay出品中最安USD'])}（{r['eBay出品中件数'] or 0}件）",
             f"- 過去の実績: {r['過去実績件数'] or 0}件 {r['過去実績の内訳']}",
             f"- 想定販売価格: {_usd(r['想定販売価格USD'])}（{r['価格の根拠'] or '根拠なし'}） → 送料差引後Net {_usd(r['Net販売価格USD'])}",
             f"- 仕入価格(現在+国内送料): {_yen(r['仕入価格(現在+国内送料)'])} / eBay手数料 {_yen(r['eBay手数料'])} / 国際送料 {_yen(r['国際送料'])}",
@@ -1193,8 +1085,6 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
     <div><label>利益（現在価格）</label><b>{_yen(r['利益(現在価格)']) or '-'}</b><small>利益率 {r['利益率%'] if r['利益率%'] is not None else '-'}%</small></div>
     <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料</small></div>
     <div><label>eBay手数料／国際送料</label><b>{_yen(r['eBay手数料']) or '-'}</b><small>送料 {_yen(r['国際送料']) or '-'}</small></div>
-    <div><label>eBay販売済み</label><b>{_usd(r['eBay販売済み中央値USD']) or '-'}</b><small>{r['eBay販売済み件数'] or 0}件（中央値）</small></div>
-    <div><label>eBay出品中</label><b>{_usd(r['eBay出品中最安USD']) or '-'}</b><small>{r['eBay出品中件数'] or 0}件（最安）</small></div>
   </div>
   <p class="links">{link(r['ヤフオクURL'], 'ヤフオク出品')}{link(r['eBay販売済みURL'], 'eBay販売済み')}{link(r['eBay出品中URL'], 'eBay出品中')}{link(r['eBayProductResearchURL'], 'Product Research')}{hist}</p>
   {('<p class="meta">参考実績: ' + e(r['過去実績の内訳']) + '</p>') if r['過去実績の内訳'] else ''}
@@ -1227,7 +1117,7 @@ h2{{font-size:16px;margin:22px 0 6px}}details{{margin:12px 0}}.mini{{font-size:1
 <p class="summary">{datetime.now():%Y-%m-%d %H:%M} 作成 ・ {len(rows)}件（◎{counts['◎']} ○{counts['○']} 要確認{counts['要確認']} ×{counts['×']}）<br>
 為替 1USD={fx:.2f}円（円転ロス{cfg['fx']['conversion_loss_pct']}%） ・ 基準: 利益{j['min_profit_jpy']:,}円以上かつ利益率{j['min_margin_pct']}%以上 ・
 eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['international_fee_pct']}%+広告{cfg['ebay']['ad_rate_pct']}%+${cfg['ebay']['per_order_fee_usd']}<br>
-上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの販売済み価格はBest Offer成約額を含まないため、Product Researchで確認してください。</p>
+上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの相場は自動取得しません（規約順守）。soldリンク・Product Researchで確認してください。</p>
 <h2>入札候補（◎○は終了が近い順）</h2>
 {''.join(cards) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
 <details><summary>× 見送り {len(hidden_bad)}件</summary><ul class="mini">{''.join(
@@ -1261,9 +1151,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", type=Path, help="設定ファイル（既定: config.toml）")
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
     ap.add_argument("--offline", action="store_true", help="通信しない（手入力値と販売実績のみで計算）")
-    ap.add_argument("--no-ebay-fetch", action="store_true", help="eBay相場の自動取得をしない（リンクだけ作る）")
-    ap.add_argument("--ebay-auto", type=int, default=40,
-                    help="相場未登録の機種のうち件数の多い上位N機種を eBay 販売済みから自動で相場化（0で無効、7日キャッシュ）")
     ap.add_argument("--delay", type=float, default=1.5, help="通信の間隔（秒）")
     ap.add_argument("--max-per-search", type=int, default=2000, help="検索URL1つあたりに調べる出品数（上から。100件ごとに1回アクセス）")
     ap.add_argument("--out", type=Path, default=ROOT / "reports", help="出力フォルダ（省略時は reports/）")
@@ -1310,10 +1197,8 @@ def main(argv: list[str] | None = None) -> int:
     kantei = read_kantei_table(args.kantei) if args.kantei else []
     if args.kantei:
         print(f"鑑定表: {len(kantei)}件の相場を読み込み", file=sys.stderr)
-    analyze(items, sales, cfg, fx, args.offline, not args.no_ebay_fetch, args.delay, kantei)
+    analyze(items, sales, cfg, fx, args.offline, args.delay, kantei)
 
-    if not args.offline and not args.no_ebay_fetch and args.ebay_auto > 0:
-        auto_price_unpriced(items, cfg, fx, args.ebay_auto, args.delay, DATA / "ebay_cache.csv")
 
     rows = rows_for_output(items)
     args.out.mkdir(parents=True, exist_ok=True)

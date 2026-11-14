@@ -299,7 +299,8 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk input{width:72px;padding:4px;border:1px solid #c6d3de;border-radius:6px}
 #yhk a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}
 #yhk a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}
-#yhk a.now{display:inline-block;margin-top:2px;font-size:11px;padding:0 6px;border:1px solid #9fc0d4;border-radius:6px}
+#yhk a.now,#yhk a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}
+#yhk .pills{display:flex;gap:4px;justify-content:flex-end}#yhk a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}
 #yhk td.m{white-space:nowrap;width:58px}#yhk tr.soon td{background:#fff6ec}#yhk .hot{color:#c0392b;font-weight:700}
 #yhk .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
 .yhk-badge{display:inline-block;margin:2px 0;padding:2px 7px;border-radius:7px;font:700 12px -apple-system,sans-serif;color:#fff}
@@ -344,7 +345,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
 <div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]</div></td>
 <td class="n"><a class="usd" href="${e.sold}" target="_blank" rel="noopener" title="${esc(tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
-<div><a class="now" href="${e.now}" target="_blank" rel="noopener" title="eBay出品中（高い順）">now</a></div></td>
+<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b><div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
@@ -360,7 +361,7 @@ ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class=
 <details><summary>要確認（相場はあるが付属品・セット等の可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
 <details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
-<table><tr><th>機種（→eBay販売済み）</th><th>件数</th><th>ヤフオク現在値</th><th></th><th>想定$（送料込）</th></tr>${unpriced.map((g) => `<tr><td><a href="${ebay(g.label).sold}" target="_blank" rel="noopener" title="eBay販売済み（高い順）">${esc(g.label)}</a> <a class="now" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
+<table><tr><th>機種（→eBay販売済み）</th><th>件数</th><th>ヤフオク現在値</th><th></th><th>想定$（送料込）</th></tr>${unpriced.map((g) => `<tr><td><a href="${ebay(g.label).sold}" target="_blank" rel="noopener" title="eBay販売済み（高い順）">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
 <td class="n">${g.n}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
 <td><a href="${ebay(g.label).pr}" target="_blank" rel="noopener" title="Product Research（Best Offer込みの成約）">PR</a></td>
 <td><input data-memo="${esc(g.label)}" placeholder="$"><button data-a="memo" data-k="${esc(g.label)}">登録</button></td></tr>`).join("")}</table>
