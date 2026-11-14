@@ -330,8 +330,10 @@ class ExtensionBrowse(unittest.TestCase):
 
     def test_without_keys(self):
         man, bg = self._build(None)
-        self.assertNotIn("host_permissions", man)
-        self.assertIsNone(bg)
+        self.assertNotIn("host_permissions", man)  # キーが無ければ eBay への通信権限は付けない
+        # background.js は相場メモの自動保存（ダウンロード/aurora_price_memo.csv）のため常に入る。キーは入らない
+        self.assertIn("const APP_ID = null;", bg)
+        self.assertEqual(man["permissions"], ["downloads"])
 
 
 if __name__ == "__main__":

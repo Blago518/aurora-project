@@ -620,7 +620,7 @@ ${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式API�
 ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.label)}</td>` : ""}
 <td><input data-memo="${esc(g.label)}" placeholder="$"${suggestUsd(state.browse[g.label]) ? ` class="sug" value="${suggestUsd(state.browse[g.label])}"` : ""}><button data-a="memo" data-k="${esc(g.label)}">登録</button></td></tr>`).join("")}</table>
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
-<span class="s">コピーした内容を data/price_memo.csv に貼るか Claude に送ると、全端末の相場データに取り込めます</span></div></details></div>`;
+<span class="s">「直す」「登録」した相場は ダウンロード/aurora_price_memo.csv に自動保存されます。Mac で build_store.py か build_extension.py を実行すると data/price_memo.csv に取り込まれ、スマホにも反映されます</span></div></details></div>`;
     badges();
     if (!state.loading) fetchBrowse(groupList.slice(0, DATA.cfg.browseMaxModels).map((g) => g.label));
     checkDescs(good.map((i) => i.id));
@@ -644,6 +644,16 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     return;
   }
 
+  // 相場メモ（このブラウザ）→ CSV。Mac では ダウンロード/aurora_price_memo.csv に自動保存し、build_store.py などが取り込む
+  function memoCsv() {
+    const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+    return "title,sold_price_usd,source\n" + Object.entries(load(LS_MEMO, {})).map(([k, v]) => `${q(k)},${v},相場メモ`).join("\n");
+  }
+  function saveMemoFile() {
+    if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) return;
+    try { chrome.runtime.sendMessage({ type: "saveMemo", csv: memoCsv() }, () => void chrome.runtime.lastError); } catch (e) {}
+  }
+
   document.addEventListener("click", async (ev) => {
     const btn = ev.target.closest && ev.target.closest("#yhk button");
     if (!btn) return;
@@ -657,11 +667,12 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       if (!v) return;
       const memo = load(LS_MEMO, {}); memo[k] = v; save(LS_MEMO, memo);
       evaluate(state.items, state.fx); render();
+      saveMemoFile();
     }
     if (a === "desc") { btn.disabled = true; btn.textContent = "確認中…"; checkDescs([btn.dataset.id]); }
     if (a === "memocopy") {
-      const memo = load(LS_MEMO, {});
-      const csv = "title,sold_price_usd,source\n" + Object.entries(memo).map(([k, v]) => `"${k}",${v},相場メモ`).join("\n");
+      const csv = memoCsv();
+      saveMemoFile();
       await navigator.clipboard.writeText(csv).catch(() => {});
       btn.textContent = "コピーしました";
     }

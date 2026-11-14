@@ -66,7 +66,17 @@ async function browse(q, must = [], not = []) {
   return out;
 }
 
+// 相場メモを ダウンロード/aurora_price_memo.csv に上書き保存（Mac の build_store.py などが data/price_memo.csv に取り込む）
+function saveMemo(csv) {
+  const url = "data:text/csv;charset=utf-8," + encodeURIComponent("\ufeff" + csv);
+  return chrome.downloads.download({ url, filename: "aurora_price_memo.csv", conflictAction: "overwrite", saveAs: false });
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+  if (msg && msg.type === "saveMemo") {
+    saveMemo(msg.csv).then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
+    return true;
+  }
   if (msg && msg.type === "browse") {
     browse(msg.q, msg.must || [], msg.not || []).then(send, (e) => send({ error: String((e && e.message) || e) }));
     return true; // 非同期で返す

@@ -174,7 +174,9 @@ def main(argv=None) -> int:
     ap.add_argument("--no-icloud", action="store_true", help="iCloud Drive にコピーしない")
     args = ap.parse_args(argv)
 
+    CORE_JS.parent.mkdir(exist_ok=True)
     CORE_JS.write_text(core_js(), encoding="utf-8")
+    ba.import_extension_memo()  # 拡張機能で「直す」した相場（ダウンロード/aurora_price_memo.csv）
     cfg = ba.load_config(None)
     fx = args.fx or (cfg["fx"].get("auto_fetch") and ba.fetch_fx()) or float(cfg["fx"]["usd_jpy"])
     data = build(cfg, fx)

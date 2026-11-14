@@ -109,16 +109,17 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
             "run_at": "document_idle",
         }],
     }
-    bg = folder / "background.js"
+    # 裏方（background.js）は常に入れる: 相場メモを ダウンロード/aurora_price_memo.csv に保存する（downloads 権限）。
+    # eBay のキーがあれば、出品中の相場を公式 Browse API で調べる（通信先は api.ebay.com だけ）
+    manifest["background"] = {"service_worker": "background.js"}
+    manifest["permissions"] = ["downloads"]
     if keys:
-        manifest["background"] = {"service_worker": "background.js"}
         manifest["host_permissions"] = ["https://api.ebay.com/*"]
-        manifest["permissions"] = ["storage"]
-        tpl = (HERE / "extension_background.js").read_text(encoding="utf-8")
-        bg.write_text(tpl.replace("__APP_ID__", json.dumps(keys[0])).replace("__CERT_ID__", json.dumps(keys[1])),
-                      encoding="utf-8")
-    elif bg.exists():
-        bg.unlink()
+        manifest["permissions"].append("storage")
+    tpl = (HERE / "extension_background.js").read_text(encoding="utf-8")
+    app, cert = keys or (None, None)
+    (folder / "background.js").write_text(
+        tpl.replace("__APP_ID__", json.dumps(app)).replace("__CERT_ID__", json.dumps(cert)), encoding="utf-8")
     (folder / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     (folder / "content.js").write_text(js, encoding="utf-8")
     (folder / "icons").mkdir(exist_ok=True)
@@ -134,6 +135,7 @@ def main(argv=None) -> int:
     ap.add_argument("--userscript", type=Path, help="Safari「Userscripts」用の .user.js も作る場合の出力先")
     ap.add_argument("--fx", type=float, help="為替（省略時は自動取得、失敗時は config.toml）")
     args = ap.parse_args(argv)
+    ba.import_extension_memo()  # 拡張機能で「直す」した相場（ダウンロード/aurora_price_memo.csv）
     cfg = ba.load_config(None)
     fx = args.fx or (cfg["fx"].get("auto_fetch") and ba.fetch_fx()) or float(cfg["fx"]["usd_jpy"])
     data = build_data(cfg, fx)

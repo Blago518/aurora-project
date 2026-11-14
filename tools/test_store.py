@@ -130,5 +130,36 @@ class MemoAndCondition(unittest.TestCase):
             out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
         self.assertEqual(json.loads(out), list(cases.values()) + ["AB", "Near MINT", "Exc+5"])
 
+class MemoAutoSave(unittest.TestCase):
+    """拡張機能の相場メモ（ダウンロード/aurora_price_memo.csv）を data/price_memo.csv に取り込む."""
+
+    def test_import(self):
+        with tempfile.TemporaryDirectory() as d:
+            dl, dest = Path(d) / "dl", Path(d) / "price_memo.csv"
+            dl.mkdir()
+            dest.write_text("title,sold_price_usd,source,memo\nOlympus F2 35mm,180,相場メモ,前\nLeica M6,1500,Product Research,手入力\n",
+                            encoding="utf-8-sig")
+            (dl / "aurora_price_memo.csv").write_text(
+                '\ufefftitle,sold_price_usd,source\n"Olympus F2 35mm",139.99,相場メモ\n"Nikon ""FM2""",230,相場メモ\n', encoding="utf-8")
+            self.assertEqual(ba.import_extension_memo(dl, dest), (1, 1))
+            rows = {r["title"]: r for r in ba.read_sales(dest)}
+            self.assertEqual(rows["Olympus F2 35mm"]["_price"], 139.99)
+            self.assertEqual(rows['Nikon "FM2"']["source"], "相場メモ")
+            self.assertEqual(rows["Leica M6"]["_price"], 1500)  # 相場メモ以外はそのまま
+            self.assertEqual(ba.import_extension_memo(dl, dest), (0, 0))  # 2回目は変化なし
+            self.assertEqual(ba.import_extension_memo(Path(d) / "none", dest), (0, 0))
+
+    def test_manifest_has_downloads(self):
+        import build_extension as bx
+        with tempfile.TemporaryDirectory() as d:
+            bx.write_chrome_extension("//", Path(d))
+            m = json.loads((Path(d) / "manifest.json").read_text(encoding="utf-8"))
+            bg = (Path(d) / "background.js").read_text(encoding="utf-8")
+        self.assertIn("downloads", m["permissions"])
+        self.assertNotIn("host_permissions", m)  # キーが無ければ eBay への通信権限は付けない
+        self.assertIn("const APP_ID = null;", bg)
+        self.assertIn("aurora_price_memo.csv", bg)
+
+
 if __name__ == "__main__":
     unittest.main()
