@@ -92,7 +92,9 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
     キーは extension/ の中だけに入る（extension/ はコミットしない）。
     """
     folder.mkdir(parents=True, exist_ok=True)
-    version = datetime.now().strftime("%Y.%-m.%-d.%-H%M") if sys.platform != "win32" else "1.0.0"
+    # Chrome の版番号は各数字の頭に 0 を付けられない（0時台の「002」で警告が出る）。時分は 時×100+分 の数にする
+    now = datetime.now()
+    version = f"{now.year}.{now.month}.{now.day}.{now.hour * 100 + now.minute}"
     manifest = {
         "manifest_version": 3,
         "name": "Aurora 仕入れ鑑定",
