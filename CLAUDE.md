@@ -8,7 +8,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 
 ## ルール・手順書・担当者
 - 細かいルール: `.claude/rules/`（毎回自動で読み込まれる）
-- 手順書: `.claude/skills/`（入札候補の選定・相場調査・データ更新・Chatwork取り込み・月次振り返り）
+- 手順書: `.claude/skills/`（入札候補の選定・相場調査・データ更新・Chatwork取り込み・月次振り返り・ナレッジページ更新）
 - 担当者: `.claude/agents/`（入札担当・相場調査担当・出品改善担当・数字管理担当）
 - 最重要: `data/`・`knowledge/`・`reports/`・`extension/` は**コミットしない**（`.claude/rules/情報管理.md`）。
 
@@ -31,6 +31,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv` |
 | `build_knowledge.py` | data/ から `knowledge/相場/`・`knowledge/機種/` を自動生成 |
+| `build_knowledge_page.py`・`knowledge_page_template.html` | knowledge_share.md → Artifacts の読むだけのナレッジページ（ニューロン付き） |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
 | `test_appraise.py` | テスト（Python と拡張機能の判定一致も確認） |
