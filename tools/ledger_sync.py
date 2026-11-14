@@ -4,8 +4,9 @@
 スプレッドシートに貼った Apps Script（下の APPS_SCRIPT）が、合言葉付きの専用 URL で「古物台帳」シートを CSV で返す。
 ?sheet=… を付けると、許可したほかのシートも返す（2026-11-15 追加）。購入者の名前・住所の列（Buyer…・Ship to…）は
 スクリプトの側で取り除いてから返す。ほかのシートからは EXTRA_SHEETS の列だけを data/ に保存する（グラフ用）:
-    管理      → data/kanri.csv        No.・状態・購入日・販売日（売れた商品の状態）
-    ebay売上  → data/ebay_sales.csv   eBay の取引レポートの日付・種類・注文番号・手取り・手数料・Custom label（実際の利益）
+    管理      → data/kanri.csv        No.・状態・購入日・販売日・仕入・商品名・仕入元（状態と、古物台帳に無い商品の仕入額）
+    ebay売上  → data/ebay_report.csv  eBay の取引レポートの日付・種類・注文番号・手取り・手数料・Custom label
+                                      （eBay API の取引明細が無いときの代わり。data/ebay_sales.csv は ebay_api.py orders が使う）
     J管理     → data/junk.csv         ジャンク品のヤフオク再販の仕入・実販売・日付
     出品情報  → data/item_types.csv   管理番号・商品種別
 Mac はその URL を読むだけ。URL と合言葉はキーチェーンに保存し、GitHub やチャットには書かない。
@@ -36,8 +37,8 @@ DATA = ROOT / "data"
 OUT = DATA / "ledger.csv"
 # シート名 → (保存先, 保存する列). 列の1つ目と2つ目がある行を見出しとみなす。これ以外の列（アカウント名・URL など）は保存しない
 EXTRA_SHEETS = {
-    "管理": ("kanri.csv", ["No.", "状態", "購入日", "販売日"]),
-    "ebay売上": ("ebay_sales.csv", ["Custom label", "Transaction creation date", "Type", "Order number", "Net amount",
+    "管理": ("kanri.csv", ["No.", "状態", "購入日", "販売日", "仕入(円)", "商品名", "アカウント名(仕入元)"]),
+    "ebay売上": ("ebay_report.csv", ["Custom label", "Transaction creation date", "Type", "Order number", "Net amount",
                                   "Payout currency", "Quantity", "Item subtotal", "Shipping and handling",
                                   "Final Value Fee - fixed", "Final Value Fee - variable", "International fee",
                                   "Gross transaction amount", "Transaction currency", "Description"]),

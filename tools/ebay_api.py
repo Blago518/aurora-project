@@ -8,7 +8,7 @@
     python3 tools/ebay_api.py setup        # App ID・Cert ID・RuName を入力してキーチェーンに保存（初回）
     python3 tools/ebay_api.py login        # ブラウザで自分の eBay アカウントの利用を許可（初回・約1年半ごと）
     python3 tools/ebay_api.py check        # 接続確認
-    python3 tools/ebay_api.py orders       # 自分の売上（直近90日）→ reports/ebay_orders_*.csv（金額は currency 列の通貨）
+    python3 tools/ebay_api.py orders       # 自分の売上（直近90日。--days 730 で2年）→ reports/ebay_orders_*.csv（金額は currency 列の通貨）
     python3 tools/ebay_api.py listings     # 自分の出品中の一覧（在庫日数順）→ reports/listings_*.csv
     python3 tools/ebay_api.py fees         # 取引明細 → reports/ebay_finances_*.csv、手数料率を通貨ごとに集計
     python3 tools/ebay_api.py browse "Nikon FM2"   # 出品中の相場（公式 Browse API）
@@ -235,6 +235,8 @@ def fetch_orders(days: int) -> list[dict]:
                     "site": li.get("listingMarketplaceId", ""),  # EBAY_US / EBAY_GB / EBAY_AU など
                     "country": country,  # 購入者の名前・住所・IDは保存しない
                     "status": o.get("orderFulfillmentStatus", ""),
+                    "payment_status": o.get("orderPaymentStatus", ""),  # PAID / FULLY_REFUNDED / PARTIALLY_REFUNDED など
+                    "cancel_state": (o.get("cancelStatus") or {}).get("cancelState", ""),
                     "ebay_url": f"https://www.ebay.com/itm/{li.get('legacyItemId', '')}",
                 })
         offset += 200

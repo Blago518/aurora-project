@@ -9,7 +9,7 @@
    置き換える前の古いファイルは data/backup/ に残す。
 2. Chatwork の販売報告を公式 API で取り込む（chatwork_sync.py。未設定なら飛ばす）
 3. 作り直す: reference_prices.csv → 拡張機能（extension/）→ スマホ用データ（store_data.json・iCloud・暗号化して自動配信）→ ナレッジ
-   → eBay の出品中一覧（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
+   → eBay の出品中一覧・注文・取引明細（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
    拡張機能で［直す］［登録］した相場（ダウンロード/aurora_price_memo.csv）もここで取り込まれる。
 4. 入札リスト: data/search_urls.txt の検索をまとめて鑑定 → reports/bid_report_*.html を開く（◎○の件数を通知）
 5. 入札の結果: 拡張機能の［入札した］の記録を取り込み、終わった出品の最終価格から落札率などを集計 → reports/bid_results.md
@@ -162,8 +162,10 @@ def dashboard() -> None:
     except Exception:
         has_token = False
     if has_token:
-        print("\n▶ eBay の出品中一覧")
-        subprocess.call([sys.executable, str(HERE / "ebay_api.py"), "listings"], cwd=ROOT)
+        for what, args in (("出品中一覧", ["listings"]), ("注文（2年分）", ["orders", "--days", "730"]),
+                           ("取引明細（2年分）", ["fees", "--days", "730"])):
+            print(f"\n▶ eBay の{what}")
+            subprocess.call([sys.executable, str(HERE / "ebay_api.py"), *args], cwd=ROOT)
     print("\n▶ 数字のグラフ")
     if subprocess.call([sys.executable, str(HERE / "build_dashboard.py"), "--no-open"], cwd=ROOT) != 0:
         print("  ⚠ グラフを作れませんでした（上の表示を Claude に送ってください）")

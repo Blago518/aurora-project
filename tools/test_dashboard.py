@@ -179,6 +179,48 @@ class TestDashboard(unittest.TestCase):
         (self.tmp / "mc.csv").write_text('月,CPaSS,関税,オークレボ\n2026/10,"166,585","95,162","39,930"\n', encoding="utf-8")
         self.assertEqual(bd.read_monthly_costs(self.tmp / "mc.csv"), {"2026-10": 301677.0})
 
+    def test_api_orders_and_finances(self):
+        orders = [
+            {"date": "2026-10-03", "order_id": "O1", "title": "Canon FL 50mm f/1.4", "sku": "A001", "currency": "USD",
+             "item_price": "170", "shipping": "10", "country": "US", "payment_status": "PAID", "cancel_state": "NONE_REQUESTED"},
+            {"date": "2026-10-20", "order_id": "O2", "title": "Nikon Zoom", "sku": "A002", "currency": "USD",
+             "item_price": "120", "shipping": "0", "country": "GB", "payment_status": "FULLY_REFUNDED", "cancel_state": ""},
+            {"date": "2026-11-09", "order_id": "O3", "title": "Leica M3", "sku": "S31", "currency": "USD",
+             "item_price": "650", "shipping": "30", "country": "DE", "payment_status": "PAID", "cancel_state": ""},
+        ]
+        fin_rows = [
+            {"date": "2026-10-03", "type": "SALE", "booking": "CREDIT", "order_id": "O1", "amount": "155",
+             "amount_currency": "USD", "total_fee": "25", "fee_type": "", "references": "", "status": "PAYOUT"},
+            {"date": "2026-10-04", "type": "NON_SALE_CHARGE", "booking": "DEBIT", "order_id": "", "amount": "5",
+             "amount_currency": "USD", "total_fee": "", "fee_type": "AD_FEE", "references": "ORDER_ID:O1", "status": ""},
+            {"date": "2026-10-25", "type": "REFUND", "booking": "DEBIT", "order_id": "O2", "amount": "100",
+             "amount_currency": "USD", "total_fee": "", "fee_type": "", "references": "", "status": ""},
+            {"date": "2026-11-01", "type": "NON_SALE_CHARGE", "booking": "DEBIT", "order_id": "", "amount": "21.95",
+             "amount_currency": "USD", "total_fee": "", "fee_type": "SUBSCRIPTION_FEE", "references": "", "status": ""},
+            {"date": "2026-11-02", "type": "PAYOUT", "booking": "DEBIT", "order_id": "", "amount": "500",
+             "amount_currency": "USD", "total_fee": "", "fee_type": "", "references": "", "status": ""},
+        ]
+        fin = bd.read_api_finances(fin_rows)
+        self.assertAlmostEqual(fin["per"]["O1"]["net"], 150.0)   # 入金155 − 広告5
+        self.assertAlmostEqual(fin["per"]["O1"]["promo"], -5.0)
+        self.assertEqual(fin["unassigned"], {"NON_SALE_CHARGE SUBSCRIPTION_FEE": -21.95})  # 入金（PAYOUT）は数えない
+        ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
+        kanri = bd.read_kanri(self.tmp / "kanri.csv")
+        kanri["S31"] = {"cost": 71470.0, "buy": date(2026, 10, 26), "supplier": "acc9", "cond": "MINT",
+                        "sold": None, "optical": False, "raw": "MINT", "title": "Leica M3"}
+        api = {**bd.sales_from_api(orders, fin, ledger, kanri, 150.0), "date": "2026/11/14", "fin": fin}
+        self.assertEqual([c["why"] for c in api["cancelled"]], ["返金"])  # 全額返金の注文は販売に数えない
+        d = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14), kanri=kanri, api=api)
+        self.assertEqual(d["source"], "api")
+        self.assertEqual(d["kpi"]["count"], 2)
+        self.assertEqual(d["kpi"]["fee_actual"], 1)              # O1 だけ取引明細あり
+        self.assertEqual({c["label"] for c in d["country"]}, {"アメリカ", "ドイツ"})
+        # S31 は古物台帳に無いが、管理シートの仕入額で利益を出す。台帳の記入漏れとして一覧に出る
+        self.assertEqual(d["ebay_not_in_ledger"], [{"label": "S31", "usd": 680.0, "in_ledger": False}])
+        self.assertEqual(d["kpi"]["no_cost"], 0)
+        # 台帳で販売済みでも eBay で売れていない（全額返金）A002 は在庫に数えない（台帳の販売日があるため）
+        self.assertEqual(d["kpi"]["stock"], 1)
+
     def test_ebay_date(self):
         self.assertEqual(bd.parse_date("17-Aug-26"), date(2026, 8, 17))
 

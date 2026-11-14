@@ -129,9 +129,10 @@ class LedgerSync(unittest.TestCase):
         self.assertEqual((self.tmp / "ledger.csv").read_text(encoding="utf-8"), self.CSV)
         self.assertFalse(self._sync("k1"))  # 変化なし
         kanri = (self.tmp / "kanri.csv").read_text(encoding="utf-8")
-        self.assertEqual(kanri.splitlines(), ["No.,状態,購入日,販売日", "A1,MINT/点カビ,2026/07/26,2026/09/01"])
-        self.assertNotIn("someone", kanri)  # アカウント名・URL は保存しない
-        ebay = (self.tmp / "ebay_sales.csv").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(kanri.splitlines(), ["No.,状態,購入日,販売日,仕入(円),商品名,アカウント名(仕入元)",
+                                              "A1,MINT/点カビ,2026/07/26,2026/09/01,,Nikon F3,someone"])
+        self.assertNotIn("https://x", kanri)  # URL は保存しない
+        ebay = (self.tmp / "ebay_report.csv").read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(ebay), 3)
         self.assertTrue(ebay[0].startswith("Custom label,Transaction creation date,Type,Order number,Net amount"))
         self.assertIn("Promoted Listings", ebay[2])
