@@ -256,6 +256,17 @@ class TestDashboard(unittest.TestCase):
         for title, brand in cases.items():
             self.assertEqual(bd.brand_of(title), brand, title)
 
+    def test_report_as_orders(self):
+        rows = bd._csv_rows(self.tmp / "ebay.csv")
+        orders, fin = bd.report_to_api(rows)
+        self.assertEqual([(o["order_id"], o["sku"], o["payment_status"]) for o in orders],
+                         [("O-1", "A001", "PAID"), ("O-2", "A002", "FULLY_REFUNDED")])
+        self.assertAlmostEqual(fin["per"]["O-1"]["net"], 150.0)  # 注文155 − 広告5（Hold は数えない）
+        ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
+        api = {**bd.sales_from_api(orders, fin, ledger, {}, 150.0), "fin": fin, "name": "ebay売上シート"}
+        d = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14), api=api)
+        self.assertEqual((d["source"], d["kpi"]["count"], d["source_name"]), ("api", 1, "ebay売上シート"))
+
     def test_ebay_date(self):
         self.assertEqual(bd.parse_date("17-Aug-26"), date(2026, 8, 17))
 
