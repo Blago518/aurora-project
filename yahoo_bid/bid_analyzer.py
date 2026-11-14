@@ -369,6 +369,7 @@ def detect_flags(title: str) -> list[str]:
 
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
+    t = re.sub(r"[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b", " ", t)  # #v4081 等の管理番号
     t = re.sub(r"(\d)\s*[・･]\s*(\d)", r"\1.\2", t)        # f2・8 → f2.8
     t = re.sub(r"\b[fF]\s*/\s*(\d)", r"F\1", t)              # f/2.8 → F2.8
     t = re.sub(r"\b1\s*:\s*(\d(?:\.\d)?)\b", r"F\1", t)      # 1:1.8 → F1.8
@@ -387,7 +388,7 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
         low = tok.lower().strip(".-")
         if not low or low in NOISE_TOKENS:
             continue
-        if re.fullmatch(r"\d+", low) and (len(low) < 2 or len(low) >= 6):
+        if re.fullmatch(r"\d+", low) and (len(low) < 2 or len(low) >= 4):
             continue  # 「1円」の1や、シリアル番号っぽい長い数字
         if re.fullmatch(r"no\.?\d+", low):
             continue
