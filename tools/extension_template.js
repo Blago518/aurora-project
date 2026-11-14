@@ -331,9 +331,11 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
   async function fetchBrowse(labels) {
     if (!canBrowse() || browsing) return;
     browsing = true;
+    let fresh = 0;
     try {
       for (const label of labels) {
         if (state.browse[label]) continue;
+        fresh++;
         const res = await new Promise((ok) => {
           try {
             chrome.runtime.sendMessage({ type: "browse", q: label },
@@ -347,7 +349,94 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
         const sg = suggestUsd(res);
         if (inp && sg && !inp.value) { inp.value = sg; inp.classList.add("sug"); }
       }
-    } finally { browsing = false; }
+    } finally {
+      browsing = false;
+      if (fresh) render();  // sold確認待ちの一覧を作り直す
+    }
+  }
+
+  // ------------------------------------------------------------------ 説明文の状態チェック（◎○の出品だけ自動。出品ページを1件ずつ間隔を空けて読む）
+  const LS_DESC = "yhkDescV1";
+  const DEFECT_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響)/g;
+  // 同じ文の中にあれば「〜なし」と打ち消しているとみなす語
+  const NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)/;
+  function descHits(text, cond) {
+    const hits = [];
+    for (const m of text.matchAll(DEFECT_RE)) {
+      if (text[m.index - 1] === "「") continue;  // 「動作未確認品」は返品対象外 など、規約の定型文は除く
+      const around = text.slice(Math.max(0, m.index - 15), m.index + 25);
+      // 「初期不良の自然故障は返品対応」「故障した場合は無償修理」など、保証・返品の規約文は除く
+      if (m[1] === "故障" && /初期不良|自然故障|返品|保証|修理|場合/.test(around)) continue;
+      // 返品規約の「微細なゴミやカビ、くもり、サビ…など」のような列挙（前に返品・対象外などがあり、同じ文に傷みの語が3つ以上）
+      const sStart = Math.max(text.lastIndexOf("。", m.index), text.lastIndexOf("\n", m.index)) + 1;
+      const sEnd = text.slice(m.index).search(/[。\n]/);
+      const sentence = text.slice(sStart, sEnd < 0 ? m.index + 80 : m.index + sEnd);
+      if (/返品|返金|対象外|保証|免責/.test(text.slice(Math.max(0, m.index - 200), m.index)) &&
+          (sentence.match(/カビ|かび|くもり|クモリ|曇り|サビ|錆|キズ|傷|磨耗|摩耗|劣化|ゴミ|チリ|ホコリ/g) || []).length >= 3) continue;
+      const rest = text.slice(m.index, m.index + 60);
+      const kv = rest.slice(m[1].length).match(/^\s*[：:]\s*([^\s　、。|｜]+)/);  // 「クモリ：ごくわずか」のような項目形式は値だけ見る
+      if (kv) { if (/^(なし|無し|ナシ|無|ない|-|ー|×)/.test(kv[1])) continue; }
+      else {
+        const cut = rest.search(/[。\n】|｜]/);
+        if (NEG_RE.test(cut < 0 ? rest : rest.slice(0, cut))) continue;
+      }
+      if (hits.some((h) => h.word === m[1])) continue;
+      hits.push({ word: m[1], snip: text.slice(Math.max(0, m.index - 18), m.index + 32).replace(/\s+/g, " ").trim() });
+    }
+    if (cond && /状態が悪い/.test(cond)) hits.push({ word: "状態が悪い", snip: "商品の状態: " + cond });
+    return hits;
+  }
+  function descStore() {
+    const all = load(LS_DESC, {}), now = Date.now();
+    for (const [k, v] of Object.entries(all)) if (!v || now - v.t > 7 * 864e5) delete all[k];
+    return all;
+  }
+  state.desc = descStore();
+  async function readDesc(id) {
+    const html = await (await fetch(`/jp/auction/${id}`, { credentials: "include" })).text();
+    const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (!m) throw new Error("出品ページを読めませんでした");
+    const j = JSON.parse(m[1]);
+    const it = ((((j.props || {}).pageProps || {}).initialState || (j.props || {}).initialState || {}).item || {}).detail;
+    const item = (it || {}).item || {};
+    const text = String(item.descriptionHtml || item.description || "")
+      .replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|tr|h\d)>/gi, "\n").replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+    return { t: Date.now(), cond: item.conditionName || "", hits: descHits(text, item.conditionName || "") };
+  }
+  let descBusy = false;
+  async function checkDescs(ids) {
+    if (descBusy) return;
+    descBusy = true;
+    let fresh = 0;
+    try {
+      for (const id of ids) {
+        if (state.desc[id] && !state.desc[id].error) continue;
+        state.desc[id] = { loading: true };
+        try { state.desc[id] = await readDesc(id); } catch (e) { state.desc[id] = { t: Date.now(), error: String(e.message || e) }; }
+        fresh++;
+        const all = load(LS_DESC, {}); all[id] = state.desc[id]; save(LS_DESC, all);
+        render();
+        await new Promise((r) => setTimeout(r, 1500));  // ヤフオクに負荷をかけないよう間隔を空ける
+      }
+    } finally { descBusy = false; }
+    return fresh;
+  }
+  function descLine(id) {
+    const d = state.desc[id];
+    if (!d) return "";
+    if (d.loading) return '<div class="s">説明文を確認中…</div>';
+    if (d.error) return `<div class="s" title="${esc(d.error)}">説明文を読めませんでした</div>`;
+    if (!d.hits.length) return `<div class="s g">✓ 説明文に光学難・故障の記載なし${d.cond ? `（${esc(d.cond)}）` : ""}</div>`;
+    return `<div class="s x">⚠ 説明文: ${d.hits.map((h) => `「…${esc(h.snip)}…」`).join(" ")}</div>`;
+  }
+  function applyDesc(items) {
+    for (const i of items) {
+      const d = state.desc[i.id];
+      if (d && d.hits && d.hits.length && (i.mark === "◎" || i.mark === "○")) {
+        i.mark = "要確認"; i.reason = "説明文に " + d.hits.map((h) => h.word).join("・");
+      }
+    }
   }
 
   function render() {
@@ -358,6 +447,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       if (!load(LS_OPEN, true)) root.classList.add("min");
     }
     const items = state.items;
+    applyDesc(items);
     const good = items.filter((i) => i.mark === "◎" || i.mark === "○").sort((a, b) => (a.end < b.end ? -1 : 1));
     const check = items.filter((i) => i.mark === "要確認" && i.calc);
     const bad = items.filter((i) => i.mark === "×");
@@ -370,7 +460,23 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       const g = groups.get(key) || { label, n: 0, prices: [], ex: i.title };
       g.n++; if (i.price) g.prices.push(i.price); groups.set(key, g);
     }
-    const unpriced = [...groups.values()].sort((a, b) => b.n - a.n).slice(0, 40);
+    const groupList = [...groups.values()].sort((a, b) => b.n - a.n);
+    const unpriced = groupList.slice(0, 40);
+    // sold確認待ち: 相場が未登録の出品を「eBay出品中×係数」で仮に計算し、利益が出る物だけ（登録するまで◎○には入れない）
+    const waits = [];
+    for (const i of items) {
+      if (i.calc || i.flags.some((f) => ["付属品のみ?", "アダプター等", "セット品", "光学難あり"].includes(f))) continue;
+      const [label] = modelKey(i.title);
+      // 「Contax 3 2 12」のように型番でない数字が2つ以上ある機種名は、eBay検索が当てにならないので除く
+      if (label.split(" ").filter((t) => /^\d+$/.test(t)).length >= 2) continue;
+      const sg = suggestUsd(state.browse[label]);
+      if (!sg) continue;
+      const usd = i.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? Math.round(sg * DATA.cfg.junkFactor) : sg;
+      const c = calculate(i, usd, state.fx);
+      const [mk] = judge(Object.assign({}, i, { calc: c }));
+      if (mk === "◎" || mk === "○") waits.push({ i, c, usd, label, b: state.browse[label] });
+    }
+    waits.sort((a, b) => (a.i.end < b.i.end ? -1 : 1));
     const more = !state.done && state.total && state.total > 100;
 
     const row = (i) => {
@@ -383,12 +489,25 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       const [left, soon] = remain(i.end);
       return `<tr class="${soon ? "soon" : ""}"><td class="m ${cls}">${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]</div></td>
+<div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]</div>${descLine(i.id)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
+    };
+    const waitRow = (w) => {
+      const i = w.i, c = w.c, e = ebay(w.label);
+      const [left, soon] = remain(i.end);
+      const d = state.desc[i.id];
+      return `<tr class="${soon ? "soon" : ""}"><td class="m o">sold<br>確認<div class="s ${soon ? "hot" : ""}">${left}</div></td>
+<td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>
+<div class="s">機種: ${esc(w.label)} ・ eBay出品中 中央値$${Math.round(w.b.med)}（${w.b.n}件）×${DATA.cfg.activeFactor}${w.usd !== suggestUsd(w.b) ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} ＝ $${w.usd}で仮計算</div>
+${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
+<td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
+<td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
+<td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div></td>
+<td class="n"><input data-memo="${esc(w.label)}" value="${suggestUsd(w.b)}" class="sug" style="width:70px"><button data-a="memo" data-k="${esc(w.label)}">登録</button></td></tr>`;
     };
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th>利益(現在)</th></tr>`;
 
@@ -398,6 +517,9 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ 送料$${DATA.cfg.deductionUsd}差引 ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）</h4>
 ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class="s">このページには基準を満たす出品がありません。</div>`}
+${canBrowse() ? `<details ${waits.length ? "open" : ""}><summary>sold確認待ち（相場は未登録だが、eBay出品中×${DATA.cfg.activeFactor}なら利益が出る） ${waits.length}件</summary>
+<div class="s" style="margin:4px 0">sold を見て、売れた価格が想定$以上なら［登録］→ ◎○に上がります（登録するまで入札候補には入れません）。売れた価格が低ければ、その額に直して［登録］。</div>
+${waits.length ? `<table><tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th>eBay</th><th>現在</th><th>入札する上限額</th><th>想定$（送料込）</th></tr>${waits.map(waitRow).join("")}</table>` : `<div class="s">${Object.keys(state.browse).length ? "ありません" : "eBay出品中の価格を調べています…"}</div>`}</details>` : ""}
 <details><summary>要確認（相場はあるが付属品・セット等の可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
 <details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
@@ -409,7 +531,8 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
 <span class="s">コピーした内容を data/price_memo.csv に貼るか Claude に送ると、全端末の相場データに取り込めます</span></div></details></div>`;
     badges();
-    fetchBrowse(unpriced.map((g) => g.label));
+    fetchBrowse(groupList.slice(0, 150).map((g) => g.label));
+    checkDescs(good.map((i) => i.id));
   }
 
   function badges() {
@@ -426,7 +549,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown };
+    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits };
     return;
   }
 
@@ -453,12 +576,14 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       }
     }
     if (a === "memo") {
-      const k = btn.dataset.k, inp = root.querySelector(`input[data-memo="${CSS.escape(k)}"]`);
+      const k = btn.dataset.k, prev = btn.previousElementSibling;
+      const inp = prev && prev.matches("input[data-memo]") ? prev : root.querySelector(`input[data-memo="${CSS.escape(k)}"]`);
       const v = Number((inp && inp.value || "").replace(/[$,\s]/g, ""));
       if (!v) return;
       const memo = load(LS_MEMO, {}); memo[k] = v; save(LS_MEMO, memo);
       evaluate(state.items, state.fx); render();
     }
+    if (a === "desc") { btn.disabled = true; btn.textContent = "確認中…"; checkDescs([btn.dataset.id]); }
     if (a === "memocopy") {
       const memo = load(LS_MEMO, {});
       const csv = "title,sold_price_usd,source\n" + Object.entries(memo).map(([k, v]) => `"${k}",${v},相場メモ`).join("\n");
