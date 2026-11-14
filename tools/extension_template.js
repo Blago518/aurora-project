@@ -473,6 +473,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       const [label] = modelKey(i.title);
       // 「Contax 3 2 12」のように型番でない数字が2つ以上ある機種名は、eBay検索が当てにならないので除く
       if (label.split(" ").filter((t) => /^\d+$/.test(t)).length >= 2) continue;
+      if (!/\d/.test(label)) continue;  // 「Contax Yashica」のようにメーカー名だけの機種名は、eBay検索が広すぎるので除く
       const sg = suggestUsd(state.browse[label]);
       if (!sg) continue;
       const usd = i.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? Math.round(sg * DATA.cfg.junkFactor) : sg;
