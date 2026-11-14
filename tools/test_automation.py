@@ -20,13 +20,13 @@ STORE = Path(__file__).resolve().parent.parent / "store"
 
 def node_like_safari() -> bool:
     """iPhone の Safari と同じ機能（atob・WebCrypto・DecompressionStream）がある Node.js か（Node 18 以降）."""
-    if not shutil.which("node"):
+    if not shutil.which("node") or not (STORE / "sync.js").exists():  # Mac の aurora には store/sync.js が無い（アプリは GitHub Pages で動く）
         return False
     js = "process.exit(typeof atob==='function'&&globalThis.crypto&&crypto.subtle&&typeof DecompressionStream==='function'?0:1)"
     return subprocess.run(["node", "-e", js], capture_output=True).returncode == 0
 
 
-NODE_MSG = "iPhone（Safari）と同じ機能のある Node.js（18以降）が無いので飛ばします（アプリの動作には関係ありません）"
+NODE_MSG = "store/sync.js か、Safari と同じ機能のある Node.js（18以降）が無いので飛ばします（アプリの動作には関係ありません）"
 
 
 @unittest.skipUnless(sp._aesgcm(), "cryptography がありません")
