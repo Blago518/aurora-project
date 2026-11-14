@@ -109,6 +109,9 @@ class Item:
     expected_price_usd: float | None = None
     price_source: str = ""
     calc: dict = field(default_factory=dict)
+    seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
+    trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
+    desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +305,7 @@ def parse_listing_page(page: str) -> tuple[list[Item], int | None]:
             prefilled=True,
             store_tax=x.get("taxFlag") == 1,
             memo="ストア" if (x.get("seller") or {}).get("isStore") else "",
+            seller_id=str((x.get("seller") or {}).get("userId") or ""),
         ))
     return items, total
 
@@ -930,8 +934,11 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
         return fixed - bid * k
 
     # 上限入札額: 利益額と利益率の両方の基準を満たす最大値
-    by_profit = (fixed - j["min_profit_jpy"]) / k
-    by_margin = (fixed - j["min_margin_pct"] / 100 * revenue_jpy) / k
+    # 安心ストア（フォロー中）は人気で利益率が低いので基準を緩める（config.toml の trusted_*）
+    min_profit = j.get("trusted_min_profit_jpy", j["min_profit_jpy"]) if item.trusted else j["min_profit_jpy"]
+    min_margin = j.get("trusted_min_margin_pct", j["min_margin_pct"]) if item.trusted else j["min_margin_pct"]
+    by_profit = (fixed - min_profit) / k
+    by_margin = (fixed - min_margin / 100 * revenue_jpy) / k
     max_bid = max(0, round_down_to_increment(min(by_profit, by_margin)))
     breakeven = max(0, round_down_to_increment(fixed / k))
 
@@ -976,6 +983,8 @@ def judge(item: Item) -> tuple[str, str]:
     now = item.current_price_jpy
     if {"付属品のみ?", "アダプター等", "セット品"} & set(item.flags):
         return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
+    if item.desc_hits:  # 説明文にカビ・クモリ等（拡張機能の説明文チェックと同じ規則）
+        return "要確認", prefix + "説明文に " + "・".join(h["word"] for h in item.desc_hits) + "（方針では避ける）"
     if "光学難あり" in item.flags:  # 方針: 修理しないので光学難（カビ・クモリ等）は避ける
         return "要確認", prefix + "光学難あり（方針では避ける）。写真で程度を確認してください"
     if c["max_bid_jpy"] <= 0:
@@ -1070,6 +1079,115 @@ def import_extension_memo(downloads: Path | None = None, dest: Path | None = Non
     return added, updated
 
 
+# ---- 説明文チェック（extension_template.js の descHits と同じ規則）
+DEFECT_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|剥離|ヤケ|黄変|"
+                       r"拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響)")
+PHOTO_ONLY_RE = re.compile(r"光学[^\n]{0,15}\n?(?:[^\n]{0,60}\n?){0,3}?[^\n]{0,40}写真[^\n]{0,10}確認")
+NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
+
+
+def desc_hits(text: str, cond: str = "") -> list[dict]:
+    hits: list[dict] = []
+    for m in DEFECT_RE.finditer(text):
+        i, w = m.start(), m.group(1)
+        if i > 0 and text[i - 1] == "「":
+            continue  # 「動作未確認品」は返品対象外 など、規約の定型文
+        around = text[max(0, i - 15):i + 25]
+        if w == "故障" and re.search(r"初期不良|自然故障|返品|保証|修理|場合", around):
+            continue
+        s_start = max(text.rfind("。", 0, i + 1), text.rfind("\n", 0, i + 1)) + 1
+        s_end = re.search(r"[。\n]", text[i:])
+        sentence = text[s_start:(i + s_end.start()) if s_end else i + 80]
+        if re.search(r"返品|返金|対象外|保証|免責", text[max(0, i - 200):i]) and \
+                len(re.findall(r"カビ|かび|くもり|クモリ|曇り|サビ|錆|キズ|傷|磨耗|摩耗|劣化|ゴミ|チリ|ホコリ", sentence)) >= 3:
+            continue
+        rest = text[i:i + 60]
+        kv = re.match(r"^\s*[：:]\s*([^\s　、。|｜]+)", rest[len(w):])
+        if kv:
+            if re.match(r"^(なし|無し|ナシ|無|ない|-|ー|×)", kv.group(1)):
+                continue
+        else:
+            cut = re.search(r"[。\n】|｜]", rest)
+            if NEG_RE.search(rest[:cut.start()] if cut else rest):
+                continue
+        if any(h["word"] == w for h in hits):
+            continue
+        hits.append({"word": w, "snip": " ".join(text[max(0, i - 18):i + 32].split())})
+    ph = PHOTO_ONLY_RE.search(text)
+    if ph:
+        hits.append({"word": "光学は写真で確認", "snip": " ".join(ph.group(0).split())[:60]})
+    if cond and "状態が悪い" in cond:
+        hits.append({"word": "状態が悪い", "snip": "商品の状態: " + cond})
+    return hits
+
+
+def read_description(page: str) -> tuple[str, str]:
+    """出品ページの説明文（テキスト）と商品の状態."""
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
+    if not m:
+        return "", ""
+    j = json.loads(m.group(1))
+    props = j.get("props") or {}
+    st = (props.get("pageProps") or {}).get("initialState") or props.get("initialState") or {}
+    item = (((st.get("item") or {}).get("detail") or {}).get("item")) or {}
+    raw = str(item.get("descriptionHtml") or item.get("description") or "")
+    raw = re.sub(r"<br\s*/?>", "\n", raw, flags=re.I)
+    raw = re.sub(r"</(p|div|li|tr|h\d)>", "\n", raw, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", raw).replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    return text, str(item.get("conditionName") or "")
+
+
+def check_descriptions(items: list[Item], delay: float) -> int:
+    """◎○の出品だけ説明文を読み、カビ・クモリ等があれば要確認にする. 読んだ件数を返す."""
+    n = 0
+    for it in items:
+        if not it.auction_id or judge(it)[0] not in ("◎", "○"):
+            continue
+        try:
+            text, cond = read_description(http_get(it.url))
+        except Exception as e:  # 読めなくても判定は続ける
+            it.fetch_note += f"説明文を読めませんでした（{e}） "
+            continue
+        it.desc_hits = desc_hits(text, cond)
+        n += 1
+        time.sleep(delay)
+    return n
+
+
+# ---- 安心ストア（フォロー中）: data/trusted_sellers.csv（user_id,name）。拡張機能がストアのページで自動登録し、
+#      ダウンロード/aurora_trusted_sellers.csv に保存 → import_extension_trusted() で取り込む
+TRUSTED_DOWNLOAD = "aurora_trusted_sellers.csv"
+
+
+def load_trusted(path: Path | None = None) -> dict[str, str]:
+    path = path or DATA / "trusted_sellers.csv"
+    if not path.exists():
+        return {}
+    return {r["user_id"].strip(): (r.get("name") or "").strip()
+            for r in csv.DictReader(path.read_text(encoding="utf-8-sig").splitlines()) if (r.get("user_id") or "").strip()}
+
+
+def import_extension_trusted(downloads: Path | None = None, dest: Path | None = None) -> bool:
+    """拡張機能が保存した安心ストアの一覧（全件）で data/trusted_sellers.csv を置き換える. 変わったら True."""
+    downloads = downloads or Path.home() / "Downloads"
+    dest = dest or DATA / "trusted_sellers.csv"
+    files = sorted(downloads.glob("aurora_trusted_sellers*.csv"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        return False
+    rows = [r for r in csv.DictReader(files[-1].read_text(encoding="utf-8-sig").splitlines())
+            if (r.get("user_id") or "").strip() and str(r.get("on", "1")).strip() != "0"]
+    new = {r["user_id"].strip(): (r.get("name") or "").strip() for r in rows}
+    if new == load_trusted(dest):
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["user_id", "name"])
+        w.writerows(sorted(new.items(), key=lambda kv: kv[1]))
+    print(f"安心ストアを取り込み: {len(new)}件（{files[-1].name} → {dest.name}）", file=sys.stderr)
+    return True
+
+
 def is_memo(row: dict) -> bool:
     """相場メモ（手で直した相場）. 過去データより優先する（extension_template.js の isMemo と同じ）."""
     return str(row.get("source") or "").startswith("相場メモ")
@@ -1126,6 +1244,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
         rows.append(
             {
                 "判定": mark,
+                "枠": "安心" if it.trusted else "チャレンジ",
                 "理由": reason,
                 "タイトル": it.title,
                 "ヤフオクURL": it.url,
@@ -1268,7 +1387,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
                unpriced: list[dict] | None = None) -> None:
     e = html.escape
     j = cfg["judge"]
-    cards = []
+    cards: dict[str, list[str]] = {"安心": [], "チャレンジ": [], "要確認": []}
     shown = [r for r in rows if r["判定"] in ("◎", "○") or (r["判定"] == "要確認" and r["想定販売価格USD"])]
     hidden_bad = [r for r in rows if r["判定"] == "×"]
     for r in shown:
@@ -1278,9 +1397,10 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
         hist = " ".join(
             link(u, f"実績{i+1}") for i, u in enumerate(r["過去実績URL"].split()) if u
         )
-        cards.append(f"""
+        box = cards["要確認"] if r["判定"] == "要確認" else cards[r.get("枠") or "チャレンジ"]
+        box.append(f"""
 <article class="card {cls}">
-  <div class="top"><span class="mark">{e(r['判定'])}</span><h2>{e(r['タイトル'] or r['ヤフオクURL'])}</h2></div>
+  <div class="top"><span class="mark">{e(r['判定'])}</span><h2>{'★ ' if r.get('枠') == '安心' else ''}{e(r['タイトル'] or r['ヤフオクURL'])}</h2></div>
   <p class="reason">{e(r['理由'])}{(' ・ ⚠ ' + e(r['注意'])) if r['注意'] else ''}</p>
   <div class="grid">
     <div><label>現在価格</label><b>{_yen(r['現在価格']) or '-'}</b><small>入札{r['入札数'] if r['入札数'] is not None else '-'}・即決{_yen(r['即決価格']) or '-'}</small></div>
@@ -1322,8 +1442,12 @@ h2{{font-size:16px;margin:22px 0 6px}}details{{margin:12px 0}}.mini{{font-size:1
 為替 1USD={fx:.2f}円（円転ロス{cfg['fx']['conversion_loss_pct']}%） ・ 基準: 利益{j['min_profit_jpy']:,}円以上かつ利益率{j['min_margin_pct']}%以上 ・
 eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['international_fee_pct']}%+広告{cfg['ebay']['ad_rate_pct']}%+${cfg['ebay']['per_order_fee_usd']}<br>
 上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの相場は自動取得しません（規約順守）。soldリンク・Product Researchで確認してください。</p>
-<h2>入札候補（◎○は終了が近い順）</h2>
-{''.join(cards) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
+<h2>★ 安心枠（フォロー中のストア）{len(cards['安心'])}件</h2>
+<p class="summary">基準: 利益{j.get('trusted_min_profit_jpy', j['min_profit_jpy']):,}円以上かつ利益率{j.get('trusted_min_margin_pct', j['min_margin_pct'])}%以上（人気で利益率が低いので緩め）。終了が近い順。</p>
+{''.join(cards['安心']) or '<p class="summary">ありません（ストアのページを開くと、フォロー中なら拡張機能が自動で安心ストアに登録します）。</p>'}
+<h2>チャレンジ枠（その他の出品者）{len(cards['チャレンジ'])}件</h2>
+{''.join(cards['チャレンジ']) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
+<details><summary>要確認（説明文の難・付属品の可能性など）{len(cards['要確認'])}件</summary>{''.join(cards['要確認'])}</details>
 <details><summary>× 見送り {len(hidden_bad)}件</summary><ul class="mini">{''.join(
     f'<li><a href="{e(r["ヤフオクURL"])}" target="_blank" rel="noopener">{e(r["タイトル"][:60])}</a> 現在{_yen(r["現在価格"])} / 上限{_yen(r["上限入札額"])}</li>'
     for r in hidden_bad)}</ul></details>
@@ -1402,7 +1526,16 @@ def main(argv: list[str] | None = None) -> int:
     kantei = read_kantei_table(args.kantei) if args.kantei else []
     if args.kantei:
         print(f"鑑定表: {len(kantei)}件の相場を読み込み", file=sys.stderr)
+    import_extension_trusted()
+    trusted = load_trusted()
+    for it in items:
+        it.trusted = bool(it.seller_id) and it.seller_id in trusted
+    if trusted:
+        print(f"安心ストア: {len(trusted)}件（出品 {sum(it.trusted for it in items)}件が安心枠）", file=sys.stderr)
     analyze(items, sales, cfg, fx, args.offline, args.delay, kantei)
+    if not args.offline:
+        n = check_descriptions(items, args.delay)
+        print(f"説明文チェック: ◎○ {n}件を確認（カビ・クモリ等があれば要確認に）", file=sys.stderr)
 
 
     rows = rows_for_output(items)

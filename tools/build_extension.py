@@ -46,6 +46,7 @@ def build_data(cfg: dict, fx: float) -> dict:
     e, y, t, j, s = cfg["ebay"], cfg["yahoo"], cfg["tax"], cfg["judge"], cfg["shipping"]
     return {
         "built": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "trusted": [{"id": k, "name": v} for k, v in ba.load_trusted().items()],  # 安心ストア（data/trusted_sellers.csv）
         "refs": refs,
         "kantei": kantei,
         "cfg": {
@@ -57,6 +58,8 @@ def build_data(cfg: dict, fx: float) -> dict:
             "refundRatio": (t["consumption_tax_pct"] / (100 + t["consumption_tax_pct"])
                             if t["include_consumption_tax_refund"] else 0.0),
             "minProfit": j["min_profit_jpy"], "minMarginPct": j["min_margin_pct"],
+            "trustedMinProfit": j.get("trusted_min_profit_jpy", j["min_profit_jpy"]),
+            "trustedMinMarginPct": j.get("trusted_min_margin_pct", j["min_margin_pct"]),
             "junkFactor": j.get("junk_price_factor", 1.0),
             "condStep": j.get("condition_step_usd", 0),
             "activeFactor": j.get("active_price_factor", 0.7), "activeMinCount": j.get("active_min_count", 5),
@@ -139,6 +142,7 @@ def main(argv=None) -> int:
     ap.add_argument("--fx", type=float, help="為替（省略時は自動取得、失敗時は config.toml）")
     args = ap.parse_args(argv)
     ba.import_extension_memo()  # 拡張機能で「直す」した相場（ダウンロード/aurora_price_memo.csv）
+    ba.import_extension_trusted()  # 拡張機能で登録した安心ストア（ダウンロード/aurora_trusted_sellers.csv）
     cfg = ba.load_config(None)
     fx = args.fx or (cfg["fx"].get("auto_fetch") and ba.fetch_fx()) or float(cfg["fx"]["usd_jpy"])
     data = build_data(cfg, fx)

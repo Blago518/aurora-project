@@ -55,3 +55,6 @@ junk_price_factor = 0.7
 # 状態の補正: 過去データの状態とこの出品の状態が1ランク違うごとに、販売価格を何ドル動かすか（0で補正しない）
 # ランク: 未使用 > TOP MINT > MINT > Near MINT > Exc+5 > … > Exc。出品の状態はヤフオクの商品名の日本語（美品など）から。表記なしは Near MINT
 condition_step_usd = 10
+# 安心枠（フォロー中のストア＝安心ストア）の基準。人気で利益率が低いので緩める（2026-11-15 ユーザー指定）
+trusted_min_profit_jpy = 2000
+trusted_min_margin_pct = 5.0

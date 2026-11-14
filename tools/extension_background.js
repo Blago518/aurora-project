@@ -73,6 +73,12 @@ function saveMemo(csv) {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+  if (msg && msg.type === "saveFile" && /^aurora_[a-z_]+\.csv$/.test(msg.name || "")) {  // 安心ストアの一覧など
+    const url = "data:text/csv;charset=utf-8," + encodeURIComponent("\ufeff" + msg.csv);
+    chrome.downloads.download({ url, filename: msg.name, conflictAction: "overwrite", saveAs: false })
+      .then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
+    return true;
+  }
   if (msg && msg.type === "saveMemo") {
     saveMemo(msg.csv).then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
     return true;
