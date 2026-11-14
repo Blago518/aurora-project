@@ -135,7 +135,19 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <!-- ===================================================== 設定 -->
 <section id="set" hidden>
   <div class="card">
-    <h2>① 相場データ</h2>
+    <h2>① 自動更新（おすすめ）</h2>
+    <div id="autoInfo" class="s">未設定。設定すると、アプリを開くたびに最新の相場データを自動で読み込みます（②の手作業が不要）。</div>
+    <label for="autoCode">設定コード（AURORA1: で始まる）</label>
+    <input id="autoCode" type="password" placeholder="Mac の store_publish.py setup で表示されたコードを貼り付け" autocomplete="off" autocapitalize="off">
+    <div class="grid2 mt">
+      <button class="btn" id="autoSave" type="button">保存して読み込む</button>
+      <button class="btn sec" id="autoDel" type="button">解除</button>
+    </div>
+    <div class="status" id="autoMsg"></div>
+    <p class="s">データは暗号化されて届き、この iPhone の中で合言葉を使って元に戻します。合言葉は外へ送りません。</p>
+  </div>
+  <div class="card">
+    <h2>② 相場データ（手動）</h2>
     <div id="dataInfo" class="s">まだ読み込んでいません。</div>
     <button class="btn mt" id="dataBtn" type="button">データファイルを選ぶ（store_data.json）</button>
     <input id="dataFile" type="file" accept=".json,application/json" hidden>
@@ -143,7 +155,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <p class="s">Mac で <code>python3 tools/build_store.py</code> を実行すると iCloud Drive の「aurora」フォルダに入ります。ボタン → 「ブラウズ」→ iCloud Drive → aurora → store_data.json。データはこの iPhone の中だけに保存され、外へ送られません。</p>
   </div>
   <div class="card">
-    <h2>② 値札読み取り（Claude API）</h2>
+    <h2>③ 値札読み取り（Claude API）</h2>
     <label for="apiKey" style="margin-top:0">APIキー（sk-ant- で始まる）</label>
     <input id="apiKey" type="password" placeholder="未設定" autocomplete="off">
     <div class="grid2 mt">
@@ -157,6 +169,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 </main>
 
 <script src="core.js"></script>
+<script src="sync.js"></script>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -199,6 +212,34 @@ $("dataFile").onchange = async (e) => {
     $("dataMsg").className = "status"; $("dataMsg").textContent = "読み込みました。次回からは自動で使います。";
   } catch (err) { $("dataMsg").className = "status err"; $("dataMsg").textContent = "読み込めませんでした: " + err.message; }
 };
+
+// ------------------------------------------------------------ 自動更新（暗号化配信）
+const LS_AUTO = "storeAuto";
+async function autoUpdate(manual) {
+  const cfg = lsGet(LS_AUTO, null);
+  if (!cfg) { $("autoInfo").textContent = "未設定。設定すると、アプリを開くたびに最新の相場データを自動で読み込みます（②の手作業が不要）。"; return; }
+  $("autoInfo").textContent = "設定済み。最新を確認しています…";
+  try {
+    const d = await fetchStore(cfg);
+    const fresh = !DATA || d.built !== DATA.built;
+    useData(d);
+    await idbSet("data", d);
+    $("autoInfo").textContent = `設定済み。最新のデータ（${d.built}作成）を使っています。`;
+    $("dataSt").textContent = `データ ${d.built}（自動）`;
+    if (manual || fresh) { $("autoMsg").className = "status"; $("autoMsg").textContent = fresh ? "最新のデータを読み込みました。" : "すでに最新です。"; }
+  } catch (err) {
+    $("autoInfo").textContent = "設定済み。最新を読めなかったので、前回のデータを使っています。";
+    if (manual) { $("autoMsg").className = "status err"; $("autoMsg").textContent = "読み込めませんでした: " + (err.message || err); }
+  }
+}
+$("autoSave").onclick = () => {
+  const cfg = parseSetupCode($("autoCode").value);
+  if (!cfg) { $("autoMsg").className = "status err"; $("autoMsg").textContent = "設定コードが違います（AURORA1: で始まる1行を全部貼り付け）"; return; }
+  lsSet(LS_AUTO, cfg); $("autoCode").value = "";
+  autoUpdate(true);
+};
+$("autoDel").onclick = () => { try { localStorage.removeItem(LS_AUTO); } catch (e) {} $("autoMsg").textContent = "解除しました。"; autoUpdate(false); };
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoUpdate(false); });
 
 // ------------------------------------------------------------ 調べる
 function lookup(name, price, junkBox) {
@@ -545,8 +586,9 @@ for (const b of document.querySelectorAll("nav button")) b.onclick = () => { sho
 renderHist();
 renderExChips();
 updateLinks();
-idbGet("data").then((d) => { if (d) useData(d); else showTab(lsGet(LS_HIST, []).length ? "look" : "set"); })
-  .catch(() => showTab("set"));
+idbGet("data").then((d) => { if (d) useData(d); else if (!lsGet(LS_AUTO, null)) showTab(lsGet(LS_HIST, []).length ? "look" : "set"); })
+  .catch(() => showTab("set"))
+  .finally(() => autoUpdate(false));
 </script>
 </body>
 </html>

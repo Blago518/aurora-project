@@ -17,7 +17,26 @@ open reports
 各行の［直す］（送料込み$を入れる。$30引いて計算）や［登録］を押すと、その相場メモが `ダウンロード/aurora_price_memo.csv` に自動保存される。
 `build_store.py`・`build_extension.py`・`appraise.py` を実行すると `data/price_memo.csv` に自動で取り込まれ（同じ機種は金額を更新）、スマホにも反映される。直した相場は同じ機種の過去データより優先される。
 
-## データを更新したとき
+## 自動化（初回だけ設定。以後は何もしなくてよい）
+| 何を | 初回の設定 | 以後 |
+|---|---|---|
+| Chatwork の販売報告・頒布会リスト（添付 xlsx） | `python3 tools/chatwork_sync.py setup`（API トークンとルームの URL） | 自動で取り込み |
+| 古物台帳（スプレッドシート） | `python3 tools/ledger_sync.py setup`（スクリプトを貼って公開） | 自動で取り込み |
+| スマホのデータ | `python3 tools/store_publish.py setup`（GitHub のトークン）→ 設定コードを iPhone のアプリに貼る | アプリを開くと最新 |
+| 全部の更新 | `python3 tools/schedule.py install` | 毎朝 7:03 と Mac のログイン時に自動。終わると通知 |
+
+拡張機能は、更新後に `chrome://extensions` の ↻ を押すと新しい相場になる。
+
+## データを更新したとき（コマンド1つ）
+```bash
+python3 tools/update_all.py
+```
+- 古物台帳: スプレッドシートの「古物台帳」シートを「ファイル → ダウンロード → CSV」でダウンロードフォルダへ
+- 頒布会: 商品リストの xlsx をダウンロードフォルダへ
+- Chatwork: 日報チャットの販売報告を公式 API で自動取り込み（初回だけ `python3 tools/chatwork_sync.py setup`）
+- 拡張機能で直した相場・CPaSS/オークレボの明細も自動で取り込み、拡張機能・スマホ用データ・ナレッジまで作り直す
+
+## 個別に作り直すとき
 ```bash
 python3 tools/build_reference_prices.py   # data/ledger.csv（古物台帳）+ data/hanpukai_*.xlsx → data/reference_prices.csv
 python3 tools/build_extension.py          # → extension/（chrome://extensions で ↻）

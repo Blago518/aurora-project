@@ -31,15 +31,22 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `extension_template.js` | Chrome拡張機能の中身（判定は appraise.py と同一） |
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv` |
+| `update_all.py` | **全部まとめて最新にする**: ダウンロードフォルダの古物台帳CSV・頒布会xlsx・明細の取り込み → Chatwork 同期 → 相場データ・拡張機能・スマホ用データ・ナレッジを作り直す |
+| `ledger_sync.py` | 古物台帳をスプレッドシートから直接 `data/ledger.csv` に取り込む（Apps Script の合言葉付き URL。初回 `setup`） |
+| `store_publish.py` | スマホ用データを暗号化してシークレット Gist に配信 → iPhone のアプリが開くたびに自動更新（初回 `setup`） |
+| `schedule.py` | `update_all.py` を毎朝＋ログイン時に自動実行（Mac の launchd。`install`・`status`・`uninstall`） |
+| `keychain.py` | トークン・合言葉を Mac のキーチェーンに保存する共通部品 |
+| `chatwork_sync.py` | Chatwork の販売報告（日報チャット）を公式 API で `data/chatwork_sales.csv` に、添付の頒布会リスト（xlsx）を `data/hanpukai_*.xlsx` に取り込む（初回 `setup`） |
 | `build_store.py` | 店舗アプリ用: `store/core.js`（拡張機能の判定のコピー）と `data/store_data.json`（相場＋おすすめ機種。iCloud Drive にもコピー）を作る |
 | `build_knowledge.py` | data/ から `knowledge/相場/`・`knowledge/機種/` を自動生成 |
 | `build_knowledge_page.py`・`knowledge_page_template.html` | knowledge_share.md → Artifacts の読むだけのナレッジページ（ニューロン付き） |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
-| `test_appraise.py`・`test_store.py` | テスト（Python と拡張機能・店舗アプリの判定一致も確認） |
+| `test_*.py` | テスト（Python と拡張機能・店舗アプリの判定一致も確認） |
 
 ## よく使うコマンド（aurora フォルダで実行）
 ```bash
+python3 tools/update_all.py                  # ★全部まとめて最新に（schedule.py install 済みなら毎朝自動）
 python3 tools/appraise.py                    # data/search_urls.txt の検索URLを鑑定 → reports/
 python3 tools/build_reference_prices.py      # 古物台帳・頒布会 → data/reference_prices.csv
 python3 tools/build_extension.py             # 拡張機能を作り直す → chrome://extensions で ↻
