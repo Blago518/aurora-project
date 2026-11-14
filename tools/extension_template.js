@@ -10,14 +10,14 @@
 // @grant        none
 // @noframes
 // ==/UserScript==
-// このファイルは build_userscript.py で自動生成されます。直接編集せず、data/ と config.toml を更新して作り直してください。
+// このファイルは build_extension.py で自動生成されます。直接編集せず、data/ と config.toml を更新して作り直してください。
 (function () {
   "use strict";
   const DATA = /*__DATA__*/ null;
   const C = DATA.consts;
   const LS_MEMO = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
 
-  // ------------------------------------------------------------------ 文字列処理（bid_analyzer.py と同じ規則）
+  // ------------------------------------------------------------------ 文字列処理（appraise.py と同じ規則）
   const BRAND_SET = new Set(Object.values(C.brandsEn).map((b) => b.toLowerCase()));
   const NOISE = new Set(C.noise), THIRD = new Set(C.thirdParty), COLORS = new Set(C.colors);
   const GENS = new Set(C.generations), PREMIUM = new Set(C.premium);

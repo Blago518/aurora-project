@@ -5,9 +5,9 @@
 eBayの販売済み／出品中の相場と過去の販売実績から、想定販売価格・利益・上限入札額を計算してレポートを出力する。
 
 使い方:
-    python bid_analyzer.py samples/bookmarks.txt --sales samples/sales_history.csv
-    python bid_analyzer.py bookmarks.html --offline          # 通信せず手入力値と販売実績だけで計算
-    python bid_analyzer.py items.csv --fx 152 --out out/     # 為替を指定
+    python appraise.py samples/bookmarks.txt --sales samples/sales_history.csv
+    python appraise.py bookmarks.html --offline          # 通信せず手入力値と販売実績だけで計算
+    python3 tools/appraise.py items.csv --fx 152          # 為替を指定
 
 標準ライブラリのみで動作する（Python 3.9 以上。Macの標準 python3 でOK）。
 """
@@ -30,7 +30,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent      # tools/
+ROOT = HERE.parent                           # aurora/
+DATA = ROOT / "data"                         # 非公開データ
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
@@ -1251,9 +1253,10 @@ eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['inter
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="ヤフオク入札判断ツール")
-    ap.add_argument("input", type=Path, help="ヤフオクの出品URL・検索結果URLの一覧(.txt) / ブックマークHTML / CSV")
+    ap.add_argument("input", type=Path, nargs="?", default=DATA / "search_urls.txt",
+                    help="ヤフオクの検索結果URL・出品URLの一覧（省略時は data/search_urls.txt）。ブックマークHTML / CSV も可")
     ap.add_argument("--sales", type=Path, nargs="*", default=None,
-                    help="過去の販売実績CSV（複数可）。省略時は data/ の sales.csv, chatwork_sales.csv, price_memo.csv")
+                    help="過去の販売実績CSV（複数可）。省略時は data/ の reference_prices.csv, chatwork_sales.csv, price_memo.csv")
     ap.add_argument("--kantei", type=Path, help="鑑定ブックマークレットのテキスト（.txt/.js/.docx）。相場表を参考に使う")
     ap.add_argument("--config", type=Path, help="設定ファイル（既定: config.toml）")
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
@@ -1263,7 +1266,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="相場未登録の機種のうち件数の多い上位N機種を eBay 販売済みから自動で相場化（0で無効、7日キャッシュ）")
     ap.add_argument("--delay", type=float, default=1.5, help="通信の間隔（秒）")
     ap.add_argument("--max-per-search", type=int, default=2000, help="検索URL1つあたりに調べる出品数（上から。100件ごとに1回アクセス）")
-    ap.add_argument("--out", type=Path, default=Path("out"), help="出力フォルダ")
+    ap.add_argument("--out", type=Path, default=ROOT / "reports", help="出力フォルダ（省略時は reports/）")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -1298,10 +1301,10 @@ def main(argv: list[str] | None = None) -> int:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1
     if args.sales is None:
-        args.sales = [p for p in (HERE / "data" / n for n in ("sales.csv", "chatwork_sales.csv", "price_memo.csv"))
+        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
                       if p.exists()]
     if args.kantei is None:
-        args.kantei = next(iter(sorted((HERE / "data").glob("kantei_bookmarklet.*"))), None)
+        args.kantei = next(iter(sorted(DATA.glob("kantei_bookmarklet.*"))), None)
     sales = [row for p in args.sales for row in read_sales(p)]
     print(f"販売実績・相場: {len(sales)}件（{', '.join(p.name for p in args.sales) or 'なし'}）", file=sys.stderr)
     kantei = read_kantei_table(args.kantei) if args.kantei else []
@@ -1310,7 +1313,7 @@ def main(argv: list[str] | None = None) -> int:
     analyze(items, sales, cfg, fx, args.offline, not args.no_ebay_fetch, args.delay, kantei)
 
     if not args.offline and not args.no_ebay_fetch and args.ebay_auto > 0:
-        auto_price_unpriced(items, cfg, fx, args.ebay_auto, args.delay, HERE / "data" / "ebay_sold_cache.csv")
+        auto_price_unpriced(items, cfg, fx, args.ebay_auto, args.delay, DATA / "ebay_cache.csv")
 
     rows = rows_for_output(items)
     args.out.mkdir(parents=True, exist_ok=True)

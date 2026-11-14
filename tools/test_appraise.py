@@ -1,10 +1,10 @@
-"""python -m unittest test_bid_analyzer で実行."""
+"""python -m unittest test_appraise で実行."""
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-import bid_analyzer as ba
+import appraise as ba
 
 CFG = ba.load_config(None)
 
@@ -197,7 +197,7 @@ class UserscriptParity(unittest.TestCase):
 
     def test_same_verdicts(self):
         import json, shutil, subprocess
-        import build_userscript as bu
+        import build_extension as bu
         if not shutil.which("node"):
             self.skipTest("node がありません")
         titles = ["【美品】ニコン Nikon FM2 ブラック ボディ", "キヤノン Canon FD 28mm f2・8 良品",
@@ -218,7 +218,7 @@ class UserscriptParity(unittest.TestCase):
         data["refs"] = [{"title": r["title"], "price": r["_price"], "tier": ba.source_tier(r), "source": r["source"],
                          "tokens": sorted(r["_tokens"]), "acc": bool(ba.ACCESSORY_RE.search(r["title"]))} for r in sales]
         data["kantei"] = []
-        tpl = (Path(ba.__file__).parent / "userscript_template.js").read_text(encoding="utf-8")
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as d:
             js = Path(d) / "u.js"
             js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")

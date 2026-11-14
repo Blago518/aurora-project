@@ -5,28 +5,30 @@ data/ の販売実績・Chatwork・頒布会・相場メモ・鑑定表と confi
 1つの .user.js を出力する。データを更新したら作り直して、Userscripts のフォルダに上書きする。
 
 使い方:
-    python3 build_userscript.py                 # → out/yahoo_kantei.user.js
-    python3 build_userscript.py -o ~/Documents/Userscripts/yahoo_kantei.user.js
+    python3 tools/build_extension.py                                   # → extension/（Chrome拡張機能）
+    python3 tools/build_extension.py --userscript ~/Documents/Userscripts/aurora.user.js  # Safari用も作る
 """
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import math
 import sys
 from datetime import datetime
 from pathlib import Path
 
-import bid_analyzer as ba
+import appraise as ba
 
 HERE = Path(__file__).resolve().parent
-SOURCES = ("sales.csv", "chatwork_sales.csv", "price_memo.csv", "ebay_sold_cache.csv")
+ROOT = HERE.parent
+SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv", "ebay_cache.csv")
 
 
 def build_data(cfg: dict, fx: float) -> dict:
     refs = []
     for name in SOURCES:
-        p = HERE / "data" / name
+        p = ROOT / "data" / name
         if not p.exists():
             continue
         for r in ba.read_sales(p):
@@ -36,7 +38,7 @@ def build_data(cfg: dict, fx: float) -> dict:
                 "acc": bool(ba.ACCESSORY_RE.search(r.get("title", ""))),
             })
     kantei = []
-    kp = next(iter(sorted((HERE / "data").glob("kantei_bookmarklet.*"))), None)
+    kp = next(iter(sorted((ROOT / "data").glob("kantei_bookmarklet.*"))), None)
     if kp:
         for r in ba.read_kantei_table(kp):
             kantei.append({"title": r["title"], "price": r["_price"], "tier": 3, "source": r["source"],
@@ -74,9 +76,11 @@ def write_chrome_extension(js: str, folder: Path) -> None:
     version = datetime.now().strftime("%Y.%-m.%-d.%-H%M") if sys.platform != "win32" else "1.0.0"
     manifest = {
         "manifest_version": 3,
-        "name": "ヤフオク入札鑑定（自作）",
+        "name": "Aurora 仕入れ鑑定",
         "version": version,
         "description": "ヤフオクの検索結果・出品者ページで、販売実績と照合して上限入札額と利益を表示します。",
+        "icons": {str(n): f"icons/icon{n}.png" for n in (16, 32, 48, 128)},
+        "action": {"default_title": "Aurora 仕入れ鑑定", "default_icon": {str(n): f"icons/icon{n}.png" for n in (16, 32)}},
         "content_scripts": [{
             "matches": ["https://auctions.yahoo.co.jp/search/*", "https://auctions.yahoo.co.jp/seller/*",
                         "https://auctions.yahoo.co.jp/category/*"],
@@ -86,28 +90,31 @@ def write_chrome_extension(js: str, folder: Path) -> None:
     }
     (folder / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     (folder / "content.js").write_text(js, encoding="utf-8")
+    (folder / "icons").mkdir(exist_ok=True)
+    for png in (HERE / "icons").glob("icon*.png"):
+        shutil.copy(png, folder / "icons" / png.name)
     print(f"Chrome拡張機能: {folder}", file=sys.stderr)
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="ヤフオク入札鑑定ユーザースクリプトを作る")
-    ap.add_argument("-o", "--out", type=Path, default=HERE / "out" / "yahoo_kantei.user.js")
-    ap.add_argument("--chrome", type=Path, nargs="?", const=HERE / "out" / "chrome_extension",
-                    help="Chrome拡張機能（フォルダ）も作る。Chromeの「パッケージ化されていない拡張機能を読み込む」で指定")
+    ap = argparse.ArgumentParser(description="Chrome拡張機能（入札鑑定）を作る → extension/")
+    ap.add_argument("-o", "--out", type=Path, default=ROOT / "extension", help="拡張機能のフォルダ（省略時は extension/）")
+    ap.add_argument("--chrome", action="store_true", help="（互換用。指定しなくても Chrome拡張機能を作ります）")
+    ap.add_argument("--userscript", type=Path, help="Safari「Userscripts」用の .user.js も作る場合の出力先")
     ap.add_argument("--fx", type=float, help="為替（省略時は自動取得、失敗時は config.toml）")
     args = ap.parse_args(argv)
     cfg = ba.load_config(None)
     fx = args.fx or (cfg["fx"].get("auto_fetch") and ba.fetch_fx()) or float(cfg["fx"]["usd_jpy"])
     data = build_data(cfg, fx)
-    tpl = (HERE / "userscript_template.js").read_text(encoding="utf-8")
+    tpl = (HERE / "extension_template.js").read_text(encoding="utf-8")
     js = tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     js = js.replace("__VERSION__", datetime.now().strftime("%Y.%m.%d.%H%M"))
-    if args.chrome:
-        write_chrome_extension(js, args.chrome)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(js, encoding="utf-8")
+    write_chrome_extension(js, args.out)
+    if args.userscript:
+        args.userscript.parent.mkdir(parents=True, exist_ok=True)
+        args.userscript.write_text(js, encoding="utf-8")
     print(f"出力: {args.out}（相場 {len(data['refs'])}件・鑑定表 {len(data['kantei'])}件・為替 {fx:.2f}円・"
-          f"{args.out.stat().st_size // 1024}KB）", file=sys.stderr)
+          f"{len(js.encode()) // 1024}KB）", file=sys.stderr)
     return 0
 
 

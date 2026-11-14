@@ -16,11 +16,12 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-import bid_analyzer as ba
+import appraise as ba
 
 HERE = Path(__file__).resolve().parent
-KNOW = HERE / "knowledge"
-SOURCES = ("sales.csv", "chatwork_sales.csv", "price_memo.csv", "ebay_sold_cache.csv")
+ROOT = HERE.parent
+KNOW = ROOT / "knowledge"
+SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv", "ebay_cache.csv")
 
 
 def safe(name: str) -> str:
@@ -37,7 +38,7 @@ def brand_of(title: str) -> str:
 def main() -> int:
     refs = []
     for name in SOURCES:
-        p = HERE / "data" / name
+        p = ROOT / "data" / name
         if p.exists():
             refs += ba.read_sales(p)
     if not refs:

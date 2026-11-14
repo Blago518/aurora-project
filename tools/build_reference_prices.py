@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""販売実績の参考データをまとめて sales.csv を作る.
+"""販売実績の参考データをまとめて reference_prices.csv を作る.
 
 - 古物台帳（Googleスプレッドシートの「古物台帳」シートを CSV でダウンロードしたもの）
     販売日が入っている行 = 自分の実績。販売金額($) は送料込み。
@@ -7,7 +7,7 @@
     販売金額($) と 頒布金額(円) を参考相場として使う。
 
 使い方:
-    python3 build_sales.py --ledger 古物台帳.csv --hanpu 頒布会_2026_09.xlsx 頒布会_2026_10.xlsx -o sales.csv
+    python3 tools/build_reference_prices.py --ledger 古物台帳.csv --hanpu 頒布会_2026_09.xlsx 頒布会_2026_10.xlsx -o reference_prices.csv
 
 標準ライブラリのみ（openpyxl 不要）。
 """
@@ -144,10 +144,15 @@ def from_hanpu(path: Path) -> list[dict]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="販売実績CSVを作る")
-    ap.add_argument("--ledger", type=Path, nargs="*", default=[], help="古物台帳CSV")
-    ap.add_argument("--hanpu", type=Path, nargs="*", default=[], help="頒布会の商品リスト xlsx")
-    ap.add_argument("-o", "--out", type=Path, default=Path("sales.csv"))
+    data = Path(__file__).resolve().parent.parent / "data"
+    ap.add_argument("--ledger", type=Path, nargs="*", default=None, help="古物台帳CSV（省略時は data/ledger.csv）")
+    ap.add_argument("--hanpu", type=Path, nargs="*", default=None, help="頒布会の商品リスト xlsx（省略時は data/hanpukai_*.xlsx）")
+    ap.add_argument("-o", "--out", type=Path, default=data / "reference_prices.csv")
     args = ap.parse_args(argv)
+    if args.ledger is None:
+        args.ledger = [p for p in [data / "ledger.csv"] if p.exists()]
+    if args.hanpu is None:
+        args.hanpu = sorted(data.glob("hanpukai_*.xlsx"))
     rows: list[dict] = []
     for p in args.ledger:
         got = from_ledger(p)

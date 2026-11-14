@@ -1,4 +1,6 @@
-yahoo_bid/out/
 __pycache__/
-yahoo_bid/data/
-yahoo_bid/knowledge/
+# 非公開（仕入値・販売実績・事業ナレッジ・生成物）
+data/
+knowledge/
+reports/
+extension/
