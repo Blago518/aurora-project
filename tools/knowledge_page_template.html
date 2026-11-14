@@ -182,7 +182,7 @@ td { font-variant-numeric: tabular-nums; }
     var token = ++graphToken;
     var g = buildGraph();
     main.className = 'graph-main';
-    main.innerHTML = '<h1>ニューロン</h1>' +
+    main.innerHTML =
       '<div class="graph-wrap"><canvas id="gcv" aria-label="ニューロン（ノート同士のつながり）"></canvas>' +
       '<div class="graph-hud"><span>Neuron · knowledge link map</span><span><b>' + g.nodes.length + '</b> nodes · <b>' + g.edges.length + '</b> links</span></div></div>' +
       '<div class="legend">' + Object.keys(GROUP_COLOR).map(function (k) {
