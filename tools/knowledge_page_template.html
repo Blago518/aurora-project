@@ -1,0 +1,346 @@
+<title>aurora ナレッジ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 左に目次・右にノート本文（スマホでは目次が上の横スクロールのチップになる） */
+:root {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --fg: #1d2329;
+  --muted: #5d6873;
+  --line: #dde2e7;
+  --accent: #1f6f78;      /* レンズのコーティングのような青緑 */
+  --accent-soft: #e3f0f1;
+  --amber: #a5620b;
+  --amber-soft: #fbf0e0;
+  --code-bg: #eef1f4;
+  --font-display: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171b; --surface: #182026; --fg: #e4e9ed; --muted: #9aa6b1; --line: #2a343c;
+    --accent: #6cc3cc; --accent-soft: #1b3136; --amber: #e6a650; --amber-soft: #33281a; --code-bg: #20292f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171b; --surface: #182026; --fg: #e4e9ed; --muted: #9aa6b1; --line: #2a343c;
+  --accent: #6cc3cc; --accent-soft: #1b3136; --amber: #e6a650; --amber-soft: #33281a; --code-bg: #20292f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.8;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 48px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; }
+header.top { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+header.top h1 { font-family: var(--font-display); font-size: 22px; margin: 0; letter-spacing: .02em; }
+header.top h1 span { color: var(--accent); }
+header.top p { margin: 0; color: var(--muted); font-size: 13px; }
+nav { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); align-self: start; display: flex; flex-direction: column; gap: 18px; }
+nav .grp { display: flex; flex-direction: column; gap: 2px; }
+nav .grp-label { font-size: 11px; letter-spacing: .12em; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
+nav a { color: var(--fg); text-decoration: none; padding: 5px 10px; border-radius: 6px; font-size: 14px; line-height: 1.5; }
+nav a:hover { background: var(--accent-soft); }
+nav a:focus-visible, main a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+main { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 28px 32px 36px; }
+main h1 { font-family: var(--font-display); font-size: 26px; margin: 0 0 18px; text-wrap: balance; line-height: 1.4; }
+main h2 { font-family: var(--font-display); font-size: 18px; margin: 30px 0 8px; padding-top: 14px; border-top: 1px solid var(--line); text-wrap: balance; }
+main p, main li { max-width: 68ch; }
+main ul, main ol { padding-left: 1.3em; }
+main li { margin: 4px 0; }
+main a { color: var(--accent); text-underline-offset: 3px; }
+main strong { font-weight: 700; }
+code { font-family: var(--font-mono); font-size: .88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; line-height: 1.6; }
+pre code { background: none; padding: 0; font-size: 13px; }
+.tbl { overflow-x: auto; margin: 14px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 700; font-size: 12px; letter-spacing: .04em; }
+td { font-variant-numeric: tabular-nums; }
+.maconly { color: var(--muted); border-bottom: 1px dashed var(--muted); cursor: help; }
+.maconly::after { content: "Macのみ"; font-size: 10px; margin-left: 4px; padding: 0 5px; border-radius: 3px; background: var(--amber-soft); color: var(--amber); vertical-align: 2px; }
+.note { background: var(--amber-soft); color: var(--fg); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 0 0 20px; }
+.note b { color: var(--amber); }
+.sym { font-family: var(--font-display); color: var(--accent); font-weight: 700; }
+@media (max-width: 760px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  nav { position: static; flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+  nav .grp { flex-direction: row; gap: 6px; }
+  nav .grp-label { display: none; }
+  nav a { white-space: nowrap; border: 1px solid var(--line); background: var(--surface); }
+  main { padding: 20px 18px 28px; }
+  main h1 { font-size: 22px; }
+}
+@media (prefers-reduced-motion: no-preference) { nav a { transition: background .15s; } }
+/* ニューロン: テーマに関係なく常に暗い「計器パネル」の見た目 */
+:root {
+  --g-bg: #050a13; --g-edge: #12304a; --g-cyan: #4fe3ff; --g-violet: #a585ff; --g-mint: #5cffc4;
+  --g-amber: #ffb547; --g-text: #d6eeff; --g-dim: #5d84a2;
+}
+.graph-wrap { position: relative; border-radius: 12px; overflow: hidden; background: var(--g-bg); border: 1px solid var(--g-edge); box-shadow: 0 0 0 1px rgba(79,227,255,.06), 0 18px 50px -20px rgba(79,227,255,.35); }
+.graph-wrap canvas { display: block; width: 100%; height: 580px; touch-action: none; cursor: crosshair; }
+.graph-hud { position: absolute; left: 14px; right: 14px; top: 10px; display: flex; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .14em; color: var(--g-dim); pointer-events: none; text-transform: uppercase; }
+.graph-hud b { color: var(--g-cyan); font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0 0; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; outline: 1px solid var(--line); }
+.graph-tip { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+.graph-main { padding: 22px 22px 26px; }
+@media (max-width: 760px) { .graph-wrap canvas { height: 460px; } .graph-main { padding: 16px 12px 20px; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1><span>aurora</span> ナレッジ</h1>
+    <p>Mac の ~/aurora/knowledge から {{DATE}} に写したもの（方針・手順・用語のみ）</p>
+  </header>
+  <nav id="nav" aria-label="ノート一覧"></nav>
+  <main id="main"><p>読み込み中…</p></main>
+</div>
+
+<!-- ノート本文（Markdown）。build_knowledge_page.py がここに差し込む -->
+{{NOTES}}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script>
+(function () {
+  var blocks = Array.prototype.slice.call(document.querySelectorAll('script[data-id]'));
+  var notes = blocks.map(function (b) {
+    return { id: b.dataset.id, name: b.dataset.name, title: b.dataset.title, group: b.dataset.group, md: b.textContent.trim() };
+  });
+  var byName = {};
+  notes.forEach(function (n) { byName[n.name] = n; });
+
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  // [[ノート名]] → ページ内リンク。載せていないノートは「Macのみ」の印
+  function linkify(md) {
+    return md.replace(/\[\[([^\]]+)\]\]/g, function (_, name) {
+      var n = byName[name];
+      var label = name.split('/').pop();
+      if (n) return '<a href="#' + n.id + '">' + esc(label) + '</a>';
+      return '<span class="maconly" title="このノートは仕入先・相場などの数字を含むため、Macの Obsidian でだけ見られます">' + esc(label) + '</span>';
+    });
+  }
+
+  function render(md) {
+    var html = window.marked ? window.marked.parse(linkify(md)) : '<pre>' + esc(md) + '</pre>';
+    var tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    tmp.querySelectorAll('table').forEach(function (t) {
+      var w = document.createElement('div'); w.className = 'tbl';
+      t.parentNode.insertBefore(w, t); w.appendChild(t);
+    });
+    return tmp.innerHTML;
+  }
+
+  var nav = document.getElementById('nav');
+  var groups = [];
+  notes.forEach(function (n) { if (groups.indexOf(n.group) < 0) groups.push(n.group); });
+  nav.innerHTML = '<div class="grp"><div class="grp-label">ビュー</div><a href="#graph" data-nav="graph">◈ ニューロン</a></div>' + groups.map(function (g) {
+    return '<div class="grp"><div class="grp-label">' + esc(g) + '</div>' +
+      notes.filter(function (n) { return n.group === g; }).map(function (n) {
+        return '<a href="#' + n.id + '" data-nav="' + n.id + '">' + esc(n.title) + '</a>';
+      }).join('') + '</div>';
+  }).join('');
+
+  var main = document.getElementById('main');
+
+  // ---------- ニューロン ----------
+  var GROUP_COLOR = { '入口': '#ffffff', '方針': '#4fe3ff', 'ツール': '#a585ff', '記録': '#5cffc4', 'Macのみ': '#ffb547' };
+  function buildGraph() {
+    var nodes = notes.map(function (n) { return { key: n.name, id: n.id, label: n.title, group: n.group, mac: false }; });
+    var idx = {}; nodes.forEach(function (n, i) { idx[n.key] = i; });
+    var seen = {}, edges = [];
+    notes.forEach(function (n) {
+      var re = /\[\[([^\]]+)\]\]/g, m;
+      while ((m = re.exec(n.md))) {
+        var t = m[1];
+        if (!(t in idx)) { idx[t] = nodes.length; nodes.push({ key: t, id: null, label: t.split('/').pop(), group: 'Macのみ', mac: true }); }
+        var a = idx[n.name], b = idx[t];
+        if (a === b) continue;
+        var k = a < b ? a + '-' + b : b + '-' + a;
+        if (!seen[k]) { seen[k] = 1; edges.push({ a: a, b: b, phase: Math.random() }); }
+      }
+    });
+    nodes.forEach(function (n) { n.deg = 0; });
+    edges.forEach(function (e) { nodes[e.a].deg++; nodes[e.b].deg++; });
+    return { nodes: nodes, edges: edges };
+  }
+
+  var graphToken = 0;
+  function renderGraph() {
+    var token = ++graphToken;
+    var g = buildGraph();
+    main.className = 'graph-main';
+    main.innerHTML = '<h1>ニューロン</h1>' +
+      '<p class="graph-tip">点がノート、線が [[リンク]] です。点に触れるとつながりが光り、押すとそのノートを開きます。点はドラッグで動かせます。</p>' +
+      '<div class="graph-wrap"><canvas id="gcv" aria-label="ニューロン（ノート同士のつながり）"></canvas>' +
+      '<div class="graph-hud"><span>Neuron · knowledge link map</span><span><b>' + g.nodes.length + '</b> nodes · <b>' + g.edges.length + '</b> links</span></div></div>' +
+      '<div class="legend">' + Object.keys(GROUP_COLOR).map(function (k) {
+        return '<span><i style="background:' + GROUP_COLOR[k] + ';box-shadow:0 0 8px ' + GROUP_COLOR[k] + '"></i>' + k + '</span>';
+      }).join('') + '</div>';
+
+    var cv = document.getElementById('gcv'), ctx = cv.getContext('2d');
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    function size() {
+      var r = cv.getBoundingClientRect();
+      W = r.width; H = r.height;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    size();
+    var N = g.nodes.length;
+    g.nodes.forEach(function (n, i) {
+      var ang = i / N * Math.PI * 2;
+      var rad = Math.min(W, H) * (n.key === '00_ホーム' ? 0 : 0.32);
+      n.x = W / 2 + Math.cos(ang) * rad; n.y = H / 2 + Math.sin(ang) * rad;
+      n.vx = 0; n.vy = 0; n.r = 5 + Math.sqrt(n.deg) * 2.4;
+    });
+    var alpha = 1, drag = null, hover = null, downAt = null;
+    function step() {
+      var L = Math.max(80, Math.min(W, H) * 0.27), i, j, a, b, dx, dy, d2, d, f;
+      for (i = 0; i < N; i++) for (j = i + 1; j < N; j++) {
+        a = g.nodes[i]; b = g.nodes[j];
+        dx = b.x - a.x; dy = b.y - a.y; d2 = dx * dx + dy * dy + 0.01;
+        f = (W < 500 ? 4500 : 9000) / d2 * alpha; d = Math.sqrt(d2);
+        a.vx -= dx / d * f; a.vy -= dy / d * f; b.vx += dx / d * f; b.vy += dy / d * f;
+      }
+      g.edges.forEach(function (e) {
+        a = g.nodes[e.a]; b = g.nodes[e.b];
+        dx = b.x - a.x; dy = b.y - a.y; d = Math.sqrt(dx * dx + dy * dy) || 1;
+        f = (d - L) * 0.025 * alpha;
+        a.vx += dx / d * f; a.vy += dy / d * f; b.vx -= dx / d * f; b.vy -= dy / d * f;
+      });
+      g.nodes.forEach(function (n) {
+        n.vx += (W / 2 - n.x) * 0.003 * alpha; n.vy += (H / 2 - n.y) * 0.003 * alpha;
+        if (n === drag) { n.vx = n.vy = 0; return; }
+        n.vx *= 0.82; n.vy *= 0.82; n.x += n.vx; n.y += n.vy;
+        var m = 40; n.x = Math.max(m, Math.min(W - m, n.x)); n.y = Math.max(m, Math.min(H - m, n.y));
+      });
+      alpha = Math.max(0.02, alpha * 0.985);
+    }
+    if (reduce) { for (var s = 0; s < 400; s++) step(); }
+
+    function neighbors(n) {
+      var set = {}; if (!n) return set;
+      var i = g.nodes.indexOf(n); set[i] = 1;
+      g.edges.forEach(function (e) { if (e.a === i) set[e.b] = 1; if (e.b === i) set[e.a] = 1; });
+      return set;
+    }
+    function draw(t) {
+      ctx.clearRect(0, 0, W, H);
+      // 背景のグリッドとレーダーの輪
+      ctx.strokeStyle = 'rgba(79,227,255,0.05)'; ctx.lineWidth = 1;
+      for (var x = (W / 2) % 32; x < W; x += 32) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+      for (var y = (H / 2) % 32; y < H; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      ctx.strokeStyle = 'rgba(79,227,255,0.09)';
+      [0.18, 0.32, 0.46].forEach(function (k) { ctx.beginPath(); ctx.arc(W / 2, H / 2, Math.min(W, H) * k, 0, Math.PI * 2); ctx.stroke(); });
+      if (!reduce) {
+        var sweep = (t / 4000) % 1 * Math.PI * 2, R = Math.max(W, H);
+        var grd = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, R * 0.6);
+        grd.addColorStop(0, 'rgba(79,227,255,0.10)'); grd.addColorStop(1, 'rgba(79,227,255,0)');
+        ctx.fillStyle = grd; ctx.beginPath(); ctx.moveTo(W / 2, H / 2); ctx.arc(W / 2, H / 2, R, sweep, sweep + 0.35); ctx.closePath(); ctx.fill();
+      }
+      var focus = drag || hover, nb = neighbors(focus), hasF = !!focus;
+      // 線
+      g.edges.forEach(function (e) {
+        var a = g.nodes[e.a], b = g.nodes[e.b], on = hasF && nb[e.a] && nb[e.b] && (g.nodes[e.a] === focus || g.nodes[e.b] === focus);
+        var mac = a.mac || b.mac;
+        ctx.strokeStyle = on ? (mac ? 'rgba(255,181,71,0.9)' : 'rgba(79,227,255,0.9)') : (hasF ? 'rgba(79,227,255,0.06)' : (mac ? 'rgba(255,181,71,0.20)' : 'rgba(79,227,255,0.28)'));
+        ctx.lineWidth = on ? 1.8 : 1;
+        if (mac) ctx.setLineDash([4, 4]); else ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        if (!reduce && (!hasF || on)) {
+          var p = (t / 2600 + e.phase) % 1, px = a.x + (b.x - a.x) * p, py = a.y + (b.y - a.y) * p;
+          ctx.fillStyle = mac ? 'rgba(255,181,71,0.9)' : 'rgba(170,245,255,0.95)';
+          ctx.beginPath(); ctx.arc(px, py, on ? 2.2 : 1.4, 0, Math.PI * 2); ctx.fill();
+        }
+      });
+      ctx.setLineDash([]);
+      // 点とラベル
+      g.nodes.forEach(function (n, i) {
+        var col = GROUP_COLOR[n.group] || '#4fe3ff', dim = hasF && !nb[i];
+        ctx.globalAlpha = dim ? 0.18 : 1;
+        ctx.shadowColor = col; ctx.shadowBlur = n === focus ? 26 : 14;
+        ctx.fillStyle = n.mac ? '#050a13' : col;
+        ctx.strokeStyle = col; ctx.lineWidth = n.mac ? 1.6 : 0;
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill(); if (n.mac) ctx.stroke();
+        ctx.shadowBlur = 0;
+        if (n === focus && !reduce) {
+          var pr = n.r + 6 + Math.sin(t / 250) * 2;
+          ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(n.x, n.y, pr, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.font = (n === focus ? '700 13px ' : '500 11.5px ') + '"Noto Sans JP", sans-serif';
+        ctx.fillStyle = n.mac ? 'rgba(255,200,120,0.85)' : '#d6eeff';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(n.label + (n.mac ? ' ·Mac' : ''), n.x, n.y + n.r + 5);
+        ctx.globalAlpha = 1;
+      });
+    }
+    function pick(ev) {
+      var r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top, best = null, bd = 1e9;
+      g.nodes.forEach(function (n) { var d = Math.hypot(n.x - x, n.y - y); if (d < n.r + 14 && d < bd) { bd = d; best = n; } });
+      return { n: best, x: x, y: y };
+    }
+    cv.addEventListener('pointermove', function (ev) {
+      var p = pick(ev);
+      if (drag) { drag.x = p.x; drag.y = p.y; alpha = Math.max(alpha, 0.3); if (reduce) { for (var s = 0; s < 30; s++) step(); } return; }
+      hover = p.n; cv.style.cursor = p.n ? (p.n.mac ? 'not-allowed' : 'pointer') : 'crosshair';
+    });
+    cv.addEventListener('pointerdown', function (ev) {
+      var p = pick(ev); if (!p.n) return;
+      drag = p.n; hover = p.n; downAt = { x: p.x, y: p.y };
+      try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
+    });
+    cv.addEventListener('pointerup', function (ev) {
+      var p = pick(ev), n = drag; drag = null;
+      if (n && downAt && Math.hypot(p.x - downAt.x, p.y - downAt.y) < 6 && !n.mac) location.hash = n.id;
+      downAt = null;
+    });
+    cv.addEventListener('pointerleave', function () { if (!drag) hover = null; });
+    window.addEventListener('resize', function onR() { if (token !== graphToken) { window.removeEventListener('resize', onR); return; } size(); alpha = 0.5; });
+    function loop(t) {
+      if (token !== graphToken) return;
+      if (!reduce) step();
+      draw(t || 0);
+      requestAnimationFrame(loop);
+    }
+    draw(0);
+    requestAnimationFrame(loop);
+  }
+
+  function show() {
+    var id = (location.hash || '').slice(1);
+    if (id === 'graph') {
+      renderGraph();
+      nav.querySelectorAll('a').forEach(function (a) { if (a.dataset.nav === 'graph') a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+      window.scrollTo(0, 0);
+      return;
+    }
+    graphToken++;
+    main.className = '';
+    var n = notes.filter(function (x) { return x.id === id; })[0] || notes[0];
+    var lead = n.id === 'home'
+      ? '<p class="note"><b>読むだけのページです。</b>ノートの本体は Mac の Obsidian（~/aurora/knowledge）。仕入先・相場・機種・販売実績のノートは載せていません（「Macのみ」の印）。ノート同士のつながりは <a href="#graph">◈ ニューロン</a> で見られます。</p>'
+      : '';
+    main.innerHTML = lead + render(n.md);
+    nav.querySelectorAll('a').forEach(function (a) {
+      if (a.dataset.nav === n.id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    if (id) window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', show);
+  show();
+})();
+</script>
