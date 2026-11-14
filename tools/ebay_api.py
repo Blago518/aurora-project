@@ -343,8 +343,8 @@ def cmd_fees(args) -> None:
 
 def browse_search(query: str, limit: int = 50) -> list[dict]:
     """出品中の商品を公式 Browse API で検索（米国サイト、カメラ・レンズのカテゴリのみ）."""
-    # カテゴリ 3323＝カメラレンズ、31388＝デジタルカメラ、15230＝フィルムカメラ（フード・キャップ・説明書を除く）
-    q = urllib.parse.urlencode({"q": query, "limit": limit, "category_ids": "3323,31388,15230",
+    # カテゴリは1つしか指定できない（eBay の制限）。625＝カメラ・写真全体。付属品単体は下の junk で除く
+    q = urllib.parse.urlencode({"q": query, "limit": limit, "category_ids": "625",
                                 "filter": "buyingOptions:{FIXED_PRICE|AUCTION}"})
     d = get_json(f"{API}/buy/browse/v1/item_summary/search?{q}", app_token(),
                  {"X-EBAY-C-MARKETPLACE-ID": "EBAY_US"})
