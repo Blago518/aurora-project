@@ -193,6 +193,16 @@ def _money(d: dict | None) -> float:
         return 0.0
 
 
+def _cur(d: dict | None) -> str:
+    return (d or {}).get("currency", "")
+
+
+def _orig(d: dict | None) -> str:
+    """通貨換算があったときの元の金額（例: "93.43 AUD"）。無ければ空."""
+    d = d or {}
+    return f"{d['convertedFromValue']} {d.get('convertedFromCurrency', '')}" if d.get("convertedFromValue") else ""
+
+
 def fetch_orders(days: int) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     rows, offset = [], 0
@@ -203,16 +213,25 @@ def fetch_orders(days: int) -> list[dict]:
             ship_to = ((o.get("fulfillmentStartInstructions") or [{}])[0].get("shippingStep") or {}).get("shipTo") or {}
             country = (ship_to.get("contactAddress") or {}).get("countryCode", "")
             for li in o.get("lineItems", []):
-                ship = _money((li.get("deliveryCost") or {}).get("shippingCost"))
+                ship_d = (li.get("deliveryCost") or {}).get("shippingCost")
+                item_d = li.get("lineItemCost")
+                total_d = (o.get("pricingSummary") or {}).get("total")
+                fee_d = o.get("totalMarketplaceFee")
                 rows.append({
                     "date": o.get("creationDate", "")[:10],
                     "title": li.get("title", ""),
                     "sku": li.get("sku", ""),
                     "quantity": li.get("quantity", 1),
-                    "item_usd": _money(li.get("lineItemCost")),
-                    "shipping_usd": ship,
-                    "order_total_usd": _money((o.get("pricingSummary") or {}).get("total")),
-                    "marketplace_fee_usd": _money(o.get("totalMarketplaceFee")),
+                    # 金額の通貨は currency 列を見る（英国・豪州サイト経由は GBP・AUD のことがある）
+                    "currency": _cur(item_d),
+                    "item_price": _money(item_d),
+                    "shipping": _money(ship_d),
+                    "order_total": _money(total_d),
+                    "marketplace_fee": _money(fee_d),
+                    "fee_currency": _cur(fee_d),
+                    "item_price_original": _orig(item_d),
+                    "order_total_original": _orig(total_d),
+                    "site": li.get("listingMarketplaceId", ""),  # EBAY_US / EBAY_GB / EBAY_AU など
                     "country": country,  # 購入者の名前・住所・IDは保存しない
                     "status": o.get("orderFulfillmentStatus", ""),
                     "ebay_url": f"https://www.ebay.com/itm/{li.get('legacyItemId', '')}",
@@ -236,14 +255,23 @@ def cmd_orders(args) -> None:
         w = csv.DictWriter(f, fieldnames=["date", "title", "ebay_query", "sold_price_usd", "shipping_charged_usd",
                                           "purchase_jpy", "ebay_url", "source"])
         w.writeheader()
+        skipped = 0
         for r in rows:
-            if r["item_usd"] <= 0:
+            if r["item_price"] <= 0:
                 continue
-            w.writerow({"date": r["date"], "title": r["title"], "ebay_query": "", "sold_price_usd": r["item_usd"],
-                        "shipping_charged_usd": r["shipping_usd"], "purchase_jpy": "", "ebay_url": r["ebay_url"],
+            if r["currency"] != "USD":  # ドル以外は相場データに混ぜない（明細には残る）
+                skipped += 1
+                continue
+            w.writerow({"date": r["date"], "title": r["title"], "ebay_query": "", "sold_price_usd": r["item_price"],
+                        "shipping_charged_usd": r["shipping"], "purchase_jpy": "", "ebay_url": r["ebay_url"],
                         "source": "自分の販売実績(eBay API)"})
-    total = sum(r["item_usd"] + r["shipping_usd"] for r in rows)
-    print(f"直近{args.days}日の注文 {len(rows)}件・売上 ${total:,.2f}")
+    by_cur: dict[str, float] = {}
+    for r in rows:
+        by_cur[r["currency"] or "?"] = by_cur.get(r["currency"] or "?", 0) + r["item_price"] + r["shipping"]
+    print(f"直近{args.days}日の注文 {len(rows)}件・売上（送料込み）: "
+          + " / ".join(f"{v:,.2f} {k}" for k, v in sorted(by_cur.items())))
+    if skipped:
+        print(f"  ドル以外の {skipped}件は相場データに入れていません（明細の currency 列を確認）")
     print(f"→ {sales}（相場データとして自動で使われます）\n→ {detail}（明細）")
     print("拡張機能に反映するには: python3 tools/build_extension.py")
 
@@ -270,11 +298,15 @@ def cmd_listings(_args) -> None:
         for it in (al.findall(".//e:Item", ns) if al is not None else []):
             start = it.findtext("e:ListingDetails/e:StartTime", default="", namespaces=ns)
             days = (now - datetime.fromisoformat(start.replace("Z", "+00:00"))).days if start else ""
+            price_el = it.find("e:SellingStatus/e:CurrentPrice", ns)
+            if price_el is None:
+                price_el = it.find("e:BuyItNowPrice", ns)
             rows.append({
                 "days_listed": days,
                 "title": it.findtext("e:Title", default="", namespaces=ns),
-                "price_usd": it.findtext("e:SellingStatus/e:CurrentPrice", default="", namespaces=ns)
-                or it.findtext("e:BuyItNowPrice", default="", namespaces=ns),
+                "site": it.findtext("e:Site", default="", namespaces=ns),  # US / UK / Australia など
+                "currency": price_el.get("currencyID", "") if price_el is not None else "",
+                "price": (price_el.text or "") if price_el is not None else "",
                 "watchers": it.findtext("e:WatchCount", default="0", namespaces=ns),
                 "quantity": it.findtext("e:QuantityAvailable", default="", namespaces=ns),
                 "sku": it.findtext("e:SKU", default="", namespaces=ns),
@@ -294,7 +326,7 @@ def cmd_listings(_args) -> None:
     old = [r for r in rows if isinstance(r["days_listed"], int) and r["days_listed"] >= 60]
     print(f"出品中 {len(rows)}件（60日以上: {len(old)}件）→ {out}")
     for r in rows[:10]:
-        print(f"  {r['days_listed']:>4}日  ${r['price_usd']:>8}  ウォッチ{r['watchers']:>3}  {r['title'][:60]}")
+        print(f"  {r['days_listed']:>4}日  {r['price']:>8} {r['currency']:<3} {r['site'][:9]:<9}  ウォッチ{r['watchers']:>3}  {r['title'][:60]}")
 
 
 def cmd_fees(args) -> None:
@@ -302,6 +334,7 @@ def cmd_fees(args) -> None:
     sales = fees = ads = intl = 0.0
     n, offset = 0, 0
     by_type: dict[str, float] = {}
+    currencies: set[str] = set()
     while True:
         q = urllib.parse.urlencode({"filter": f"transactionDate:[{since}..]", "limit": 200, "offset": offset})
         d = get_json(f"{APIZ}/sell/finances/v1/transaction?{q}", user_token())
@@ -310,6 +343,7 @@ def cmd_fees(args) -> None:
             amt = _money(t.get("amount"))
             if typ == "SALE":
                 n += 1
+                currencies.add(_cur(t.get("amount")) or "?")
                 gross = _money(t.get("totalFeeBasisAmount")) or amt + _money(t.get("totalFeeAmount"))
                 sales += gross
                 fees += _money(t.get("totalFeeAmount"))
@@ -329,6 +363,10 @@ def cmd_fees(args) -> None:
         print(f"直近{args.days}日の売上取引がありません。")
         return
     pct = lambda v: v / sales * 100
+    cur = "/".join(sorted(currencies))
+    print(f"金額の通貨: {cur}")
+    if len(currencies) > 1:
+        print("  ※ 通貨が混ざっています。下の % は目安です（Claude に結果を貼ってください）")
     print(f"直近{args.days}日: 売上 {n}件・${sales:,.2f}（手数料の対象額）")
     print(f"  落札手数料など（totalFee）: ${fees:,.2f} = {pct(fees):.2f}%（うち海外決済 {pct(intl):.2f}%）")
     print(f"  広告費（Promoted）: ${ads:,.2f} = {pct(ads):.2f}%")
