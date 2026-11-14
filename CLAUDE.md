@@ -21,6 +21,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `extension/` | 生成した Chrome拡張機能（相場データ入り） | **しない** |
 | `reports/` | 鑑定レポート（HTML/CSV/MD） | **しない** |
 | `.claude/` | ルール・手順書・担当者 | する（事業の数字は書かない） |
+| `store/` | 店舗仕入れ用スマホアプリ（GitHub Pages で公開。iPhone のホーム画面から使うので移動しない。データは入れない） | する |
 | `ebay-auth.html`・`privacy.html` | eBay API の許可後の戻り先とプライバシーポリシー（GitHub Pages で公開。eBay に URL を登録済みなので移動・削除しない） | する |
 
 ## プログラム（tools/）
@@ -30,17 +31,19 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `extension_template.js` | Chrome拡張機能の中身（判定は appraise.py と同一） |
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv` |
+| `build_store.py` | 店舗アプリ用: `store/core.js`（拡張機能の判定のコピー）と `data/store_data.json`（相場＋おすすめ機種。iCloud Drive にもコピー）を作る |
 | `build_knowledge.py` | data/ から `knowledge/相場/`・`knowledge/機種/` を自動生成 |
 | `build_knowledge_page.py`・`knowledge_page_template.html` | knowledge_share.md → Artifacts の読むだけのナレッジページ（ニューロン付き） |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
-| `test_appraise.py` | テスト（Python と拡張機能の判定一致も確認） |
+| `test_appraise.py`・`test_store.py` | テスト（Python と拡張機能・店舗アプリの判定一致も確認） |
 
 ## よく使うコマンド（aurora フォルダで実行）
 ```bash
 python3 tools/appraise.py                    # data/search_urls.txt の検索URLを鑑定 → reports/
 python3 tools/build_reference_prices.py      # 古物台帳・頒布会 → data/reference_prices.csv
 python3 tools/build_extension.py             # 拡張機能を作り直す → chrome://extensions で ↻
+python3 tools/build_store.py                 # 店舗アプリのデータ → iCloud Drive › aurora › store_data.json
 python3 tools/build_knowledge.py             # 相場ノート・機種ノートを更新
 python3 -m unittest discover -s tools        # テスト
 ```
