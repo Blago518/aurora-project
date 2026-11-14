@@ -18,6 +18,17 @@ import store_publish as sp
 STORE = Path(__file__).resolve().parent.parent / "store"
 
 
+def node_like_safari() -> bool:
+    """iPhone の Safari と同じ機能（atob・WebCrypto・DecompressionStream）がある Node.js か（Node 18 以降）."""
+    if not shutil.which("node"):
+        return False
+    js = "process.exit(typeof atob==='function'&&globalThis.crypto&&crypto.subtle&&typeof DecompressionStream==='function'?0:1)"
+    return subprocess.run(["node", "-e", js], capture_output=True).returncode == 0
+
+
+NODE_MSG = "iPhone（Safari）と同じ機能のある Node.js（18以降）が無いので飛ばします（アプリの動作には関係ありません）"
+
+
 @unittest.skipUnless(sp._aesgcm(), "cryptography がありません")
 class Encryption(unittest.TestCase):
     DATA = {"kind": "aurora-store", "built": "2026-11-15 07:03", "refs": [{"title": "Nikon FM2", "price": 255}], "memo": "日本語"}
@@ -31,8 +42,8 @@ class Encryption(unittest.TestCase):
 
     def test_iphone_can_decrypt(self):
         """iPhone のアプリと同じ処理（store/sync.js・WebCrypto）で戻せる."""
-        if not shutil.which("node"):
-            self.skipTest("node がありません")
+        if not node_like_safari():
+            self.skipTest(NODE_MSG)
         enc = sp.encrypt(json.dumps(self.DATA, ensure_ascii=False).encode(), "合言葉-x", iterations=1000)
         code = sp.setup_code("https://gist.githubusercontent.com/u/abc/raw/store_data.enc", "合言葉-x")
         js = (f"const s=require({json.dumps(str(STORE / 'sync.js'))});"
@@ -48,8 +59,8 @@ class Encryption(unittest.TestCase):
 
     def test_setup_code_tolerates_paste(self):
         """メモ経由のコピーで混ざる改行・見えない文字・前後の文があっても読める."""
-        if not shutil.which("node"):
-            self.skipTest("node がありません")
+        if not node_like_safari():
+            self.skipTest(NODE_MSG)
         c = sp.setup_code("https://gist.githubusercontent.com/u/abc/raw/store_data.enc", "p-1")
         variants = [c, "\n " + c + " \n", c[:20] + "\n" + c[20:], c[:10] + "\u200b" + c[10:], "設定コード: " + c + "。"]
         js = (f"const s=require({json.dumps(str(STORE / 'sync.js'))});"
@@ -58,8 +69,8 @@ class Encryption(unittest.TestCase):
         self.assertEqual(out, ["p-1"] * len(variants))
 
     def test_setup_code_rejects_garbage(self):
-        if not shutil.which("node"):
-            self.skipTest("node がありません")
+        if not node_like_safari():
+            self.skipTest(NODE_MSG)
         js = (f"const s=require({json.dumps(str(STORE / 'sync.js'))});"
               "console.log(JSON.stringify([s.parseSetupCode('x'),s.parseSetupCode('AURORA1:!!'),s.parseSetupCode('')]))")
         self.assertEqual(json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout),
