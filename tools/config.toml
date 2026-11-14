@@ -52,3 +52,6 @@ min_margin_pct = 10.0
 sold_price_quantile = 0.5
 # ジャンク表記の出品は想定販売価格をこの割合で見る（1.0で割引なし）。中判など動くことが多い品が多ければ上げる
 junk_price_factor = 0.7
+# 状態の補正: 過去データの状態とこの出品の状態が1ランク違うごとに、販売価格を何ドル動かすか（0で補正しない）
+# ランク: 未使用 > TOP MINT > MINT > Near MINT > Exc+5 > … > Exc。出品の状態はヤフオクの商品名の日本語（美品など）から。表記なしは Near MINT
+condition_step_usd = 10

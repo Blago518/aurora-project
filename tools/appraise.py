@@ -495,6 +495,69 @@ FLAG_RULES = [
 ]
 
 
+# ---- 状態（コンディション）. 規則はここだけに書き、拡張機能・店舗アプリへは build_extension.py で渡す
+# 過去データ（eBay の商品名・頒布会のコンディション欄・手で直した相場の状態）→ 状態の名前。$1 は ( ) の中身
+COND_RULES = [
+    (r"\b(?:almost|nearly|near)\s*unused\b", "TOP MINT"),
+    (r"\b(?:top|t)[\s.\-]*mint\b", "TOP MINT"),
+    (r"\b(?:near|n)[\s.\-]*mint\b|\bnmint\b", "Near MINT"),
+    (r"\b(?:unused|brand\s*new|new\s*in\s*box)\b|未使用|新品", "未使用"),
+    (r"\bmint\b", "MINT"),
+    (r"\bexc(?:ellent)?\s*\+\s*([1-9])\b", "Exc+$1"),
+    (r"\bexc(?:ellent)?\s*(\+{1,9})", "Exc$1"),
+    (r"\bexc(?:ellent)?\b", "Exc"),
+    (r"\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り", "ジャンク"),
+]
+# 状態のランク（大きいほど良い）。ジャンクや分からない状態（頒布会の A・AB など）はランク無し＝補正しない
+COND_RANK = {"未使用": 10, "TOP MINT": 9, "MINT": 8, "Near MINT": 7,
+             "Exc+5": 6, "Exc+++++": 6, "Exc+4": 5, "Exc++++": 5, "Exc+3": 4, "Exc+++": 4,
+             "Exc+2": 3, "Exc++": 3, "Exc+1": 2, "Exc+": 2, "Exc": 1}
+# ヤフオクの商品名（日本語の表記だけ使う。英語の MINT・Exc+++ は出品者の自己申告なので使わない）→ ランク。上から順に見る
+LISTING_COND_RULES = [
+    (r"未使用に近", 9), (r"未使用|新品未開封", 10), (r"新品同様", 9), (r"極上|超美品", 8), (r"美品", 7),
+    (r"良品|動作品|動作確認済|動作良好|完動|実用品|並品|難あり", 6),
+]
+LISTING_DEFAULT_RANK = 7  # 表記なし＝Near MINT として計算（ユーザーの指定 2026-11-15）
+
+
+def _cond_label(m: re.Match, out: str) -> str:
+    return out.replace("$1", m.group(1)) if "$1" in out else out
+
+
+def condition_of(row: dict) -> str:
+    """過去データの状態. 頒布会リストのコンディション欄・相場メモの状態（source の括弧内）→ 商品名 の順."""
+    src = unicodedata.normalize("NFKC", str(row.get("source") or ""))
+    h = re.match(r"^(頒布会リスト|相場メモ)\((.*?)\)?$", src)
+    for t in [h.group(2) if h else "", unicodedata.normalize("NFKC", str(row.get("title") or ""))]:
+        for pat, out in COND_RULES:
+            m = re.search(pat, t, re.I)
+            if m:
+                return _cond_label(m, out)
+    if h and h.group(1) == "相場メモ":
+        return h.group(2).strip()
+    w = h and re.match(r"^[^\s)]+", h.group(2))
+    return w.group(0) if w else ""
+
+
+def listing_rank(title: str) -> int:
+    t = unicodedata.normalize("NFKC", title or "")
+    for pat, rank in LISTING_COND_RULES:
+        if re.search(pat, t):
+            return rank
+    return LISTING_DEFAULT_RANK
+
+
+def condition_adjusted(matches: list[dict], title: str, flags: list[str], step: float) -> list[float]:
+    """過去データの価格を、この出品の状態に合わせて 1ランク step ドルずつ補正する（ジャンクの出品は補正しない）."""
+    lr = None if "ジャンク" in flags or not step else listing_rank(title)
+    out = []
+    for m in matches:
+        rr = COND_RANK.get(condition_of(m))
+        p = m["_price"]
+        out.append(round(max(p + step * (lr - rr), 0), 2) if lr is not None and rr is not None else p)
+    return out
+
+
 def detect_flags(title: str) -> list[str]:
     return [name for name, pat in FLAG_RULES if re.search(pat, title, re.I)]
 
@@ -942,7 +1005,8 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
     if item.ebay_price_usd is not None:
         item.expected_price_usd, item.price_source = item.ebay_price_usd, "手入力"
     elif item.history_matches:
-        ps = [m["_price"] for m in item.history_matches]
+        step = float(cfg["judge"].get("condition_step_usd", 0) or 0)
+        ps = condition_adjusted(item.history_matches, item.title, item.flags, step)
         item.expected_price_usd = round(statistics.median(ps), 2)
         src = str(item.history_matches[0].get("source", ""))
         label = SOURCE_LABELS[source_tier(item.history_matches[0])]

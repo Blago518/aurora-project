@@ -58,6 +58,7 @@ def build_data(cfg: dict, fx: float) -> dict:
                             if t["include_consumption_tax_refund"] else 0.0),
             "minProfit": j["min_profit_jpy"], "minMarginPct": j["min_margin_pct"],
             "junkFactor": j.get("junk_price_factor", 1.0),
+            "condStep": j.get("condition_step_usd", 0),
             "activeFactor": j.get("active_price_factor", 0.7), "activeMinCount": j.get("active_min_count", 5),
             "browse": False,  # eBay のキーがあれば main() で True にする
             "autoMaxItems": cfg.get("extension", {}).get("auto_max_items", 2000),
@@ -69,6 +70,8 @@ def build_data(cfg: dict, fx: float) -> dict:
             "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS),
             "premium": sorted(ba.PREMIUM_VARIANTS), "accessoryRe": ba.ACCESSORY_RE.pattern,
             "flagRules": [[n, p] for n, p in ba.FLAG_RULES],
+            "condRules": [[p, o] for p, o in ba.COND_RULES], "condRank": ba.COND_RANK,
+            "listingCondRules": [[p, r] for p, r in ba.LISTING_COND_RULES], "listingDefaultRank": ba.LISTING_DEFAULT_RANK,
             "variantNormalize": [[p, r] for p, r in ba.VARIANT_NORMALIZE], "variantGroups": ba.VARIANT_GROUPS,
             "increments": [[0 if math.isinf(lim) else lim, step] for lim, step in ba.YAHOO_INCREMENTS],
         },

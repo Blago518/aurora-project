@@ -259,26 +259,43 @@
   }
 
   // 過去データの状態（商品名の MINT・Exc+++ など。頒布会リストはコンディション欄）。表示用
-  const COND_RULES = [
-    [/\b(?:top|t)[\s.\-]*mint\b/i, "TOP MINT"],
-    [/\b(?:near|n)[\s.\-]*mint\b|\bnmint\b/i, "Near MINT"],
-    [/\b(?:unused|brand\s*new|new\s*in\s*box)\b|未使用|新品/i, "未使用"],
-    [/\bmint\b/i, "MINT"],
-    [/\bexc(?:ellent)?\s*\+\s*([1-9])\b/i, (m) => "Exc+" + m[1]],
-    [/\bexc(?:ellent)?\s*(\+{1,9})/i, (m) => "Exc" + m[1]],
-    [/\bexc(?:ellent)?\b/i, "Exc"],
-    [/\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り/i, "ジャンク"],
-  ];
+  // 規則は appraise.py の COND_RULES・COND_RANK・LISTING_COND_RULES（build_extension.py が渡す）
+  const COND_RULES = (C.condRules || []).map(([p, o]) => [new RegExp(p, "i"), o]);
+  const LISTING_COND = (C.listingCondRules || []).map(([p, r]) => [new RegExp(p), r]);
   function conditionOf(r) {
     // 頒布会リストのコンディション欄・手で直した相場の状態（source の括弧内。例: 頒布会リスト(Near Mint 小傷)・相場メモ(MINT)）を先に、
     // 無ければ商品名を見る
     const h = String(r.source || "").normalize("NFKC").match(/^(頒布会リスト|相場メモ)\((.*?)\)?$/);
     for (const t of [h ? h[2] : "", String(r.title || "").normalize("NFKC")]) {
-      for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return typeof out === "function" ? out(m) : out; }
+      for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return out.includes("$1") ? out.replace("$1", m[1]) : out; }
     }
     if (h && h[1] === "相場メモ") return h[2].trim();
     const w = h && h[2].match(/^[^\s)]+/);
     return w ? w[0] : "";
+  }
+  // 状態の補正（appraise.py の condition_adjusted と同じ）: 過去データの価格を、この出品の状態に合わせて1ランク step ドルずつ動かす
+  function listingRank(title) {
+    const t = String(title || "").normalize("NFKC");
+    for (const [re, r] of LISTING_COND) if (re.test(t)) return r;
+    return C.listingDefaultRank || 7;
+  }
+  const RANK_LABEL = { 10: "未使用", 9: "TOP MINT", 8: "MINT", 7: "Near MINT", 6: "Exc+5", 5: "Exc+4", 4: "Exc+3", 3: "Exc+2", 2: "Exc+1", 1: "Exc" };
+  // 補正したときの説明（例: この出品は「美品」→ Near MINT として、状態1ランク＝$10で補正）。補正しなかったら ""
+  function conditionNote(refs, title, flags) {
+    if (flags.includes("ジャンク") || !Number(DATA.cfg.condStep || 0)) return "";
+    if (!refs.some((r) => (C.condRank || {})[conditionOf(r)] != null)) return "";
+    const t = String(title || "").normalize("NFKC");
+    const hit = (C.listingCondRules || []).find(([p]) => new RegExp(p).test(t));
+    const word = hit ? t.match(new RegExp(hit[0]))[0] : "表記なし";
+    return `この出品は「${word}」→ ${RANK_LABEL[listingRank(title)]} として、状態1ランク＝$${DATA.cfg.condStep}で補正`;
+  }
+  function conditionAdjusted(refs, title, flags) {
+    const step = Number(DATA.cfg.condStep || 0);
+    const lr = flags.includes("ジャンク") || !step ? null : listingRank(title);
+    return refs.map((r) => {
+      const rr = (C.condRank || {})[conditionOf(r)];
+      return lr != null && rr != null ? Math.round(Math.max(r.price + step * (lr - rr), 0) * 100) / 100 : r.price;
+    });
   }
   // @core-end
 
@@ -350,7 +367,7 @@
       let m = matchPreferMemo(it.query + " " + it.title, memoPool, otherPool);
       if (!m.length) m = matchKantei(it.title);
       it.refs = m;
-      it.usd = m.length ? median(m.map((r) => r.price)) : null;
+      it.usd = m.length ? Math.round(median(conditionAdjusted(m, it.title, it.flags)) * 100) / 100 : null;
       if (it.usd != null && it.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1)
         it.usd = Math.round(it.usd * DATA.cfg.junkFactor * 100) / 100;
       it.calc = it.usd != null ? calculate(it, it.usd, fx) : null;
@@ -386,7 +403,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
 #yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
 #yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
-#yhk .fix{margin-top:4px;white-space:nowrap}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:76px}#yhk .fix button{padding:3px 6px;margin-left:2px}
+#yhk .fix{margin-top:4px;max-width:150px;margin-left:auto}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:76px}#yhk .fix button{padding:3px 6px;margin-left:2px}
 #yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
 #yhk a{color:#0b5d8c;text-decoration:none}#yhk .m{font-size:15px;font-weight:800}
 #yhk .g{color:#1f7a5c}#yhk .o{color:#1b6387}#yhk .x{color:#a4473a}#yhk .s{font-size:11px;color:#6a7c8e}
@@ -532,10 +549,20 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
     return `<div class="s x">⚠ 説明文: ${d.hits.map((h) => `「…${esc(h.snip)}…」`).join(" ")}</div>`;
   }
   // 過去データの状態（自分・Chatwork の販売実績と頒布会リスト）。例: 状態: Near MINT $255 ・ Exc+++ $265
+  // 上限額で落札したときの利益（上限額の下に表示）。ストアは入札額×1.1を払う
+  function atMax(i) {
+    const c = i.calc;
+    if (!c || !c.maxBid || i.usd == null) return "";
+    const tm = i.tax ? 1 + DATA.cfg.storeTaxPct / 100 : 1;
+    const x = calculate(Object.assign({}, i, { price: Math.round(c.maxBid * tm) }), i.usd, state.fx);
+    return x.profit == null ? "" : `<div class="s" title="上限額ちょうどで落札したときの利益">この額で落札→利益${yen(x.profit)}（${x.margin}%）</div>`;
+  }
   function condLine(i) {
     const rs = (i.refs || []).filter((r) => r.tier <= 2).slice(0, 5);
     if (!rs.length) return "";
-    return `<div class="s">状態: ${rs.map((r) => `${esc(conditionOf(r) || "記載なし")} $${r.price}${isMemo(r) ? "（直した相場）" : ""}`).join(" ・ ")}</div>`;
+    const note = conditionNote(i.refs, i.title, i.flags);
+    return `<div class="s">状態: ${rs.map((r) => `${esc(conditionOf(r) || "記載なし")} $${r.price}${isMemo(r) ? "（直した相場）" : ""}`).join(" ・ ")}</div>` +
+      (note ? `<div class="s">${esc(note)}</div>` : "");
   }
   function applyDesc(items) {
     for (const i of items) {
@@ -602,7 +629,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\n送料込みの$と、売れた物の状態を入れると、$${DATA.cfg.deductionUsd}を引いて計算します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
-<td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
+<td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
     const waitRow = (w) => {
@@ -615,11 +642,11 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
 <td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
-<td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div><div class="s">分岐 ${yen(c.breakeven)}</div></td>
+<td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div>${atMax(Object.assign({}, i, { calc: c, usd: w.usd }))}<div class="s">分岐 ${yen(c.breakeven)}</div></td>
 <td class="n">${yen(c.profit)}<div class="s">${c.margin != null ? c.margin + "%" : ""}</div>
 <div class="fix" title="sold を見て、売れた価格（送料込$）がこの額以上なら、そのまま［登録］。低ければ直して［登録］。同じ機種の今後の出品にも効きます">${memoInputs(w.label, `value="${w.sg}" class="sug"`, "登録")}</div></td></tr>`;
     };
-    const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th>利益(現在)</th></tr>`;
+    const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th title="今の価格のまま落札できたときの利益">利益（今の価格で落札）</th></tr>`;
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件${waits.length ? ` ・ 仮◎○ ${waits.length}件` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">続きを鑑定（残り${state.total - items.length}件）</button>` : ""}

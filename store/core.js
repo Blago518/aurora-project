@@ -244,27 +244,44 @@ function makeCore(DATA) {
   }
 
   // 過去データの状態（商品名の MINT・Exc+++ など。頒布会リストはコンディション欄）。表示用
-  const COND_RULES = [
-    [/\b(?:top|t)[\s.\-]*mint\b/i, "TOP MINT"],
-    [/\b(?:near|n)[\s.\-]*mint\b|\bnmint\b/i, "Near MINT"],
-    [/\b(?:unused|brand\s*new|new\s*in\s*box)\b|未使用|新品/i, "未使用"],
-    [/\bmint\b/i, "MINT"],
-    [/\bexc(?:ellent)?\s*\+\s*([1-9])\b/i, (m) => "Exc+" + m[1]],
-    [/\bexc(?:ellent)?\s*(\+{1,9})/i, (m) => "Exc" + m[1]],
-    [/\bexc(?:ellent)?\b/i, "Exc"],
-    [/\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り/i, "ジャンク"],
-  ];
+  // 規則は appraise.py の COND_RULES・COND_RANK・LISTING_COND_RULES（build_extension.py が渡す）
+  const COND_RULES = (C.condRules || []).map(([p, o]) => [new RegExp(p, "i"), o]);
+  const LISTING_COND = (C.listingCondRules || []).map(([p, r]) => [new RegExp(p), r]);
   function conditionOf(r) {
     // 頒布会リストのコンディション欄・手で直した相場の状態（source の括弧内。例: 頒布会リスト(Near Mint 小傷)・相場メモ(MINT)）を先に、
     // 無ければ商品名を見る
     const h = String(r.source || "").normalize("NFKC").match(/^(頒布会リスト|相場メモ)\((.*?)\)?$/);
     for (const t of [h ? h[2] : "", String(r.title || "").normalize("NFKC")]) {
-      for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return typeof out === "function" ? out(m) : out; }
+      for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return out.includes("$1") ? out.replace("$1", m[1]) : out; }
     }
     if (h && h[1] === "相場メモ") return h[2].trim();
     const w = h && h[2].match(/^[^\s)]+/);
     return w ? w[0] : "";
   }
-  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf };
+  // 状態の補正（appraise.py の condition_adjusted と同じ）: 過去データの価格を、この出品の状態に合わせて1ランク step ドルずつ動かす
+  function listingRank(title) {
+    const t = String(title || "").normalize("NFKC");
+    for (const [re, r] of LISTING_COND) if (re.test(t)) return r;
+    return C.listingDefaultRank || 7;
+  }
+  const RANK_LABEL = { 10: "未使用", 9: "TOP MINT", 8: "MINT", 7: "Near MINT", 6: "Exc+5", 5: "Exc+4", 4: "Exc+3", 3: "Exc+2", 2: "Exc+1", 1: "Exc" };
+  // 補正したときの説明（例: この出品は「美品」→ Near MINT として、状態1ランク＝$10で補正）。補正しなかったら ""
+  function conditionNote(refs, title, flags) {
+    if (flags.includes("ジャンク") || !Number(DATA.cfg.condStep || 0)) return "";
+    if (!refs.some((r) => (C.condRank || {})[conditionOf(r)] != null)) return "";
+    const t = String(title || "").normalize("NFKC");
+    const hit = (C.listingCondRules || []).find(([p]) => new RegExp(p).test(t));
+    const word = hit ? t.match(new RegExp(hit[0]))[0] : "表記なし";
+    return `この出品は「${word}」→ ${RANK_LABEL[listingRank(title)]} として、状態1ランク＝$${DATA.cfg.condStep}で補正`;
+  }
+  function conditionAdjusted(refs, title, flags) {
+    const step = Number(DATA.cfg.condStep || 0);
+    const lr = flags.includes("ジャンク") || !step ? null : listingRank(title);
+    return refs.map((r) => {
+      const rr = (C.condRank || {})[conditionOf(r)];
+      return lr != null && rr != null ? Math.round(Math.max(r.price + step * (lr - rr), 0) * 100) / 100 : r.price;
+    });
+  }
+  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { makeCore };
