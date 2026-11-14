@@ -11,12 +11,13 @@ conversion_loss_pct = 2.0
 [ebay]
 # 落札手数料（Final Value Fee）: ebay売上シートの実績では 送料・税込み額の 10.3%（レンズ等）〜13.4%。
 # 買い手の税にも掛かるため、商品＋送料に対する実効率として 12% で計算
+# 2026-11-14 eBay API の実績（直近90日86件）は 11.15%。保守的に 12% のまま
 final_value_fee_pct = 12.0
 # 1注文あたりの固定手数料（USD）
 per_order_fee_usd = 0.44
-# 海外決済手数料（International fee）
-international_fee_pct = 1.45
-# 広告（Promoted Listings）の率
+# 海外決済手数料（International fee）。2026-11-14 eBay API の実績 1.55% に合わせて 1.45→1.55
+international_fee_pct = 1.55
+# 広告（Promoted Listings）の率。2026-11-14 eBay API の実績は 1.02%。広告を増やす余地を残し 2.2% のまま
 ad_rate_pct = 2.2
 # 手数料は「商品価格＋買い手負担送料」に掛かる。買い手から受け取る送料（USD）
 buyer_shipping_usd = 0.0
