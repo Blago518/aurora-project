@@ -51,6 +51,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{border:1px solid #c3d2dd;background:#fff;color:#284c62;border-radius:99px;padding:8px 12px;font-size:14px;font-weight:700}
 .chip[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}
+.chip[aria-pressed=true] .s{color:#d6eaf5}
 .rec{padding:12px 0;border-bottom:1px solid var(--line)}.rec:last-child{border:0}
 .rec .t{display:flex;gap:8px;align-items:baseline}.rec .t b{flex:1;font-size:15px}.rec .n{color:var(--sub);font-size:12px;width:22px}
 .rec .buy{font-size:14px;margin:4px 0 6px 30px}.rec .buy strong{font-size:17px;color:var(--good)}
@@ -93,12 +94,16 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <h2>eBayで確認（高い順）</h2>
     <label for="query" style="margin-top:0">検索語（英語・直してOK）</label>
     <input id="query" type="search" placeholder="商品名を入れると自動で入ります" autocomplete="off">
+    <label>除外キーワード（タップでオン／オフ。次回も覚えています）</label>
+    <div class="chips" id="exChips"></div>
+    <input id="exCustom" type="text" class="mt" placeholder="ほかに除外する語（英語・スペース区切り）例: FM2N mount" autocomplete="off" autocapitalize="off">
+    <div class="s mt" id="qPreview"></div>
     <div class="grid3 mt">
       <a class="btn" id="lSold" target="_blank" rel="noopener">販売済み</a>
       <a class="btn sec" id="lNow" target="_blank" rel="noopener">出品中</a>
       <a class="btn line" id="lPr" target="_blank" rel="noopener">Product Research</a>
     </div>
-    <p class="s">販売済み・出品中は「価格＋送料の高い順」で120件表示。Product Research は過去90日の販売（Best Offer 込みの実際の成約額）。</p>
+    <p class="s">販売済み・出品中は「価格＋送料の高い順」で120件表示。Product Research は過去90日の販売（Best Offer 込みの実際の成約額）。除外キーワードは Product Research では効かない場合があります。</p>
   </div>
 
   <div class="card">
@@ -247,8 +252,49 @@ const ebayLinks = (q) => ({
   now: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&_sop=16&_ipg=120",
   pr: "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=" + encodeURIComponent(q) + "&dayRange=90&tabName=SOLD",
 });
+// eBay の検索語: 入力した語は全部残す（照合用の titleToQuery のように7語で切ったり分割したりしない）。
+// 日本語のメーカー名・色は英語に直し、それ以外の日本語（ボディ・美品など）は消す。
+function ebayQuery(name) {
+  let t = String(name).normalize("NFKC");
+  if (DATA) for (const [ja, en] of DATA.consts.brandsJa.concat(DATA.consts.wordsJa)) t = t.split(ja).join(` ${en} `);
+  t = t.replace(/[^\x21-\x7Eαµ]+/g, " ").replace(/[\[\](){}<>!?#*"'`,;~^|\\]+/g, " ");
+  const seen = new Set(), out = [];
+  for (const w of t.split(/\s+/)) {
+    const k = w.toLowerCase();
+    if (w && !seen.has(k)) { seen.add(k); out.push(w); }
+  }
+  return out.join(" ");
+}
+
+// 除外キーワード（eBay の「-語」）
+const LS_EX = "storeExclude";
+const EX_PRESETS = [["strap", "ストラップ"], ["case", "ケース"], ["cap", "キャップ"], ["hood", "フード"], ["filter", "フィルター"],
+  ["manual", "説明書"], ["box", "箱"], ["adapter", "アダプター"], ["battery", "電池"], ["charger", "充電器"],
+  ["lens", "レンズ付き"], ["parts", "ジャンク"], ["lot", "まとめ売り"]];
+const ex = lsGet(LS_EX, { on: [], custom: "" });
+$("exCustom").value = ex.custom || "";
+function renderExChips() {
+  $("exChips").innerHTML = EX_PRESETS.map(([w, ja]) =>
+    `<button class="chip" data-ex="${w}" aria-pressed="${ex.on.includes(w)}">${w} <span class="s">${ja}</span></button>`).join("");
+}
+function excludeWords(base) {
+  const inBase = new Set(base.toLowerCase().split(/\s+/));
+  const custom = String(ex.custom || "").normalize("NFKC").split(/[\s,、]+/).map((w) => w.replace(/^-+/, "").toLowerCase());
+  return [...new Set(ex.on.concat(custom))].filter((w) => w && /^[\x21-\x7E]+$/.test(w) && !inBase.has(w));
+}
+$("exChips").onclick = (e) => {
+  const b = e.target.closest("[data-ex]"); if (!b) return;
+  const w = b.dataset.ex;
+  ex.on = ex.on.includes(w) ? ex.on.filter((x) => x !== w) : ex.on.concat(w);
+  lsSet(LS_EX, ex); renderExChips(); updateLinks(); renderRecs();
+};
+$("exCustom").addEventListener("input", () => { ex.custom = $("exCustom").value; lsSet(LS_EX, ex); updateLinks(); renderRecs(); });
+
+const withEx = (base) => (base ? [base].concat(excludeWords(base).map((w) => "-" + w)).join(" ") : "");
 let queryTouched = false;
-function setLinks(q) {
+function updateLinks() {
+  const q = withEx($("query").value.trim());
+  $("qPreview").textContent = q ? "eBayで検索する語: " + q : "";
   const L = core ? core.ebay(q) : ebayLinks(q);
   for (const [id, k] of [["lSold", "sold"], ["lNow", "now"], ["lPr", "pr"]]) {
     const a = $(id);
@@ -259,15 +305,15 @@ function setLinks(q) {
 function look() {
   const name = $("name").value, price = parsePrice($("price").value);
   const r = DATA && name.trim() ? lookup(name, price, $("junk").checked) : null;
-  if (!queryTouched) $("query").value = r ? r.q : (core ? core.titleToQuery(name) : name.trim()) || name.trim();
-  setLinks($("query").value.trim());
+  if (!queryTouched) $("query").value = ebayQuery(name);
+  updateLinks();
   renderResult(name, price, r);
 }
 function parsePrice(s) { const n = Number(String(s).normalize("NFKC").replace(/[^\d]/g, "")); return n > 0 ? n : null; }
 $("name").addEventListener("input", () => { queryTouched = false; look(); });
 $("price").addEventListener("input", look);
 $("junk").addEventListener("change", look);
-$("query").addEventListener("input", () => { queryTouched = true; setLinks($("query").value.trim()); });
+$("query").addEventListener("input", () => { queryTouched = true; updateLinks(); });
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.target.blur(); remember(); } });
 for (const id of ["lSold", "lNow", "lPr"]) $(id).addEventListener("click", remember);
 
@@ -401,7 +447,7 @@ function renderRecs() {
   const list = DATA.recs.filter((r) => r.brand === recSel.brand && r.kind === recSel.kind).slice(0, 20);
   $("recTitle").textContent = `${recSel.brand} の${recSel.kind === "lens" ? "レンズ" : "カメラ"} おすすめ ${list.length}品`;
   $("recList").innerHTML = list.length ? list.map((r, i) => {
-    const L = core.ebay(r.label);
+    const L = core.ebay(withEx(r.label));
     return `<div class="rec"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
       <div class="buy">税込 <strong>${yen(r.maxBuy)}</strong> 以下なら買い <span class="s">／想定${usd(r.usd)}${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
       <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">販売済み</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">出品中</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
@@ -419,7 +465,8 @@ function showTab(t) {
 for (const b of document.querySelectorAll("nav button")) b.onclick = () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); };
 
 renderHist();
-setLinks("");
+renderExChips();
+updateLinks();
 idbGet("data").then((d) => { if (d) useData(d); else showTab(lsGet(LS_HIST, []).length ? "look" : "set"); })
   .catch(() => showTab("set"));
 </script>
