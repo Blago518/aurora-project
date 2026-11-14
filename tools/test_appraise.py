@@ -104,6 +104,20 @@ class Calculation(unittest.TestCase):
         self.assertEqual(ba.judge(it)[0], "×")
 
 
+class ApiSalesDedup(unittest.TestCase):
+    def test_ledger_wins_and_new_api_sales_are_added(self):
+        def row(date, price, src):
+            return {"date": date, "_price": price, "source": src, "title": "x"}
+        rows = [
+            row("2026/10/05", 350.0, "自分の販売実績"),                 # 台帳
+            row("2026-10-06", 300.0, "自分の販売実績(eBay API)") | {"_price": 350.4},  # 同じ販売（時差1日・端数）
+            row("2026-11-10", 500.0, "自分の販売実績(eBay API)"),       # 台帳にまだ無い最近の販売
+            row("2026-08-01", 350.0, "自分の販売実績(eBay API)"),       # 金額は同じだが日付が離れている
+        ]
+        out = ba.drop_duplicate_api_sales(rows)
+        self.assertEqual([r["date"] for r in out], ["2026/10/05", "2026-11-10", "2026-08-01"])
+
+
 class Sales(unittest.TestCase):
     def test_ebay_order_report(self):
         csv_text = (

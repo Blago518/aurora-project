@@ -22,21 +22,17 @@ import appraise as ba
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv")
 
 
 def build_data(cfg: dict, fx: float) -> dict:
     refs = []
-    for name in SOURCES:
-        p = ROOT / "data" / name
-        if not p.exists():
-            continue
-        for r in ba.read_sales(p):
-            refs.append({
-                "title": r.get("title", ""), "price": round(r["_price"], 2), "tier": ba.source_tier(r),
-                "source": r.get("source") or "自分の販売実績", "tokens": sorted(r["_tokens"]),
-                "acc": bool(ba.ACCESSORY_RE.search(r.get("title", ""))),
-            })
+    rows, _ = ba.load_default_sales(ROOT / "data")
+    for r in rows:
+        refs.append({
+            "title": r.get("title", ""), "price": round(r["_price"], 2), "tier": ba.source_tier(r),
+            "source": r.get("source") or "自分の販売実績", "tokens": sorted(r["_tokens"]),
+            "acc": bool(ba.ACCESSORY_RE.search(r.get("title", ""))),
+        })
     kantei = []
     kp = next(iter(sorted((ROOT / "data").glob("kantei_bookmarklet.*"))), None)
     if kp:

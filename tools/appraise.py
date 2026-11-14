@@ -612,6 +612,57 @@ def read_sales(path: Path | None) -> list[dict]:
     return rows
 
 
+SALES_SOURCES = ("reference_prices.csv", "ebay_sales.csv", "chatwork_sales.csv", "price_memo.csv")
+
+
+def _sale_date(v: str):
+    """販売日を日付にする（2026/10/05・2026-10-05・2026年10月5日 など）。読めなければ None."""
+    m = re.search(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})", v or "")
+    if not m:
+        return None
+    try:
+        return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()
+    except ValueError:
+        return None
+
+
+def drop_duplicate_api_sales(rows: list[dict]) -> list[dict]:
+    """eBay API の売上のうち、古物台帳に同じ販売があるものを除く（台帳を優先）.
+
+    同じ販売とみなす条件: 送料込みの金額の差が $1 以内、かつ販売日の差が2日以内（時差を考慮）。
+    台帳1件につき API 1件まで対応させる。
+    """
+    ledger = [r for r in rows if r.get("source") == "自分の販売実績"]
+    used: set[int] = set()
+    out = []
+    for r in rows:
+        if not str(r.get("source", "")).startswith("自分の販売実績(eBay API)"):
+            out.append(r)
+            continue
+        d = _sale_date(r.get("date", ""))
+        hit = None
+        for i, l in enumerate(ledger):
+            if i in used or abs(l["_price"] - r["_price"]) > 1.0:
+                continue
+            ld = _sale_date(l.get("date", ""))
+            if d and ld and abs((d - ld).days) > 2:
+                continue
+            hit = i
+            break
+        if hit is None:
+            out.append(r)
+        else:
+            used.add(hit)
+    return out
+
+
+def load_default_sales(data_dir: Path = DATA) -> tuple[list[dict], list[Path]]:
+    """data/ の相場データを読み、eBay API の売上は台帳と重複しない分だけ足す."""
+    paths = [p for p in (data_dir / n for n in SALES_SOURCES) if p.exists()]
+    rows = [row for p in paths for row in read_sales(p)]
+    return drop_duplicate_api_sales(rows), paths
+
+
 ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)
 THIRD_PARTY = {"tamron", "sigma", "tokina", "7artisans", "ttartisan", "brightin", "kenko", "pixco", "k&f", "meike", "viltrox", "laowa",
                "samyang", "yongnuo", "kipon", "fotodiox", "neewer", "commlite", "sg-image", "pergear",
@@ -1161,7 +1212,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("input", type=Path, nargs="?", default=DATA / "search_urls.txt",
                     help="ヤフオクの検索結果URL・出品URLの一覧（省略時は data/search_urls.txt）。ブックマークHTML / CSV も可")
     ap.add_argument("--sales", type=Path, nargs="*", default=None,
-                    help="過去の販売実績CSV（複数可）。省略時は data/ の reference_prices.csv, chatwork_sales.csv, price_memo.csv")
+                    help="過去の販売実績CSV（複数可）。省略時は data/ の reference_prices.csv, ebay_sales.csv, chatwork_sales.csv, price_memo.csv")
     ap.add_argument("--kantei", type=Path, help="鑑定ブックマークレットのテキスト（.txt/.js/.docx）。相場表を参考に使う")
     ap.add_argument("--config", type=Path, help="設定ファイル（既定: config.toml）")
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
@@ -1203,11 +1254,11 @@ def main(argv: list[str] | None = None) -> int:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1
     if args.sales is None:
-        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
-                      if p.exists()]
+        sales, args.sales = load_default_sales()
+    else:
+        sales = drop_duplicate_api_sales([row for p in args.sales for row in read_sales(p)])
     if args.kantei is None:
         args.kantei = next(iter(sorted(DATA.glob("kantei_bookmarklet.*"))), None)
-    sales = [row for p in args.sales for row in read_sales(p)]
     print(f"販売実績・相場: {len(sales)}件（{', '.join(p.name for p in args.sales) or 'なし'}）", file=sys.stderr)
     kantei = read_kantei_table(args.kantei) if args.kantei else []
     if args.kantei:

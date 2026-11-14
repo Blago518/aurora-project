@@ -244,7 +244,7 @@ def cmd_orders(args) -> None:
                         "source": "自分の販売実績(eBay API)"})
     total = sum(r["item_usd"] + r["shipping_usd"] for r in rows)
     print(f"直近{args.days}日の注文 {len(rows)}件・売上 ${total:,.2f}")
-    print(f"→ {sales}（相場データとして自動で使われます）\n→ {detail}（明細）")
+    print(f"→ {sales}（相場データとして自動で使われます。古物台帳と同じ販売は自動で除きます）\n→ {detail}（明細）")
     print("拡張機能に反映するには: python3 tools/build_extension.py")
 
 
