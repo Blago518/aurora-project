@@ -126,9 +126,9 @@ class MemoAndCondition(unittest.TestCase):
             dp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             code = (f"const {{makeCore}}=require({json.dumps(str(bs.CORE_JS))});const c=makeCore(require({json.dumps(str(dp))}));"
                     f"console.log(JSON.stringify({json.dumps(list(cases), ensure_ascii=False)}.map(t=>c.conditionOf({{title:t}}))"
-                    ".concat([c.conditionOf({title:'Olympus 35mm',source:'頒布会リスト(AB 小傷)'})])))")
+                    ".concat([c.conditionOf({title:'Olympus 35mm',source:'頒布会リスト(AB 小傷)'}),c.conditionOf({title:'Olympus 35mm',source:'頒布会リスト(Near Mint 小傷あり)'}),c.conditionOf({title:'Nikon FM2 MINT',source:'頒布会リスト(Exc+5)'})])))")
             out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
-        self.assertEqual(json.loads(out), list(cases.values()) + ["AB"])
+        self.assertEqual(json.loads(out), list(cases.values()) + ["AB", "Near MINT", "Exc+5"])
 
 if __name__ == "__main__":
     unittest.main()

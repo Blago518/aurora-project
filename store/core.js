@@ -255,10 +255,13 @@ function makeCore(DATA) {
     [/\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り/i, "ジャンク"],
   ];
   function conditionOf(r) {
-    const t = String(r.title || "").normalize("NFKC");
-    for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return typeof out === "function" ? out(m) : out; }
-    const h = String(r.source || "").match(/^頒布会リスト\(([^\s)]+)/);
-    return h ? h[1] : "";
+    // 頒布会リストはコンディション欄（source の括弧内。例: 頒布会リスト(Near Mint 小傷)）を先に、無ければ商品名を見る
+    const h = String(r.source || "").normalize("NFKC").match(/^頒布会リスト\((.*)\)?$/);
+    for (const t of [h ? h[1] : "", String(r.title || "").normalize("NFKC")]) {
+      for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return typeof out === "function" ? out(m) : out; }
+    }
+    const w = h && h[1].match(/^[^\s)]+/);
+    return w ? w[0] : "";
   }
   return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf };
 }
