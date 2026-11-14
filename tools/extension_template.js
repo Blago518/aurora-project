@@ -270,12 +270,14 @@
     [/\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り/i, "ジャンク"],
   ];
   function conditionOf(r) {
-    // 頒布会リストはコンディション欄（source の括弧内。例: 頒布会リスト(Near Mint 小傷)）を先に、無ければ商品名を見る
-    const h = String(r.source || "").normalize("NFKC").match(/^頒布会リスト\((.*)\)?$/);
-    for (const t of [h ? h[1] : "", String(r.title || "").normalize("NFKC")]) {
+    // 頒布会リストのコンディション欄・手で直した相場の状態（source の括弧内。例: 頒布会リスト(Near Mint 小傷)・相場メモ(MINT)）を先に、
+    // 無ければ商品名を見る
+    const h = String(r.source || "").normalize("NFKC").match(/^(頒布会リスト|相場メモ)\((.*?)\)?$/);
+    for (const t of [h ? h[2] : "", String(r.title || "").normalize("NFKC")]) {
       for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return typeof out === "function" ? out(m) : out; }
     }
-    const w = h && h[1].match(/^[^\s)]+/);
+    if (h && h[1] === "相場メモ") return h[2].trim();
+    const w = h && h[2].match(/^[^\s)]+/);
     return w ? w[0] : "";
   }
   // @core-end
@@ -283,10 +285,21 @@
   // ------------------------------------------------------------------ 相場メモ（このブラウザに保存）
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  // 相場メモ: { 機種名: {usd, cond} }（以前の形 { 機種名: usd } も読める）。状態は source の括弧に入れる（相場メモ(MINT)）
+  const memoVal = (v) => (v && typeof v === "object" ? { usd: Number(v.usd), cond: v.cond || "" } : { usd: Number(v), cond: "" });
+  const memoSource = (cond) => (cond ? `相場メモ(${cond})` : "相場メモ");
   function memoRefs() {
-    return Object.entries(load(LS_MEMO, {})).map(([title, usd]) => ({
-      title, price: Number(usd), tier: 0, source: "相場メモ", tokens: [...tokensOf(title)], acc: false,
-    }));
+    return Object.entries(load(LS_MEMO, {})).map(([title, v]) => {
+      const m = memoVal(v);
+      return { title, price: m.usd, tier: 0, source: memoSource(m.cond), tokens: [...tokensOf(title)], acc: false };
+    });
+  }
+  // ［直す］［登録］の入力欄（金額＋状態）
+  const CONDS = ["TOP MINT", "MINT", "Near MINT", "Exc+++++", "Exc++++", "Exc+++", "Exc++", "Exc+", "Exc", "ジャンク"];
+  function memoInputs(label, attrs, btn) {
+    const cur = memoVal(load(LS_MEMO, {})[label]).cond;
+    return `<input data-memo="${esc(label)}" ${attrs}><select data-cond="${esc(label)}" title="状態（売れた物の状態）"><option value="">状態</option>${
+      CONDS.map((c) => `<option${c === cur ? " selected" : ""}>${esc(c)}</option>`).join("")}</select><button data-a="memo" data-k="${esc(label)}">${btn}</button>`;
   }
 
   // ------------------------------------------------------------------ ページの出品データ
@@ -373,7 +386,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
 #yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
 #yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
-#yhk .fix{margin-top:4px;white-space:nowrap}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix button{padding:3px 6px;margin-left:2px}
+#yhk .fix{margin-top:4px;white-space:nowrap}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:76px}#yhk .fix button{padding:3px 6px;margin-left:2px}
 #yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
 #yhk a{color:#0b5d8c;text-decoration:none}#yhk .m{font-size:15px;font-weight:800}
 #yhk .g{color:#1f7a5c}#yhk .o{color:#1b6387}#yhk .x{color:#a4473a}#yhk .s{font-size:11px;color:#6a7c8e}
@@ -520,9 +533,9 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
   }
   // 過去データの状態（自分・Chatwork の販売実績と頒布会リスト）。例: 状態: Near MINT $255 ・ Exc+++ $265
   function condLine(i) {
-    const rs = (i.refs || []).filter((r) => r.tier <= 2 && !isMemo(r)).slice(0, 5);
+    const rs = (i.refs || []).filter((r) => r.tier <= 2).slice(0, 5);
     if (!rs.length) return "";
-    return `<div class="s">状態: ${rs.map((r) => `${esc(conditionOf(r) || "記載なし")} $${r.price}`).join(" ・ ")}</div>`;
+    return `<div class="s">状態: ${rs.map((r) => `${esc(conditionOf(r) || "記載なし")} $${r.price}${isMemo(r) ? "（直した相場）" : ""}`).join(" ・ ")}</div>`;
   }
   function applyDesc(items) {
     for (const i of items) {
@@ -587,7 +600,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 <div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}</div>${condLine(i)}${descLine(i.id)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div>
-<div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\n送料込みの$を入れると、$${DATA.cfg.deductionUsd}を引いて計算します。同じ機種の過去データより優先されます`)}"><input data-memo="${esc(modelKey(i.title)[0])}" placeholder="直す$"><button data-a="memo" data-k="${esc(modelKey(i.title)[0])}">直す</button></div></td>
+<div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\n送料込みの$と、売れた物の状態を入れると、$${DATA.cfg.deductionUsd}を引いて計算します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
@@ -604,7 +617,7 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
 <td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div><div class="s">分岐 ${yen(c.breakeven)}</div></td>
 <td class="n">${yen(c.profit)}<div class="s">${c.margin != null ? c.margin + "%" : ""}</div>
-<div class="fix" title="sold を見て、売れた価格（送料込$）がこの額以上なら、そのまま［登録］。低ければ直して［登録］。同じ機種の今後の出品にも効きます"><input data-memo="${esc(w.label)}" value="${w.sg}" class="sug"><button data-a="memo" data-k="${esc(w.label)}">登録</button></div></td></tr>`;
+<div class="fix" title="sold を見て、売れた価格（送料込$）がこの額以上なら、そのまま［登録］。低ければ直して［登録］。同じ機種の今後の出品にも効きます">${memoInputs(w.label, `value="${w.sg}" class="sug"`, "登録")}</div></td></tr>`;
     };
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th>利益(現在)</th></tr>`;
 
@@ -622,7 +635,7 @@ ${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式API�
 <table><tr><th>機種（→Product Research）</th><th>件数</th><th>ヤフオク現在値</th>${canBrowse() ? "<th>eBay出品中</th>" : ""}<th>想定$（送料込）</th></tr>${unpriced.map((g) => `<tr><td><a href="${ebay(g.label).pr}" target="_blank" rel="noopener" title="Product Research を開く">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
 <td class="n">${g.n}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
 ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.label)}</td>` : ""}
-<td><input data-memo="${esc(g.label)}" placeholder="$"${suggestUsd(state.browse[g.label]) ? ` class="sug" value="${suggestUsd(state.browse[g.label])}"` : ""}><button data-a="memo" data-k="${esc(g.label)}">登録</button></td></tr>`).join("")}</table>
+<td class="fix">${memoInputs(g.label, `placeholder="$"${suggestUsd(state.browse[g.label]) ? ` class="sug" value="${suggestUsd(state.browse[g.label])}"` : ""}`, "登録")}</td></tr>`).join("")}</table>
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
 <span class="s">「直す」「登録」した相場は ダウンロード/aurora_price_memo.csv に自動保存されます。Mac で build_store.py か build_extension.py を実行すると data/price_memo.csv に取り込まれ、スマホにも反映されます</span></div></details></div>`;
     badges();
@@ -651,7 +664,8 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
   // 相場メモ（このブラウザ）→ CSV。Mac では ダウンロード/aurora_price_memo.csv に自動保存し、build_store.py などが取り込む
   function memoCsv() {
     const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
-    return "title,sold_price_usd,source\n" + Object.entries(load(LS_MEMO, {})).map(([k, v]) => `${q(k)},${v},相場メモ`).join("\n");
+    return "title,sold_price_usd,source\n" + Object.entries(load(LS_MEMO, {}))
+      .map(([k, v]) => { const m = memoVal(v); return `${q(k)},${m.usd},${q(memoSource(m.cond))}`; }).join("\n");
   }
   function saveMemoFile() {
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) return;
@@ -665,11 +679,12 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     if (a === "min") { root.classList.toggle("min"); save(LS_OPEN, !root.classList.contains("min")); render(); }
     if (a === "all") loadAll(10000);
     if (a === "memo") {
-      const k = btn.dataset.k, prev = btn.previousElementSibling;
-      const inp = prev && prev.matches("input[data-memo]") ? prev : root.querySelector(`input[data-memo="${CSS.escape(k)}"]`);
+      const k = btn.dataset.k, box = btn.parentElement;
+      const inp = box.querySelector("input[data-memo]") || root.querySelector(`input[data-memo="${CSS.escape(k)}"]`);
+      const sel = box.querySelector("select[data-cond]");
       const v = Number((inp && inp.value || "").replace(/[$,\s]/g, ""));
       if (!v) return;
-      const memo = load(LS_MEMO, {}); memo[k] = v; save(LS_MEMO, memo);
+      const memo = load(LS_MEMO, {}); memo[k] = { usd: v, cond: sel ? sel.value : "" }; save(LS_MEMO, memo);
       evaluate(state.items, state.fx); render();
       saveMemoFile();
     }

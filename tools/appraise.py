@@ -972,11 +972,12 @@ def import_extension_memo(downloads: Path | None = None, dest: Path | None = Non
     files = sorted(downloads.glob("aurora_price_memo*.csv"), key=lambda p: p.stat().st_mtime)
     if not files:
         return 0, 0
-    new = {}
+    new = {}  # 機種名 → (金額, source)。source は 相場メモ か 相場メモ(状態)
     for r in csv.DictReader(files[-1].read_text(encoding="utf-8-sig").splitlines()):
         t, v = (r.get("title") or "").strip(), _float_or_none(r.get("sold_price_usd"))
+        src = (r.get("source") or "").strip()
         if t and v:
-            new[t] = v
+            new[t] = (v, src if src.startswith("相場メモ") else "相場メモ")
     rows, fields = [], list(MEMO_FIELDS)
     if dest.exists():
         rd = csv.DictReader(dest.read_text(encoding="utf-8-sig").splitlines())
@@ -987,12 +988,13 @@ def import_extension_memo(downloads: Path | None = None, dest: Path | None = Non
     for r in rows:
         t = (r.get("title") or "").strip()
         if t in new and is_memo(r):
-            if _float_or_none(r.get("sold_price_usd")) != new[t]:
-                r["sold_price_usd"], r["memo"] = f"{new[t]:g}", f"拡張機能で直した {today}"
+            v, src = new[t]
+            if _float_or_none(r.get("sold_price_usd")) != v or (r.get("source") or "") != src:
+                r["sold_price_usd"], r["source"], r["memo"] = f"{v:g}", src, f"拡張機能で直した {today}"
                 updated += 1
             del new[t]
-    for t, v in new.items():
-        rows.append({"title": t, "sold_price_usd": f"{v:g}", "source": "相場メモ", "memo": f"拡張機能で直した {today}"})
+    for t, (v, src) in new.items():
+        rows.append({"title": t, "sold_price_usd": f"{v:g}", "source": src, "memo": f"拡張機能で直した {today}"})
         added += 1
     if added or updated:
         dest.parent.mkdir(parents=True, exist_ok=True)
