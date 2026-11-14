@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         ヤフオク入札鑑定
-// @namespace    aurora-research
+// @namespace    aurora-project
 // @version      __VERSION__
 // @description  ヤフオクの検索結果・出品者ページを開くと、販売実績・相場データと照合して上限入札額と利益を表示します
 // @match        https://auctions.yahoo.co.jp/search/*

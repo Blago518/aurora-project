@@ -1,7 +1,7 @@
 # aurora ― カメラ輸出事業の作業フォルダ
 
 ヤフオク・頒布会・店舗などで中古カメラ・レンズを仕入れ、eBay で販売する事業のための作業場所。
-GitHub 上のリポジトリ名は `aurora-research`（**公開**）。事業の詳細・方針・目標は非公開の `knowledge/` にあり、下で読み込む。
+GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の詳細・方針・目標は非公開の `knowledge/` にあり、下で読み込む。
 
 @knowledge/CLAUDE.md
 
