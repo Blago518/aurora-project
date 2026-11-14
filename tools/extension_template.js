@@ -356,8 +356,10 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
   }
 
   // ------------------------------------------------------------------ 説明文の状態チェック（◎○の出品だけ自動。出品ページを1件ずつ間隔を空けて読む）
-  const LS_DESC = "yhkDescV1";
-  const DEFECT_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響)/g;
+  const LS_DESC = "yhkDescV2";  // 判定の語を変えたら番号を上げて、保存済みの結果を読み直させる
+  const DEFECT_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|剥離|ヤケ|黄変|拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響)/g;
+  // 光学の欄で状態を書かず「写真を確認して」とだけ書くのは、写真に難が写っている合図のことが多い
+  const PHOTO_ONLY_RE = /光学[^\n]{0,15}\n?(?:[^\n]{0,60}\n?){0,3}?[^\n]{0,40}写真[^\n]{0,10}確認/;
   // 同じ文の中にあれば「〜なし」と打ち消しているとみなす語
   const NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)/;
   function descHits(text, cond) {
@@ -383,6 +385,8 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       if (hits.some((h) => h.word === m[1])) continue;
       hits.push({ word: m[1], snip: text.slice(Math.max(0, m.index - 18), m.index + 32).replace(/\s+/g, " ").trim() });
     }
+    const ph = text.match(PHOTO_ONLY_RE);
+    if (ph) hits.push({ word: "光学は写真で確認", snip: ph[0].replace(/\s+/g, " ").trim().slice(0, 60) });
     if (cond && /状態が悪い/.test(cond)) hits.push({ word: "状態が悪い", snip: "商品の状態: " + cond });
     return hits;
   }
