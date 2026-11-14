@@ -56,7 +56,7 @@ def main() -> int:
         lab, key = ba.model_key(r["title"])
         if brand_of(r["title"]) == "その他" or len(lab.split()) < 3 and not re.search(r"\d", lab):
             lab = ba.title_to_query(r["title"])  # メーカー不明は機種名をそのまま使う
-        models.setdefault(key, {"label": lab, "title": r["title"]})
+        models.setdefault(key, {"label": lab, "title": r["title"], "ref": r})
     for d in ("相場", "機種"):
         (KNOW / d).mkdir(parents=True, exist_ok=True)
         for old in (KNOW / d).glob("*.md"):
@@ -65,6 +65,8 @@ def main() -> int:
     for key, m in models.items():
         # 優先度の低いデータ（頒布会・鑑定表など）も見たいので、1件ずつ照合して全部集める
         allm = [r for r in refs if ba.match_sales(m["title"], [r])]
+        if m["ref"] not in allm:  # 元の記録は必ず入れる（状態表記付きの商品名などで照合に当たらないことがある）
+            allm.insert(0, m["ref"])
         note = safe(m["label"])
         model_note_of[key] = note
         brand = brand_of(m["title"])
