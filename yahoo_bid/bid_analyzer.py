@@ -259,7 +259,7 @@ def parse_yahoo_page(page: str) -> dict:
             price = _pick(d, "taxinPrice", "currentPrice", "price")
             out.setdefault("current_price_jpy", _int_or_none(price))
             bin_ = _pick(d, "taxinBidorbuy", "bidorbuy", "buyNowPrice", "winPrice")
-            if bin_:
+            if bin_ and _int_or_none(bin_):
                 out.setdefault("buy_now_jpy", _int_or_none(bin_))
             bids = _pick(d, "bids", "bidCount")
             if bids is not None:
@@ -268,7 +268,8 @@ def parse_yahoo_page(page: str) -> dict:
             if end:
                 out.setdefault("end_time", str(end))
             title = _pick(d, "title", "productName")
-            if title and "title" not in out:
+            # og:title は長いと「...」で切れるため、JSON側の完全なタイトルを優先
+            if title and len(str(title)) >= len(out.get("title", "").rstrip(".… ")):
                 out["title"] = str(title)
             if out.get("current_price_jpy"):
                 break
@@ -470,7 +471,7 @@ def read_sales(path: Path | None) -> list[dict]:
     return rows
 
 
-def match_sales(query: str, sales: list[dict], threshold: float = 0.5) -> list[dict]:
+def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[dict]:
     qt = _tokens(query)
     if not qt:
         return []
