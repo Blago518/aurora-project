@@ -1,0 +1,53 @@
+# ヤフオク入札判断ツールの設定
+# 数値は自分の実績に合わせて調整してください。
+
+[fx]
+# 1 USD = 何円で計算するか（--fx で上書き可。auto_fetch=true なら起動時に取得を試みる）
+usd_jpy = 150.0
+auto_fetch = true
+# 円転時の為替手数料・目減り（Payoneer等）
+conversion_loss_pct = 2.0
+
+[ebay]
+# 落札手数料（Final Value Fee）: ebay売上シートの実績では 送料・税込み額の 10.3%（レンズ等）〜13.4%。
+# 買い手の税にも掛かるため、商品＋送料に対する実効率として 12% で計算
+final_value_fee_pct = 12.0
+# 1注文あたりの固定手数料（USD）
+per_order_fee_usd = 0.44
+# 海外決済手数料（International fee）
+international_fee_pct = 1.45
+# 広告（Promoted Listings）の率
+ad_rate_pct = 2.2
+# 手数料は「商品価格＋買い手負担送料」に掛かる。買い手から受け取る送料（USD）
+buyer_shipping_usd = 0.0
+
+[shipping]
+# 販売価格から一律で差し引く国際送料（USD）。0なら下の円建てサイズ別を使う
+deduction_usd = 30.0
+# 国際送料（円）。--ship で品目ごとに上書き可。サイズ別の目安
+default_jpy = 3500
+small_jpy = 2500     # レンズ・コンパクト等
+medium_jpy = 3500    # 一眼ボディ等
+large_jpy = 6000     # 中判・セット品等
+# 梱包資材など
+packing_jpy = 300
+
+[yahoo]
+# ヤフオク側の国内送料が不明なときの仮置き（円）
+default_domestic_shipping_jpy = 1000
+# ストア出品の消費税率（%）。ストアは入札額が税抜で、支払いは入札額×(1+税率)。個人出品には掛からない
+store_tax_pct = 10.0
+
+[tax]
+# 輸出免税による消費税還付を利益に含めるか（課税事業者のみ）
+include_consumption_tax_refund = false
+consumption_tax_pct = 10.0
+
+[judge]
+# 入札判断の基準
+min_profit_jpy = 3000
+min_margin_pct = 10.0
+# 想定販売価格に使うeBay販売済み価格の分位（0.5=中央値。保守的にするなら 0.4 など）
+sold_price_quantile = 0.5
+# ジャンク表記の出品は想定販売価格をこの割合で見る（1.0で割引なし）。中判など動くことが多い品が多ければ上げる
+junk_price_factor = 0.7

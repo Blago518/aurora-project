@@ -1,0 +1,3 @@
+# ヤフオクのURLを1行に1つ貼り付け（ブックマークHTMLやウォッチリストを保存したHTMLもそのまま読めます）
+https://auctions.yahoo.co.jp/jp/auction/x1000000001
+https://page.auctions.yahoo.co.jp/jp/auction/x1000000002

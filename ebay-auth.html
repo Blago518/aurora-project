@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>eBay連携 | Aurora</title>
+<style>
+:root{--bg:#f3f6fa;--card:#fff;--ink:#192d42;--sub:#617288;--accent:#176e96;--ok:#207d60;--bad:#aa4a38}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1720;--card:#172331;--ink:#e3ebf3;--sub:#93a5b8;--accent:#4fb3dd}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
+.wrap{max-width:640px;margin:auto;padding:24px 16px}
+h1{font-size:20px;margin:0 0 12px}
+.card{background:var(--card);border-radius:14px;padding:18px;box-shadow:0 4px 18px #0001}
+.ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}
+textarea{width:100%;box-sizing:border-box;height:110px;font:12px ui-monospace,monospace;padding:8px;border-radius:8px;border:1px solid #9fb3c3;background:transparent;color:inherit}
+button{margin-top:10px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;padding:12px 16px;font-size:15px;cursor:pointer;width:100%}
+.s{color:var(--sub);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>eBay 連携（Aurora）</h1>
+  <div class="card" id="box">
+    <p id="msg">読み込み中…</p>
+    <div id="copyArea" hidden>
+      <p>下の URL をコピーして、ターミナルの「移動先のURL」に貼り付けて Enter を押してください。</p>
+      <textarea id="url" readonly></textarea>
+      <button id="copy" type="button">URLをコピー</button>
+      <p class="s">この URL は約5分で使えなくなります。期限が切れたら、もう一度 <code>python3 tools/ebay_api.py login</code> からやり直してください。<br>
+      このページは何も保存・送信しません（表示しているだけです）。</p>
+    </div>
+  </div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const msg = document.getElementById("msg");
+  if (q.get("code")) {
+    msg.innerHTML = '<span class="ok">eBay の許可が完了しました。</span>';
+    document.getElementById("copyArea").hidden = false;
+    const t = document.getElementById("url");
+    t.value = location.href;
+    document.getElementById("copy").onclick = async () => {
+      try { await navigator.clipboard.writeText(location.href); } catch (e) { t.select(); document.execCommand("copy"); }
+      document.getElementById("copy").textContent = "コピーしました";
+    };
+  } else if (q.get("error") || q.get("isAuthSuccessful") === "false") {
+    msg.innerHTML = '<span class="bad">eBay の許可が完了しませんでした。</span><br>もう一度 <code>python3 tools/ebay_api.py login</code> からやり直してください。';
+  } else {
+    msg.textContent = "eBay の許可画面から戻ってきたときに使うページです。";
+  }
+</script>
+</body>
+</html>

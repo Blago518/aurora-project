@@ -1,0 +1,6 @@
+__pycache__/
+# 非公開（仕入値・販売実績・事業ナレッジ・生成物）
+data/
+knowledge/
+reports/
+extension/
