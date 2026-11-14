@@ -437,6 +437,7 @@ WORDS_JA = [("ブラック", "Black"), ("シルバー", "Silver"), ("クロー�
 BRANDS_EN = {b.lower(): b for _, b in BRANDS_JA} | {
     "fuji": "Fujifilm", "om": "OM", "lumix": "Panasonic", "carl": "Carl",
 }
+LENS_MAKERS = {"tamron", "sigma", "tokina", "kenko", "samyang", "vivitar", "soligor"}
 LENS_LINES = {"zuiko": "Olympus", "nikkor": "Nikon", "takumar": "Pentax", "rokkor": "Minolta",
               "sekor": "Mamiya", "serenar": "Canon", "hexanon": "Konica", "planar": "Zeiss",
               "sonnar": "Zeiss", "distagon": "Zeiss", "summicron": "Leica", "summilux": "Leica", "elmarit": "Leica"}
@@ -463,6 +464,7 @@ def detect_flags(title: str) -> list[str]:
 
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
+    t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
     t = re.sub(r"\d+円[~〜～]?", " ", t)  # 「1円～」
     t = re.sub(r"\b[wW]\s*/\s*", " ", t)  # w/case（with）
     t = re.sub(r"(\d)\s*(mm|㎜)\s*([fF]\s*/?\s*\d)", r"\1mm \3", t)  # 75-150mmF4 → 75-150mm F4
@@ -504,6 +506,11 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
                 continue
         if not any(x.lower() == low for x in tokens):
             tokens.append(tok)
+    makers = [b for b in all_brands if b.lower() in LENS_MAKERS]
+    if makers:  # 「タムロン … ニコン用」はタムロン製
+        brand = makers[0]
+    if max_tokens <= 7:  # eBay検索語では一般的な表記に
+        tokens = ["Non-Ai" if x == "nonAi" else x for x in tokens]
     words = ([brand] if brand else []) + tokens
     if max_tokens > 7:  # 照合用: タイトル中の全メーカー名を残す（「タムロン ニコン用」等）
         words += [b for b in dict.fromkeys(all_brands) if b != brand]
@@ -518,10 +525,10 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
 def ebay_links(query: str) -> dict:
     q = urllib.parse.quote_plus
     return {
-        # 販売済み: 最近終了した順（相場の“今”を見る）
-        "sold": f"https://www.ebay.com/sch/i.html?_nkw={q(query)}&LH_Sold=1&LH_Complete=1&_sop=13&_ipg=120",
-        # 出品中: 価格+送料の安い順（競合の最安値を見る）
-        "active": f"https://www.ebay.com/sch/i.html?_nkw={q(query)}&_sop=15&_ipg=120",
+        # 販売済み: 価格+送料の高い順
+        "sold": f"https://www.ebay.com/sch/i.html?_nkw={q(query)}&LH_Sold=1&LH_Complete=1&_sop=16&_ipg=120",
+        # 出品中: 価格+送料の高い順
+        "active": f"https://www.ebay.com/sch/i.html?_nkw={q(query)}&_sop=16&_ipg=120",
         # Product Research（Terapeak）: Best Offer込みの実成約を確認
         "research": "https://www.ebay.com/sh/research?"
         + urllib.parse.urlencode(
@@ -1125,7 +1132,7 @@ def unpriced_models(items: list[Item]) -> list[dict]:
     for it in items:
         if it.expected_price_usd is not None or not it.title:
             continue
-        if {"付属品のみ?", "アダプター等", "セット品", "ジャンク"} & set(it.flags):
+        if {"付属品のみ?", "アダプター等", "セット品"} & set(it.flags):
             continue
         label, key = model_key(it.title)
         if not label or len(label.split()) < 2:

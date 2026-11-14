@@ -59,7 +59,7 @@ def build_data(cfg: dict, fx: float) -> dict:
         },
         "consts": {
             "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN,
-            "lensLines": ba.LENS_LINES, "noise": sorted(ba.NOISE_TOKENS), "thirdParty": sorted(ba.THIRD_PARTY),
+            "lensLines": ba.LENS_LINES, "lensMakers": sorted(ba.LENS_MAKERS), "noise": sorted(ba.NOISE_TOKENS), "thirdParty": sorted(ba.THIRD_PARTY),
             "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS),
             "premium": sorted(ba.PREMIUM_VARIANTS), "accessoryRe": ba.ACCESSORY_RE.pattern,
             "flagRules": [[n, p] for n, p in ba.FLAG_RULES],

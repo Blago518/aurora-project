@@ -27,6 +27,7 @@
 
   function titleToQuery(title, maxTokens = 7) {
     let t = title.normalize("NFKC");
+    t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
     t = t.replace(/\d+円[~〜～]?/g, " ");
     t = t.replace(/\b[wW]\s*\/\s*/g, " ");
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
@@ -61,7 +62,10 @@
       }
       if (!tokens.some((x) => x.toLowerCase() === low)) tokens.push(tok);
     }
-    const words = (brand ? [brand] : []).concat(tokens);
+    const makers = allBrands.filter((b) => C.lensMakers.includes(b.toLowerCase()));
+    if (makers.length) brand = makers[0];
+    const toks = maxTokens <= 7 ? tokens.map((x) => (x === "nonAi" ? "Non-Ai" : x)) : tokens;
+    const words = (brand ? [brand] : []).concat(toks);
     if (maxTokens > 7) { for (const b of new Set(allBrands)) if (b !== brand) words.push(b); return words.join(" "); }
     return words.slice(0, maxTokens).join(" ");
   }
@@ -201,7 +205,8 @@
   }
 
   const ebay = (q) => ({
-    sold: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&LH_Sold=1&LH_Complete=1&_sop=13&_ipg=120",
+    sold: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&LH_Sold=1&LH_Complete=1&_sop=16&_ipg=120",
+    now: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&_sop=16&_ipg=120",
     pr: "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=" + encodeURIComponent(q) + "&dayRange=90&tabName=SOLD",
   });
 
@@ -304,7 +309,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
     const priced = items.filter((i) => i.calc).length;
     const groups = new Map();
     for (const i of items) {
-      if (i.calc || i.flags.some((f) => ["付属品のみ?", "アダプター等", "セット品", "ジャンク"].includes(f))) continue;
+      if (i.calc || i.flags.some((f) => ["付属品のみ?", "アダプター等", "セット品"].includes(f))) continue;
       const [label, key] = modelKey(i.title);
       if (label.split(" ").length < 2) continue;
       const g = groups.get(key) || { label, n: 0, prices: [], ex: i.title };
@@ -320,7 +325,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       return `<tr><td class="m ${cls}">${i.mark}</td><td class="n">${endStr(i.end)}</td>
 <td><a href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener">${esc(i.title.slice(0, 70))}</a>${flags}
 <div class="s">根拠: ${esc(r.title || "")} $${r.price}${i.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? ` ×ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%=$${i.usd}` : ""} [${esc(srcLabel(r))}]（Net $${c ? c.netUsd.toFixed(0) : "-"}） ・
-<a href="${ebay(i.query).sold}" target="_blank" rel="noopener">eBay販売済み</a></div></td>
+<a href="${ebay(i.query).sold}" target="_blank" rel="noopener">sold</a> ・ <a href="${ebay(i.query).now}" target="_blank" rel="noopener">now</a> <span class="s">（${esc(i.query)}・高い順）</span></div></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送料${i.ship == null ? "?" : yen(i.ship)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b><div class="s">損益分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
@@ -338,7 +343,7 @@ ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class=
 <details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
 <table><tr><th>機種</th><th>件数</th><th>ヤフオク現在値</th><th>eBay</th><th>想定$（送料込）</th></tr>${unpriced.map((g) => `<tr><td>${esc(g.label)}<div class="s">${esc(g.ex.slice(0, 60))}</div></td>
 <td class="n">${g.n}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
-<td><a href="${ebay(g.label).sold}" target="_blank" rel="noopener">販売済み</a> <a href="${ebay(g.label).pr}" target="_blank" rel="noopener">PR</a></td>
+<td><a href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a> <a href="${ebay(g.label).pr}" target="_blank" rel="noopener">PR</a></td>
 <td><input data-memo="${esc(g.label)}" placeholder="$"><button data-a="memo" data-k="${esc(g.label)}">登録</button></td></tr>`).join("")}</table>
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
 <span class="s">コピーした内容を data/price_memo.csv に貼るか Claude に送ると、全端末の相場データに取り込めます</span></div></details></div>`;
@@ -400,7 +405,7 @@ ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class=
     }
     if (a === "copy") {
       const good = state.items.filter((i) => i.mark === "◎" || i.mark === "○").sort((x, y) => (x.end < y.end ? -1 : 1));
-      const txt = good.map((i) => `${i.mark} ${endStr(i.end)} 上限${yen(i.calc.maxBid)} 現在${yen(i.price)} ${i.title}\nhttps://auctions.yahoo.co.jp/jp/auction/${i.id}`).join("\n");
+      const txt = good.map((i) => `${i.mark} ${endStr(i.end)} 上限${yen(i.calc.maxBid)} 現在${yen(i.price)} ${i.title}\nhttps://auctions.yahoo.co.jp/jp/auction/${i.id}\nsold: ${ebay(i.query).sold}\nnow: ${ebay(i.query).now}`).join("\n\n");
       await navigator.clipboard.writeText(txt).catch(() => {});
       btn.textContent = "コピーしました";
     }
