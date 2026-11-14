@@ -20,7 +20,8 @@ open reports
 ## 自動化（初回だけ設定。以後は何もしなくてよい）
 | 何を | 初回の設定 | 以後 |
 |---|---|---|
-| Chatwork の販売報告・頒布会リスト（添付 xlsx） | `python3 tools/chatwork_sync.py setup`（API トークンとルームの URL） | 自動で取り込み |
+| Chatwork の販売報告 | `python3 tools/chatwork_sync.py setup`（API トークンと日報チャットの URL） | 自動で取り込み |
+| 頒布会リスト（Excel） | なし | ダウンロードフォルダに保存すれば、次の自動更新で取り込み（ファイル名は何でもよい） |
 | 古物台帳（スプレッドシート） | `python3 tools/ledger_sync.py setup`（スクリプトを貼って公開） | 自動で取り込み |
 | スマホのデータ | `python3 tools/store_publish.py setup`（GitHub のトークン）→ 設定コードを iPhone のアプリに貼る | アプリを開くと最新 |
 | 全部の更新 | `python3 tools/schedule.py install` | 毎朝 7:03 と Mac のログイン時に自動。終わると通知 |
