@@ -864,6 +864,8 @@ def judge(item: Item) -> tuple[str, str]:
     now = item.current_price_jpy
     if {"付属品のみ?", "アダプター等", "セット品"} & set(item.flags):
         return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
+    if "光学難あり" in item.flags:  # 方針: 修理しないので光学難（カビ・クモリ等）は避ける
+        return "要確認", prefix + "光学難あり（方針では避ける）。写真で程度を確認してください"
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
     now = item.current_price_jpy
