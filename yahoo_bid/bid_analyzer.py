@@ -91,6 +91,8 @@ class Item:
     end_time: str = ""
     domestic_shipping_jpy: int | None = None
     image: str = ""
+    watch: int | None = None
+    prefilled: bool = False  # 検索結果ページから価格等を取得済み（個別ページを開かない）
     # 手入力の上書き
     ebay_query: str = ""
     ebay_price_usd: float | None = None
@@ -253,26 +255,69 @@ def find_search_urls(text: str) -> list[str]:
     return out
 
 
-def expand_search_url(url: str, limit: int) -> list[tuple[str, str]]:
-    """検索結果ページを開き、(出品URL, タイトル) を上から limit 件返す."""
-    page = http_get(url)
-    titles: dict[str, str] = {}  # 出品ID → タイトル（出現順を保つ）
-    for m in re.finditer(
-        r'<a[^>]+href="https://auctions\.yahoo\.co\.jp/jp/auction/([a-z]?\d{6,12})[^"]*"[^>]*>(.*?)</a>',
-        page, re.S,
-    ):
-        title = html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
-        if m.group(1) not in titles and len(titles) >= limit:
+def _with_page(url: str, start: int, per_page: int = 100) -> str:
+    parts = urllib.parse.urlsplit(url)
+    q = dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
+    q["b"], q["n"] = str(start), str(per_page)
+    return urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(q)))
+
+
+def parse_listing_page(page: str) -> tuple[list[Item], int | None]:
+    """検索結果・出品者ページの __NEXT_DATA__ から出品一覧を読む（1ページ最大100件）."""
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
+    if not m:
+        return [], None
+    data = json.loads(m.group(1))
+    listing = None
+    for d in _walk(data):
+        if isinstance(d.get("items"), list) and d["items"] and isinstance(d["items"][0], dict) \
+                and "auctionId" in d["items"][0]:
+            listing = d
             break
-        if not titles.get(m.group(1)):
-            titles[m.group(1)] = title
-    if not titles:  # リンクの形が変わった場合の保険
-        for m in AUCTION_ID_RE.finditer(page):
-            titles.setdefault(m.group(1), "")
-            if len(titles) >= limit:
-                break
-    found = [(f"https://auctions.yahoo.co.jp/jp/auction/{aid}", t) for aid, t in titles.items()]
-    return found
+    if listing is None:
+        return [], None
+    total = None
+    t = re.search(r'"totalResultsAvailable"\s*:\s*(\d+)', m.group(1))
+    if t:
+        total = int(t.group(1))
+    items = []
+    for x in listing["items"]:
+        if x.get("isFleamarketItem"):
+            continue
+        ship = x.get("currentPriceShippingFee")
+        if x.get("isFreeShipping"):
+            ship = 0
+        items.append(Item(
+            url=f"https://auctions.yahoo.co.jp/jp/auction/{x['auctionId']}",
+            auction_id=x["auctionId"],
+            title=x.get("title") or "",
+            current_price_jpy=_int_or_none(x.get("price")),
+            buy_now_jpy=_int_or_none(x.get("buyNowPrice")) or None,
+            bids=_int_or_none(x.get("bidCount")),
+            end_time=x.get("endTime") or "",
+            domestic_shipping_jpy=_int_or_none(ship),
+            image=x.get("imageUrl") or "",
+            watch=_int_or_none(x.get("watchCount")),
+            prefilled=True,
+            memo="ストア" if (x.get("seller") or {}).get("isStore") else "",
+        ))
+    return items, total
+
+
+def fetch_listing(url: str, limit: int, delay: float) -> list[Item]:
+    """検索URLの結果を100件ずつページ送りして最大 limit 件取得する."""
+    out: list[Item] = []
+    start = 1
+    while len(out) < limit:
+        items, total = parse_listing_page(http_get(_with_page(url, start)))
+        if not items:
+            break
+        out += items
+        start += 100
+        if total is not None and start > total:
+            break
+        time.sleep(delay)
+    return out[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +437,9 @@ WORDS_JA = [("ブラック", "Black"), ("シルバー", "Silver"), ("クロー�
 BRANDS_EN = {b.lower(): b for _, b in BRANDS_JA} | {
     "fuji": "Fujifilm", "om": "OM", "lumix": "Panasonic", "carl": "Carl",
 }
+LENS_LINES = {"zuiko": "Olympus", "nikkor": "Nikon", "takumar": "Pentax", "rokkor": "Minolta",
+              "sekor": "Mamiya", "serenar": "Canon", "hexanon": "Konica", "planar": "Zeiss",
+              "sonnar": "Zeiss", "distagon": "Zeiss", "summicron": "Leica", "summilux": "Leica", "elmarit": "Leica"}
 NOISE_TOKENS = {
     "1", "the", "and", "with", "from", "japan", "mint", "exc", "exc+", "exc++", "exc+++", "near",
     "n", "a", "b", "c", "ab", "aa", "aaa", "s", "sale", "free", "shipping", "used", "ok",
@@ -402,6 +450,8 @@ FLAG_RULES = [
     ("動作品", r"動作確認済|動作品|動作良好|完動"),
     ("美品", r"超美品|極上|美品|新品同様|未使用"),
     ("セット品", r"セット|まとめ|おまとめ|大量|\d+\s*点"),
+    ("アダプター等", r"アダプタ|adapter|コンバーター|converter|接写リング|中間リング|エクステンション|テレプラス|"
+                   r"teleplus|テレコンバーター|塗料|ペイント|マウント変換|→"),
     ("付属品のみ?", r"(?:キャップ|ストラップ|ケース|フード|フィルター|背面|裏蓋|データバック|ファインダー)"
                    r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|取扱説明書|説明書のみ|\bback\b"),
 ]
@@ -413,6 +463,10 @@ def detect_flags(title: str) -> list[str]:
 
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
+    t = re.sub(r"\d+円[~〜～]?", " ", t)  # 「1円～」
+    t = re.sub(r"\b[wW]\s*/\s*", " ", t)  # w/case（with）
+    t = re.sub(r"(\d)\s*(mm|㎜)\s*([fF]\s*/?\s*\d)", r"\1mm \3", t)  # 75-150mmF4 → 75-150mm F4
+    t = re.sub(r"[①-⑳]", " ", t)  # まとめ⑤ 等の丸数字
     t = re.sub(r"[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b", " ", t)  # #v4081 等の管理番号
     t = re.sub(r"(\d)\s*[・･]\s*(\d)", r"\1.\2", t)        # f2・8 → f2.8
     t = re.sub(r"\b[fF]\s*/\s*(\d)", r"F\1", t)              # f/2.8 → F2.8
@@ -432,10 +486,14 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
         low = tok.lower().strip(".-")
         if not low or low in NOISE_TOKENS:
             continue
-        if re.fullmatch(r"\d+", low) and (len(low) < 2 or len(low) >= 4):
+        # 1桁の数字は検索語では落とすが、照合用（max_tokens>7）では残す（EOS 5 / Nikon 1 等）
+        if re.fullmatch(r"\d+", low) and ((len(low) < 2 and max_tokens <= 7) or len(low) >= 4):
             continue  # 「1円」の1や、シリアル番号っぽい長い数字
         if re.fullmatch(r"no\.?\d+", low):
             continue
+        line = re.sub(r"^[a-z]\.", "", low)  # g.zuiko → zuiko
+        if line in LENS_LINES:  # レンズ銘からメーカーを補う（語は残す）
+            brand = brand or LENS_LINES[line]
         if low in BRANDS_EN:
             brand = brand or BRANDS_EN[low]
             if BRANDS_EN[low] != "Carl":
@@ -517,7 +575,7 @@ def _tokens(s: str) -> set[str]:
     out = set()
     for t in re.split(r"[\s/,]+", q):
         t = t.strip(".-")
-        if not t or t in NOISE_TOKENS or t in ("w", "body", "lens", "本体"):
+        if not t or t in NOISE_TOKENS or t in ("body", "lens", "本体"):
             continue
         if re.fullmatch(r"\d{1,2}\.\d", t):  # 1.4 → f1.4（F値の表記ゆれ）
             t = "f" + t
@@ -562,19 +620,25 @@ def read_sales(path: Path | None) -> list[dict]:
 
 
 ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)
+THIRD_PARTY = {"7artisans", "ttartisan", "brightin", "kenko", "pixco", "k&f", "meike", "viltrox", "laowa",
+               "samyang", "yongnuo", "kipon", "fotodiox", "neewer", "commlite", "sg-image", "pergear",
+               "kamlan", "zonlai", "fujian", "rokinon", "vello"}
+COLOR_WORDS = {"black", "silver", "chrome", "white", "red", "blue", "green", "brown"}
 GENERATIONS = {"ii", "iii", "iv", "mkii", "mkiii", "mk2", "mk3", "mark"}
 PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定", "whiteface", "af"}
 
 
-SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト"]
+SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表"]
 
 
 def source_tier(row: dict) -> int:
     src = row.get("source") or "自分の販売実績"
     if src.startswith("Chatwork"):
         return 1
-    if src.startswith("頒布会"):
+    if src.startswith(("頒布会", "eBay")):
         return 2
+    if src.startswith("鑑定表"):
+        return 3
     return 0
 
 
@@ -586,8 +650,15 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
     scored = []
     for row in sales:
         rt = row["_tokens"]
-        qb, rb = qt & brands, rt & brands
-        if qb and rb and not (qb & rb):
+        # 社外レンズ（タイトルに「オリンパス用」等とあっても別物）
+        if (qt & THIRD_PARTY) - rt:
+            continue
+        # 実績側のメーカーがタイトルに無ければ別物（社外品・他社用アダプター等）
+        rb = rt & brands
+        if rb and not (rb & qt):
+            continue
+        # レンズ（mm表記あり）とボディ（なし）を取り違えない
+        if any(t.endswith("mm") for t in qt) != any(t.endswith("mm") for t in rt):
             continue
         # 付属品だけの実績（ストラップ・ケース等）は本体の参考にしない
         if ACCESSORY_RE.search(row.get("title", "")) and not ACCESSORY_RE.search(query):
@@ -602,8 +673,10 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         digits = {t for t in rt if re.search(r"\d", t)}
         if not digits <= qt:
             continue
-        if not digits and len(qt & rt) < 2:  # 型番に数字が無い機種（Rolleicord Vb 等）
-            continue
+        if not digits:  # 型番に数字が無い機種（Rolleicord Vb 等）は実績側の語が全部そろうこと
+            core = rt - COLOR_WORDS
+            if not (core - brands) or not core <= qt:
+                continue
         # 実績側の語がどれだけ含まれるか（ヤフオクのタイトルは余計な語が多いので片側で見る）
         score = len(qt & rt) / len(rt)
         if score >= threshold:
@@ -616,6 +689,64 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
             break
     chosen.sort(key=lambda x: -x[0])
     return [dict(r, _score=round(s, 2)) for s, r in chosen[:10]]
+
+
+# ---------------------------------------------------------------------------
+# 鑑定ブックマークレットの相場表を読む
+# ---------------------------------------------------------------------------
+
+
+def _read_text_any(path: Path) -> str:
+    if path.suffix.lower() == ".docx":
+        import zipfile
+        x = zipfile.ZipFile(path).read("word/document.xml").decode("utf-8")
+        paras = re.findall(r"<w:p[ >].*?</w:p>", x, re.S)
+        return html.unescape("\n".join("".join(re.findall(r"<w:t[^>]*>(.*?)</w:t>", q, re.S)) for q in paras))
+    return path.read_text(encoding="utf-8-sig", errors="replace")
+
+
+def read_kantei_table(path: Path) -> list[dict]:
+    """ブックマークレット内の相場表 h=[[商品名, 想定$, 根拠, [照合パターン...], 高額フラグ], ...] を読む.
+
+    途中で切れたファイルでも、読めたところまで使う。
+    """
+    js = urllib.parse.unquote(_read_text_any(path))
+    variables = {m.group(1): json.loads(f"\"{m.group(2)}\"")
+                 for m in re.finditer(r'[,{;\s]([a-z])="((?:[^"\\]|\\.)*)"', js.split("h=[[", 1)[0])}
+    rows = []
+    entry_re = re.compile(r'\["((?:[^"\\]|\\.)*)",([\d.e]+),"([^"]*)",\[(.*?)\],(\d)\]')
+    elem_re = re.compile(r'"((?:[^"\\]|\\.)*)"|\b([a-z])\b')
+    for m in entry_re.finditer("[" + js.split("h=[[", 1)[-1] if "h=[[" in js else ""):
+        pats = []
+        for e in elem_re.finditer(m.group(4)):
+            pats.append(json.loads(f'"{e.group(1)}"') if e.group(1) is not None else variables.get(e.group(2), ""))
+        try:
+            compiled = [re.compile(x, re.I) for x in pats if x]
+        except re.error:
+            continue
+        rows.append({
+            "title": json.loads(f'"{m.group(1)}"'), "_price": float(m.group(2)),
+            "source": f"鑑定表({m.group(3)})", "_patterns": compiled,
+        })
+    return rows
+
+
+def match_kantei(title: str, table: list[dict]) -> list[dict]:
+    """ブックマークレットと同じく、上から順に全パターンが一致した最初の行を返す."""
+    t = unicodedata.normalize("NFKC", title).lower()
+    qt = _tokens(title)
+    for row in table:
+        if not all(p.search(t) for p in row["_patterns"]):
+            continue
+        # 表のパターンが緩い場合の保険: 型番（数字を含む語）とレンズ/ボディの区別を確認
+        rt = _tokens(row["title"])
+        if any(x.endswith("mm") for x in qt) != any(x.endswith("mm") for x in rt):
+            continue
+        model = {x for x in rt if re.search(r"\d", x) and not x.endswith("mm") and not x.startswith("f")}
+        if model and not model <= qt:
+            continue
+        return [dict(row, _score=1.0)]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -711,7 +842,7 @@ def judge(item: Item) -> tuple[str, str]:
     else:
         prefix = ""
     now = item.current_price_jpy
-    if "付属品のみ?" in item.flags:
+    if {"付属品のみ?", "アダプター等", "セット品"} & set(item.flags):
         return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
@@ -730,12 +861,31 @@ def judge(item: Item) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline: bool,
-            fetch_ebay: bool, delay: float) -> None:
+def assign_price(item: Item, cfg: dict, fx: float) -> None:
+    """想定販売価格: 手入力 > eBay販売済み（個別取得） > 実績・相場データ の順に決めて利益を計算."""
     q_level = cfg["judge"]["sold_price_quantile"]
+    if item.ebay_price_usd is not None:
+        item.expected_price_usd, item.price_source = item.ebay_price_usd, "手入力"
+    elif len(item.sold_prices_usd) >= 3:
+        item.expected_price_usd = round(quantile(item.sold_prices_usd, q_level), 2)
+        item.price_source = f"eBay販売済み{len(item.sold_prices_usd)}件の{int(q_level*100)}%点"
+    elif item.history_matches:
+        ps = [m["_price"] for m in item.history_matches]
+        item.expected_price_usd = round(statistics.median(ps), 2)
+        src = str(item.history_matches[0].get("source", ""))
+        label = SOURCE_LABELS[source_tier(item.history_matches[0])]
+        if src.startswith(("相場メモ", "鑑定表", "eBay")):
+            label = src
+        item.price_source = f"{label} {len(ps)}件の中央値" if len(ps) > 1 else label
+    item.calc = calculate(item, cfg, fx)
+
+
+def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline: bool,
+            fetch_ebay: bool, delay: float, kantei: list[dict] | None = None) -> None:
     for i, item in enumerate(items, 1):
-        print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)
-        if not offline:
+        if not item.prefilled:
+            print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)
+        if not offline and not item.prefilled:
             enrich_from_yahoo(item)
             time.sleep(delay)
         item.flags = detect_flags(item.title)
@@ -747,8 +897,11 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
 
         # 照合はタイトル全体（検索語は7語に絞っているため）
         item.history_matches = match_sales(f"{item.ebay_query} {item.title}", sales)
+        if not item.history_matches and kantei:
+            item.history_matches = match_kantei(item.title, kantei)
 
-        if not offline and fetch_ebay:
+        # 個別URLを少数渡したときだけ、出品ごとにeBayを見に行く（検索URLの大量取得では機種単位で行う）
+        if not offline and fetch_ebay and not item.prefilled:
             links = ebay_links(item.ebay_query)
             for kind, attr in (("sold", "sold_prices_usd"), ("active", "active_prices_usd")):
                 try:
@@ -756,19 +909,71 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
                 except (urllib.error.URLError, TimeoutError, OSError) as e:
                     item.fetch_note += f"eBay{kind}取得失敗({e.__class__.__name__}) "
                 time.sleep(delay)
+        assign_price(item, cfg, fx)
 
-        # 想定販売価格: 手入力 > eBay販売済み > 自分の販売実績
-        if item.ebay_price_usd is not None:
-            item.expected_price_usd, item.price_source = item.ebay_price_usd, "手入力"
-        elif len(item.sold_prices_usd) >= 3:
-            item.expected_price_usd = round(quantile(item.sold_prices_usd, q_level), 2)
-            item.price_source = f"eBay販売済み{len(item.sold_prices_usd)}件の{int(q_level*100)}%点"
-        elif item.history_matches:
-            ps = [m["_price"] for m in item.history_matches]
-            item.expected_price_usd = round(statistics.median(ps), 2)
-            label = SOURCE_LABELS[source_tier(item.history_matches[0])]
-            item.price_source = f"{label}{len(ps)}件の中央値"
-        item.calc = calculate(item, cfg, fx)
+
+# ---------------------------------------------------------------------------
+# 相場未登録の機種を eBay 販売済みから自動で補う（キャッシュ付き）
+# ---------------------------------------------------------------------------
+
+CACHE_FIELDS = ["date", "title", "sold_price_usd", "source", "count", "ebay_url"]
+
+
+def auto_price_unpriced(items: list[Item], cfg: dict, fx: float, top_n: int, delay: float,
+                        cache_path: Path, max_age_days: int = 7) -> int:
+    """相場が無い機種の上位 top_n 件について eBay 販売済み検索を1回ずつ見て相場を作る."""
+    cache: dict[str, dict] = {}
+    if cache_path.exists():
+        with open(cache_path, encoding="utf-8-sig", newline="") as f:
+            for row in csv.DictReader(f):
+                cache[row["title"].lower()] = row
+    today = datetime.now()
+    new_rows: list[dict] = []
+    fetched = 0
+    for m in unpriced_models(items)[:top_n]:
+        label = m["title"]
+        row = cache.get(label.lower())
+        fresh = row and (today - datetime.strptime(row["date"], "%Y-%m-%d")).days <= max_age_days
+        if not fresh:
+            url = ebay_links(label)["sold"] + "&_sacat=625"
+            try:
+                prices = trim_outliers(parse_ebay_prices(http_get(url), fx))
+            except urllib.error.HTTPError as e:
+                print(f"eBayに接続できません（HTTP {e.code}）。自動の相場取得を中止します。", file=sys.stderr)
+                break
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                print(f"eBay取得失敗({e.__class__.__name__}): {label}", file=sys.stderr)
+                continue
+            fetched += 1
+            time.sleep(delay)
+            q = cfg["judge"]["sold_price_quantile"]
+            row = {"date": today.strftime("%Y-%m-%d"), "title": label,
+                   "sold_price_usd": round(quantile(prices, q), 2) if len(prices) >= 5 else "",
+                   "source": f"eBay販売済み自動({len(prices)}件)", "count": len(prices), "ebay_url": url}
+            cache[label.lower()] = row
+        if row.get("sold_price_usd"):
+            new_rows.append(row)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(cache_path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=CACHE_FIELDS)
+        w.writeheader()
+        w.writerows(cache.values())
+    # 取れた相場で、未判定の出品をもう一度照合
+    rows = []
+    for r in new_rows:
+        r = dict(r)
+        r["_price"] = float(r["sold_price_usd"])
+        r["_tokens"] = _tokens(r["title"])
+        rows.append(r)
+    added = 0
+    for it in items:
+        if it.expected_price_usd is None and it.ebay_query:
+            it.history_matches = match_sales(f"{it.ebay_query} {it.title}", rows)
+            if it.history_matches:
+                assign_price(it, cfg, fx)
+                added += 1
+    print(f"eBay自動相場: {fetched}機種を取得、{len(new_rows)}機種で相場あり → {added}件を追加判定", file=sys.stderr)
+    return added
 
 
 # ---------------------------------------------------------------------------
@@ -832,7 +1037,10 @@ def rows_for_output(items: list[Item]) -> list[dict]:
             }
         )
     order = {"◎": 0, "○": 1, "要確認": 2, "×": 3}
-    rows.sort(key=lambda r: (order[r["判定"]], -(r["上限までの余裕"] or -10**9)))
+    # ◎○は終了が近い順（入札の段取り順）、それ以外は余裕の大きい順
+    rows.sort(key=lambda r: (order[r["判定"]],
+                             r["終了"] if r["判定"] in ("◎", "○") else "",
+                             -(r["上限までの余裕"] or -10**9)))
     return rows
 
 
@@ -880,11 +1088,65 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_html(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
+def model_key(title: str) -> tuple[str, str]:
+    """相場未登録の出品を機種ごとにまとめるためのキー（表示用の検索語, 比較用キー）."""
+    toks = title_to_query(title, 20).split()
+    brand = toks[0] if toks and toks[0].lower() in {b.lower() for b in BRANDS_EN.values()} else ""
+    rest = toks[1:] if brand else toks
+    key_toks = [t for t in rest if re.search(r"\d", t)][:3] or rest[:2]
+    label = " ".join(([brand] if brand else []) + key_toks)
+    norm = []
+    for t in label.lower().split():
+        t = re.sub(r"^f/?", "", t) if re.fullmatch(r"f/?\d+(\.\d)?(-\d+(\.\d)?)?", t) else t
+        norm.append("f" + t if re.fullmatch(r"\d+(\.\d)?(-\d+(\.\d)?)?", t) and "." in t else t)
+    return label, " ".join(norm)
+
+
+def unpriced_models(items: list[Item]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    for it in items:
+        if it.expected_price_usd is not None or not it.title:
+            continue
+        if {"付属品のみ?", "アダプター等", "セット品", "ジャンク"} & set(it.flags):
+            continue
+        label, key = model_key(it.title)
+        if not label or len(label.split()) < 2:
+            continue
+        g = groups.setdefault(key, {"label": label, "count": 0, "examples": [], "prices": []})
+        g["count"] += 1
+        if len(g["examples"]) < 3:
+            g["examples"].append(f"{it.title[:50]}（{it.current_price_jpy or '-'}円）")
+        if it.current_price_jpy:
+            g["prices"].append(it.current_price_jpy)
+    out = []
+    for g in sorted(groups.values(), key=lambda g: -g["count"]):
+        links = ebay_links(g["label"])
+        out.append({
+            "title": g["label"], "sold_price_usd": "", "source": "相場メモ",
+            "件数": g["count"], "ヤフオク現在価格の中央値": int(statistics.median(g["prices"])) if g["prices"] else "",
+            "出品例": " / ".join(g["examples"]),
+            "eBay販売済みURL": links["sold"], "ProductResearchURL": links["research"],
+        })
+    return out
+
+
+def write_unpriced_csv(models: list[dict], path: Path) -> None:
+    fields = ["title", "sold_price_usd", "source", "件数", "ヤフオク現在価格の中央値", "出品例",
+              "eBay販売済みURL", "ProductResearchURL"]
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(models)
+
+
+def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
+               unpriced: list[dict] | None = None) -> None:
     e = html.escape
     j = cfg["judge"]
     cards = []
-    for r in rows:
+    shown = [r for r in rows if r["判定"] in ("◎", "○") or (r["判定"] == "要確認" and r["想定販売価格USD"])]
+    hidden_bad = [r for r in rows if r["判定"] == "×"]
+    for r in shown:
         cls = {"◎": "good", "○": "ok", "×": "bad"}.get(r["判定"], "unk")
         def link(u, label):
             return f'<a href="{e(u)}" target="_blank" rel="noopener">{label}</a>' if u else ""
@@ -927,13 +1189,30 @@ body{{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,B
 label{{display:block;font-size:11px;color:var(--sub)}}b{{display:block;font-size:17px;margin:2px 0}}small{{font-size:11px;color:var(--sub)}}
 .links{{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}}.links a{{font-size:13px;padding:7px 11px;border-radius:9px;background:var(--hl);color:inherit;text-decoration:none;font-weight:700}}
 .meta{{font-size:11px;color:var(--sub);overflow-wrap:anywhere}}code{{font-size:11px}}
+h2{{font-size:16px;margin:22px 0 6px}}details{{margin:12px 0}}.mini{{font-size:12px;line-height:1.7}}.mini a{{color:inherit}}
+.tbl{{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border-radius:12px;overflow:hidden}}
+.tbl td,.tbl th{{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}}
+.tbl a{{color:inherit;font-weight:700;white-space:nowrap}}
 </style></head><body><div class="wrap">
 <h1>ヤフオク入札判断レポート</h1>
 <p class="summary">{datetime.now():%Y-%m-%d %H:%M} 作成 ・ {len(rows)}件（◎{counts['◎']} ○{counts['○']} 要確認{counts['要確認']} ×{counts['×']}）<br>
 為替 1USD={fx:.2f}円（円転ロス{cfg['fx']['conversion_loss_pct']}%） ・ 基準: 利益{j['min_profit_jpy']:,}円以上かつ利益率{j['min_margin_pct']}%以上 ・
 eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['international_fee_pct']}%+広告{cfg['ebay']['ad_rate_pct']}%+${cfg['ebay']['per_order_fee_usd']}<br>
 上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの販売済み価格はBest Offer成約額を含まないため、Product Researchで確認してください。</p>
-{''.join(cards)}
+<h2>入札候補（◎○は終了が近い順）</h2>
+{''.join(cards) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
+<details><summary>× 見送り {len(hidden_bad)}件</summary><ul class="mini">{''.join(
+    f'<li><a href="{e(r["ヤフオクURL"])}" target="_blank" rel="noopener">{e(r["タイトル"][:60])}</a> 現在{_yen(r["現在価格"])} / 上限{_yen(r["上限入札額"])}</li>'
+    for r in hidden_bad)}</ul></details>
+<h2>相場が未登録の機種（件数順）</h2>
+<p class="summary">ここに出る機種は相場データが無いため判定できていません。件数の多い機種から eBay の販売済みを見て、
+<code>unpriced_models_*.csv</code> の <code>sold_price_usd</code> 欄に想定販売価格（送料込み$）を入れ、<code>data/price_memo.csv</code> に追記すると次回から判定されます。</p>
+<table class="tbl"><tr><th>機種（検索語）</th><th>件数</th><th>ヤフオク現在値</th><th>eBay</th></tr>{''.join(
+    f'<tr><td>{e(m["title"])}<br><small>{e(m["出品例"][:90])}</small></td><td>{m["件数"]}</td>'
+    f'<td>{_yen(m["ヤフオク現在価格の中央値"] or None)}</td>'
+    f'<td><a href="{e(m["eBay販売済みURL"])}" target="_blank" rel="noopener">販売済み</a> '
+    f'<a href="{e(m["ProductResearchURL"])}" target="_blank" rel="noopener">PR</a></td></tr>'
+    for m in (unpriced or [])[:60])}</table>
 </div></body></html>"""
     path.write_text(doc, encoding="utf-8")
 
@@ -946,13 +1225,17 @@ eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['inter
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="ヤフオク入札判断ツール")
     ap.add_argument("input", type=Path, help="ヤフオクの出品URL・検索結果URLの一覧(.txt) / ブックマークHTML / CSV")
-    ap.add_argument("--sales", type=Path, nargs="*", default=[], help="過去の販売実績CSV（複数可）")
+    ap.add_argument("--sales", type=Path, nargs="*", default=None,
+                    help="過去の販売実績CSV（複数可）。省略時は data/ の sales.csv, chatwork_sales.csv, price_memo.csv")
+    ap.add_argument("--kantei", type=Path, help="鑑定ブックマークレットのテキスト（.txt/.js/.docx）。相場表を参考に使う")
     ap.add_argument("--config", type=Path, help="設定ファイル（既定: config.toml）")
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
     ap.add_argument("--offline", action="store_true", help="通信しない（手入力値と販売実績のみで計算）")
     ap.add_argument("--no-ebay-fetch", action="store_true", help="eBay相場の自動取得をしない（リンクだけ作る）")
+    ap.add_argument("--ebay-auto", type=int, default=40,
+                    help="相場未登録の機種のうち件数の多い上位N機種を eBay 販売済みから自動で相場化（0で無効、7日キャッシュ）")
     ap.add_argument("--delay", type=float, default=1.5, help="通信の間隔（秒）")
-    ap.add_argument("--max-per-search", type=int, default=30, help="検索URL1つあたりに調べる出品数（上から）")
+    ap.add_argument("--max-per-search", type=int, default=2000, help="検索URL1つあたりに調べる出品数（上から。100件ごとに1回アクセス）")
     ap.add_argument("--out", type=Path, default=Path("out"), help="出力フォルダ")
     args = ap.parse_args(argv)
 
@@ -972,39 +1255,57 @@ def main(argv: list[str] | None = None) -> int:
         known = {it.auction_id for it in items}
         for su in find_search_urls(text):
             try:
-                got = expand_search_url(su, args.max_per_search)
-            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                got = fetch_listing(su, args.max_per_search, args.delay)
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
                 print(f"検索URLを開けません({e.__class__.__name__}): {su}", file=sys.stderr)
                 continue
             new = 0
-            for url, title in got:
-                aid = AUCTION_ID_RE.search(url).group(1)
-                if aid not in known:
-                    known.add(aid)
-                    items.append(Item(url=url, auction_id=aid, title=title, memo="検索URLから抽出"))
+            for it in got:
+                if it.auction_id not in known:
+                    known.add(it.auction_id)
+                    items.append(it)
                     new += 1
             print(f"検索URLから {new}件 抽出: {su[:80]}", file=sys.stderr)
             time.sleep(args.delay)
     if not items:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1
+    if args.sales is None:
+        args.sales = [p for p in (HERE / "data" / n for n in ("sales.csv", "chatwork_sales.csv", "price_memo.csv"))
+                      if p.exists()]
+    if args.kantei is None:
+        args.kantei = next(iter(sorted((HERE / "data").glob("kantei_bookmarklet.*"))), None)
     sales = [row for p in args.sales for row in read_sales(p)]
-    analyze(items, sales, cfg, fx, args.offline, not args.no_ebay_fetch, args.delay)
+    print(f"販売実績・相場: {len(sales)}件（{', '.join(p.name for p in args.sales) or 'なし'}）", file=sys.stderr)
+    kantei = read_kantei_table(args.kantei) if args.kantei else []
+    if args.kantei:
+        print(f"鑑定表: {len(kantei)}件の相場を読み込み", file=sys.stderr)
+    analyze(items, sales, cfg, fx, args.offline, not args.no_ebay_fetch, args.delay, kantei)
+
+    if not args.offline and not args.no_ebay_fetch and args.ebay_auto > 0:
+        auto_price_unpriced(items, cfg, fx, args.ebay_auto, args.delay, HERE / "data" / "ebay_sold_cache.csv")
 
     rows = rows_for_output(items)
     args.out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    unpriced = unpriced_models(items)
     write_csv(rows, args.out / f"bid_report_{stamp}.csv")
-    write_markdown(rows, args.out / f"bid_report_{stamp}.md", cfg, fx)
-    write_html(rows, args.out / f"bid_report_{stamp}.html", cfg, fx)
+    write_markdown([r for r in rows if r["判定"] != "要確認" or r["想定販売価格USD"]],
+                   args.out / f"bid_report_{stamp}.md", cfg, fx)
+    write_html(rows, args.out / f"bid_report_{stamp}.html", cfg, fx, unpriced)
+    write_unpriced_csv(unpriced, args.out / f"unpriced_models_{stamp}.csv")
 
+    priced = sum(1 for it in items if it.expected_price_usd is not None)
+    print(f"\n{len(items)}件中 相場あり {priced}件 / 相場未登録の機種 {len(unpriced)}種類", file=sys.stderr)
     print(f"\n{'判定':<4} {'現在価格':>9} {'上限入札':>9} {'利益':>9}  タイトル")
     for r in rows:
+        if r["判定"] not in ("◎", "○") and len(rows) > 60:
+            continue
         print(
             f"{r['判定']:<4} {_yen(r['現在価格']):>9} {_yen(r['上限入札額']):>9} "
             f"{_yen(r['利益(現在価格)']):>9}  {(r['タイトル'] or r['ヤフオクURL'])[:40]}"
         )
-    print(f"\n出力: {args.out}/bid_report_{stamp}.(html|md|csv)")
+    print(f"\n出力: {args.out}/bid_report_{stamp}.(html|md|csv) / unpriced_models_{stamp}.csv")
     return 0
 
 

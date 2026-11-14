@@ -168,5 +168,29 @@ class MatchingRules(unittest.TestCase):
         self.assertEqual([x["_price"] for x in m], [139.99])
 
 
+class AutoPrice(unittest.TestCase):
+    def test_unpriced_group_gets_ebay_price(self):
+        items = []
+        for i, t in enumerate(["オリンパス ZUIKO 50mm F3.5 マクロ", "OLYMPUS Zuiko MC 50mm f/3.5 Macro"]):
+            it = ba.Item(url=f"u{i}", auction_id=f"x{i}", title=t, current_price_jpy=3000,
+                         domestic_shipping_jpy=800, prefilled=True)
+            it.flags = ba.detect_flags(t)
+            it.ebay_query = ba.title_to_query(t)
+            items.append(it)
+        fake = "".join(f'<span class="s-item__price">${p}.00</span>' for p in (100, 110, 120, 130, 140, 900))
+        orig = ba.http_get
+        ba.http_get = lambda url, timeout=20: fake
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                added = ba.auto_price_unpriced(items, CFG, 150, top_n=5, delay=0, cache_path=Path(d) / "c.csv")
+                cached = (Path(d) / "c.csv").read_text(encoding="utf-8-sig")
+        finally:
+            ba.http_get = orig
+        self.assertEqual(added, 2)
+        self.assertEqual(items[0].expected_price_usd, 120.0)  # 900 は外れ値として除外、中央値120
+        self.assertIn("Olympus 50mm", cached)
+        self.assertTrue(items[0].price_source.startswith("eBay販売済み自動"))
+
+
 if __name__ == "__main__":
     unittest.main()
