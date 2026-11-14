@@ -2,8 +2,12 @@
 """古物台帳（Google スプレッドシート）を自動で data/ledger.csv に取り込む.
 
 スプレッドシートに貼った Apps Script（下の APPS_SCRIPT）が、合言葉付きの専用 URL で「古物台帳」シートを CSV で返す。
-?sheet=管理 を付けると「管理」シートを返す（2026-11-15 追加）。管理シートからは No.・状態・購入日・販売日 だけを
-data/kanri.csv に保存する（売れた商品の状態の割合・状態別の利益のグラフ用。アカウント名・URL は保存しない）。
+?sheet=… を付けると、許可したほかのシートも返す（2026-11-15 追加）。購入者の名前・住所の列（Buyer…・Ship to…）は
+スクリプトの側で取り除いてから返す。ほかのシートからは EXTRA_SHEETS の列だけを data/ に保存する（グラフ用）:
+    管理      → data/kanri.csv        No.・状態・購入日・販売日（売れた商品の状態）
+    ebay売上  → data/ebay_sales.csv   eBay の取引レポートの日付・種類・注文番号・手取り・手数料・Custom label（実際の利益）
+    J管理     → data/junk.csv         ジャンク品のヤフオク再販の仕入・実販売・日付
+    出品情報  → data/item_types.csv   管理番号・商品種別
 Mac はその URL を読むだけ。URL と合言葉はキーチェーンに保存し、GitHub やチャットには書かない。
 スプレッドシートの ID もこのファイルには書かない（スクリプトはそのスプレッドシートの中で動く）。
 
@@ -30,9 +34,16 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 DATA = ROOT / "data"
 OUT = DATA / "ledger.csv"
-KANRI_OUT = DATA / "kanri.csv"
-KANRI_SHEET = "管理"
-KANRI_COLUMNS = ["No.", "状態", "購入日", "販売日"]  # これ以外の列（アカウント名・URL など）は保存しない
+# シート名 → (保存先, 保存する列). 列の1つ目と2つ目がある行を見出しとみなす。これ以外の列（アカウント名・URL など）は保存しない
+EXTRA_SHEETS = {
+    "管理": ("kanri.csv", ["No.", "状態", "購入日", "販売日"]),
+    "ebay売上": ("ebay_sales.csv", ["Custom label", "Transaction creation date", "Type", "Order number", "Net amount",
+                                  "Payout currency", "Quantity", "Item subtotal", "Shipping and handling",
+                                  "Final Value Fee - fixed", "Final Value Fee - variable", "International fee",
+                                  "Gross transaction amount", "Transaction currency", "Description"]),
+    "J管理": ("junk.csv", ["No.", "仕入(円)", "実販売(円)", "売上−仕入(円)", "購入日", "販売日", "保管", "ヤフオク出品"]),
+    "出品情報": ("item_types.csv", ["管理番号", "商品種別"]),
+}
 BACKUP = DATA / "backup"
 SERVICE = "aurora-ledger"
 SHEET = "古物台帳"
@@ -42,14 +53,20 @@ import keychain  # noqa: E402
 
 APPS_SCRIPT = """// aurora: 古物台帳を CSV で返す（Mac の tools/ledger_sync.py が読む）。合言葉が一致したときだけ返す
 const KEY = '__KEY__';
-const SHEETS = ['__SHEET__', '__KANRI__'];  // 返してよいシート（最初のものが既定）
+const SHEETS = [__SHEETS__];  // 返してよいシート（最初のものが既定）
+const DROP = /^(Buyer|Ship to)/;  // 購入者の名前・住所の列は返さない
 function doGet(e) {
   if (!e || !e.parameter || e.parameter.key !== KEY) {
     return ContentService.createTextOutput('forbidden');
   }
   const name = SHEETS.indexOf(e.parameter.sheet) >= 0 ? e.parameter.sheet : SHEETS[0];
   const sh = SpreadsheetApp.getActive().getSheetByName(name);
-  const rows = sh.getDataRange().getDisplayValues();
+  let rows = sh.getDataRange().getDisplayValues();
+  const head = rows.slice(0, 10).find(r => r.some(v => DROP.test(v)));
+  if (head) {
+    const keep = head.map((v, i) => DROP.test(v) ? -1 : i).filter(i => i >= 0);
+    rows = rows.map(r => keep.map(i => r[i]));
+  }
   const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\\n');
   return ContentService.createTextOutput(csv).setMimeType(ContentService.MimeType.CSV);
 }
@@ -57,7 +74,8 @@ function doGet(e) {
 
 
 def script_text(key: str) -> str:
-    return APPS_SCRIPT.replace("__KEY__", key).replace("__SHEET__", SHEET).replace("__KANRI__", KANRI_SHEET)
+    names = ", ".join(f"'{n}'" for n in [SHEET, *EXTRA_SHEETS])
+    return APPS_SCRIPT.replace("__KEY__", key).replace("__SHEETS__", names)
 
 
 def fetch(url: str, key: str, sheet: str | None = None) -> str:
@@ -82,7 +100,7 @@ def sync(dry_run: bool = False) -> bool | None:
         why = "合言葉が違います（setup をやり直す）" if text.strip() == "forbidden" else "古物台帳シートの形ではありません"
         print(f"古物台帳: {why}", file=sys.stderr)
         return None
-    sync_kanri(url, key, dry_run)
+    sync_extra(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
     if old == text:
         print("古物台帳: 変化なし", file=sys.stderr)
@@ -100,43 +118,49 @@ def sync(dry_run: bool = False) -> bool | None:
     return True
 
 
-def kanri_rows(text: str) -> list[dict] | None:
-    """管理シートの CSV → KANRI_COLUMNS だけの行. 管理シートの形でなければ None."""
+def pick_columns(text: str, columns: list[str]) -> list[dict] | None:
+    """シートの CSV → columns の列だけの行. 見出し（columns の1つ目と2つ目がある行）が無ければ None."""
     rows = list(csv.reader(io.StringIO(text)))
-    i = next((i for i, r in enumerate(rows[:10]) if "状態" in r and "No." in r and "販売日" in r), None)
+    norm = lambda r: [h.replace("\n", "").strip() for h in r]  # noqa: E731
+    i = next((i for i, r in enumerate(rows[:10]) if columns[0] in norm(r) and columns[1] in norm(r)), None)
     if i is None:
         return None
-    head = [h.replace("\n", "").strip() for h in rows[i]]
-    idx = {c: head.index(c) for c in KANRI_COLUMNS if c in head}
+    head = norm(rows[i])
+    idx = {c: head.index(c) for c in columns if c in head}
     out = []
     for r in rows[i + 1:]:
         d = {c: (r[j].strip() if j < len(r) else "") for c, j in idx.items()}
-        if d.get("No."):
+        if any(d.values()):
             out.append(d)
     return out
 
 
-def sync_kanri(url: str, key: str, dry_run: bool = False) -> bool | None:
-    """管理シートの No.・状態・購入日・販売日 → data/kanri.csv. 古いスクリプト（管理シートを返さない）なら None."""
-    try:
-        rows = kanri_rows(fetch(url, key, KANRI_SHEET))
-    except (urllib.error.URLError, OSError) as e:
-        print(f"管理シート: 読み込めませんでした（{e}）", file=sys.stderr)
-        return None
-    if rows is None:
-        print("管理シート: 取り込めませんでした。スプレッドシートの Apps Script が古いためです"
-              "（python3 tools/ledger_sync.py script で貼り替え）", file=sys.stderr)
-        return None
-    if dry_run:
-        print(f"管理シート: {len(rows)}行を取り込み予定", file=sys.stderr)
-        return True
-    DATA.mkdir(exist_ok=True)
-    with open(KANRI_OUT, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=KANRI_COLUMNS)
-        w.writeheader()
-        w.writerows(rows)
-    print(f"管理シート: {len(rows)}行（No.・状態・購入日・販売日）→ data/kanri.csv", file=sys.stderr)
-    return True
+def sync_extra(url: str, key: str, dry_run: bool = False) -> dict[str, int | None]:
+    """古物台帳以外のシートの必要な列 → data/*.csv. 古いスクリプト（そのシートを返さない）なら None."""
+    result: dict[str, int | None] = {}
+    for sheet, (fname, columns) in EXTRA_SHEETS.items():
+        try:
+            rows = pick_columns(fetch(url, key, sheet), columns)
+        except (urllib.error.URLError, OSError) as e:
+            print(f"{sheet}シート: 読み込めませんでした（{e}）", file=sys.stderr)
+            result[sheet] = None
+            continue
+        if rows is None:
+            print(f"{sheet}シート: 取り込めませんでした。スプレッドシートの Apps Script が古いためです"
+                  "（python3 tools/ledger_sync.py script で貼り替え）", file=sys.stderr)
+            result[sheet] = None
+            continue
+        result[sheet] = len(rows)
+        if dry_run:
+            print(f"{sheet}シート: {len(rows)}行を取り込み予定", file=sys.stderr)
+            continue
+        DATA.mkdir(exist_ok=True)
+        with open(DATA / fname, "w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=columns)
+            w.writeheader()
+            w.writerows(rows)
+        print(f"{sheet}シート: {len(rows)}行 → data/{fname}", file=sys.stderr)
+    return result
 
 
 def cmd_script() -> None:

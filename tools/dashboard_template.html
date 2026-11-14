@@ -297,13 +297,13 @@ function draw() {
   $("#meta").innerHTML = `作成 ${esc(D.generated)}・為替 1ドル＝${D.fx}円（config.toml）で円にしています・販売 ${esc(K.first)}〜${esc(K.last)}`;
 
   // ---- 概要
-  const s0 = section("kpi", "概要", "利益は推定: 販売金額 − eBay手数料（config.toml の率）− 円転ロス − 国際送料・関税・発送代行（明細があれば実額、無ければ一律 $" + D.deduction_usd + "）− 仕入金額。消費税還付は含めません");
+  const s0 = section("kpi", "概要", "利益＝eBay の手取り（ebay売上シートと一致した販売は実額、無い販売は config.toml の手数料率で推定）× 為替 − 円転ロス − 国際送料・関税・発送代行（明細があれば実額、無ければ一律 $" + D.deduction_usd + "）− 仕入金額。消費税還付は含めません");
   if (!D.has_ledger) empty(s0, "古物台帳（data/ledger.csv）がありません。<code>python3 tools/update_all.py</code> で取り込めます。");
   const g0 = grid(s0, true);
   const tiles = [
     ["販売件数", cnt(K.count), ""],
     ["売上（円換算）", yen(K.sales), "販売金額 $ × 為替"],
-    ["推定利益", yen(K.profit), K.no_cost ? `仕入金額が空の ${K.no_cost}件は仕入0円で計算` : ""],
+    ["利益", yen(K.profit), `手取りが実額 ${K.fee_actual}件・推定 ${K.count - K.fee_actual}件` + (K.no_cost ? `・仕入金額が空の ${K.no_cost}件は0円` : "")],
     ["利益率", pct(K.margin), `判断基準は ${D.min_margin}% 以上`],
     ["在庫（未販売）", cnt(K.stock), "仕入額 " + yen(K.stock_cost)],
     ["送料が実額の件数", `${K.ship_actual} / ${K.count}件`, D.has_costs ? `発送明細と No. が一致 ${K.matched}件` : "発送明細なし → 全件 一律$" + D.deduction_usd],
@@ -324,12 +324,12 @@ function draw() {
     const SC = D.sold_conditions;
     const b = card(g1, "売れた商品", `管理シートの状態欄から（台帳の No. と一致した ${D.sold_cond_matched} / ${K.count}件）`);
     donut(b.box, {items: SC, colors: SC.map(c => condColor(c.label))});
-    b.card.insertAdjacentHTML("beforeend", table([{h: "状態", f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "割合", n: 1, f: r => pct(r.count / D.sold_cond_matched * 100)}, {h: "推定利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], SC));
+    b.card.insertAdjacentHTML("beforeend", table([{h: "状態", f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "割合", n: 1, f: r => pct(r.count / D.sold_cond_matched * 100)}, {h: "利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], SC));
   } else empty(g1, D.has_kanri ? "売れた商品: 管理シートの No. と台帳の No. が一致しませんでした。" : "売れた商品: 管理シートの状態がまだ取り込まれていません。Mac で <code>python3 tools/ledger_sync.py script</code> を実行し、表示に従ってスプレッドシートの Apps Script を貼り替えてください（1回だけ）。");
   if (D.sold_conditions && D.sold_conditions.length) {
     const SC = D.sold_conditions;
     const tipC = i => `<b>${esc(SC[i].label)}</b>${SC[i].count}件・1件あたり ${yen(SC[i].avg_profit)}・利益率 ${pct(SC[i].margin)}`;
-    hbars(card(g1, "状態別の1件あたり推定利益（売れた商品）").box, {labels: SC.map(c => c.label), values: SC.map(c => c.avg_profit), fmt: man, colorFn: (v, i) => v < 0 ? "--critical" : condColor(SC[i].label), tipFn: tipC});
+    hbars(card(g1, "状態別の1件あたり利益（売れた商品）").box, {labels: SC.map(c => c.label), values: SC.map(c => c.avg_profit), fmt: man, colorFn: (v, i) => v < 0 ? "--critical" : condColor(SC[i].label), tipFn: tipC});
     hbars(card(g1, "状態別の利益率（売れた商品）", `判断基準 ${D.min_margin}%`).box, {labels: SC.map(c => c.label), values: SC.map(c => c.margin ?? 0), fmt: pct, colorFn: (v, i) => v < D.min_margin ? "--critical" : condColor(SC[i].label), tipFn: tipC});
   }
   if (D.conditions) {
@@ -353,20 +353,20 @@ function draw() {
   const s2 = section("monthly", "月別の売上・利益・件数", "古物台帳の販売日ごと。棒にマウスを乗せると数字が出ます");
   if (D.monthly.length) {
     const g2 = grid(s2), M = D.monthly, lab = M.map(m => m.month.slice(2).replace("-", "/"));
-    const tipM = i => `<b>${esc(M[i].month)}</b>売上 ${yen(M[i].sales)}<br>推定利益 ${yen(M[i].profit)}<br>${M[i].count}件・利益率 ${pct(M[i].margin)}`;
+    const tipM = i => `<b>${esc(M[i].month)}</b>売上 ${yen(M[i].sales)}<br>利益 ${yen(M[i].profit)}<br>${M[i].count}件・利益率 ${pct(M[i].margin)}`;
     columns(card(g2, "売上（円）").box, {labels: lab, values: M.map(m => m.sales), fmt: yen, tipFn: tipM});
-    columns(card(g2, "推定利益（円）").box, {labels: lab, values: M.map(m => m.profit), fmt: yen, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipM});
+    columns(card(g2, "利益（円）").box, {labels: lab, values: M.map(m => m.profit), fmt: yen, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipM});
     columns(card(g2, "販売件数").box, {labels: lab, values: M.map(m => m.count), fmt: cnt, axisFmt: v => v, tipFn: tipM});
     const mc = card(g2, "利益率（%）", `基準 ${D.min_margin}% を下回る月は赤い棒`);
     columns(mc.box, {labels: lab, values: M.map(m => m.margin ?? 0), fmt: pct, axisFmt: v => v + "%", colorFn: v => v < D.min_margin ? "--critical" : "--s1", tipFn: tipM});
-    mc.card.insertAdjacentHTML("beforeend", table([{h: "月", f: r => r.month}, {h: "件数", n: 1, f: r => r.count}, {h: "売上", n: 1, f: r => yen(r.sales)}, {h: "推定利益", n: 1, f: r => yen(r.profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], M));
+    mc.card.insertAdjacentHTML("beforeend", table([{h: "月", f: r => r.month}, {h: "件数", n: 1, f: r => r.count}, {h: "売上", n: 1, f: r => yen(r.sales)}, {h: "利益", n: 1, f: r => yen(r.profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], M));
   }
 
   // ---- 12. 今月の累計
   const C = D.cumulative;
   const s12 = section("pace", `今月（${C.month}）の累計と目標ペース`, C.target_sales || C.target_profit ? "目標ペース＝目標を月の日数で割って日ごとに積み上げた線" : "目標は data/targets.toml に書くと線が出ます（例は下）");
   const g12 = grid(s12), days = Array.from({length: C.days}, (_, i) => i + 1);
-  for (const [key, name, target, lastKey] of [["sales", "売上の累計（円）", C.target_sales, "last_sales"], ["profit", "推定利益の累計（円）", C.target_profit, "last_profit"]]) {
+  for (const [key, name, target, lastKey] of [["sales", "売上の累計（円）", C.target_sales, "last_sales"], ["profit", "利益の累計（円）", C.target_profit, "last_profit"]]) {
     const series = [{name: "今月", values: C[key], c: "--s1"}, {name: "先月", values: C[lastKey], c: "--s2", dim: 1}];
     if (target) series.push({name: "目標ペース", values: days.map(d => Math.round(target * d / C.days)), c: "--muted", dash: 1});
     const cc = card(g12, name);
@@ -392,7 +392,7 @@ function draw() {
     columns(c6b.box, {labels: D.margin_bins.map(b => b.label), values: D.margin_bins.map(b => b.count), fmt: cnt, axisFmt: v => v, labelEvery: 1,
       colorFn: (v, i) => i === 0 ? "--critical" : i <= 2 ? "--warning" : "--s1"});
     if (D.worst.length) s6.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>基準を下回った販売（利益の低い順・最大10件）</h3>` +
-      `<div class="tbl-wrap"><table><tr><th>販売日</th><th>品目</th><th class="n">販売金額</th><th class="n">推定利益</th><th class="n">利益率</th></tr>` +
+      `<div class="tbl-wrap"><table><tr><th>販売日</th><th>品目</th><th class="n">販売金額</th><th class="n">利益</th><th class="n">利益率</th></tr>` +
       D.worst.map(w => `<tr><td>${esc(w.sold)}</td><td>${esc(w.title)}</td><td class="n">$${w.price_usd}</td><td class="n">${yen(w.profit)}</td><td class="n">${pct(w.margin)}</td></tr>`).join("") + `</table></div></div>`);
   }
 
@@ -400,12 +400,12 @@ function draw() {
   const s7 = section("price", "価格帯別（いくらの商品が儲かるか）", "販売金額（$）の帯ごと");
   if (K.count) {
     const g7 = grid(s7), P = D.price_band, lab = P.map(p => p.label);
-    const tipP = i => `<b>${esc(P[i].label)}</b>${P[i].count}件・推定利益 ${yen(P[i].profit)}<br>1件あたり ${yen(P[i].avg_profit)}・利益率 ${pct(P[i].margin)}`;
+    const tipP = i => `<b>${esc(P[i].label)}</b>${P[i].count}件・利益 ${yen(P[i].profit)}<br>1件あたり ${yen(P[i].avg_profit)}・利益率 ${pct(P[i].margin)}`;
     columns(card(g7, "件数").box, {labels: lab, values: P.map(p => p.count), fmt: cnt, axisFmt: v => v, labelEvery: 1, tipFn: tipP});
-    columns(card(g7, "1件あたりの推定利益（円）").box, {labels: lab, values: P.map(p => p.avg_profit), fmt: yen, labelEvery: 1, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipP});
+    columns(card(g7, "1件あたりの利益（円）").box, {labels: lab, values: P.map(p => p.avg_profit), fmt: yen, labelEvery: 1, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipP});
     const c7 = card(g7, "利益率（%）");
     columns(c7.box, {labels: lab, values: P.map(p => p.margin ?? 0), fmt: pct, axisFmt: v => v + "%", labelEvery: 1, colorFn: v => v < D.min_margin ? "--critical" : "--s1", tipFn: tipP});
-    c7.card.insertAdjacentHTML("beforeend", table([{h: "価格帯", f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "推定利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], P));
+    c7.card.insertAdjacentHTML("beforeend", table([{h: "価格帯", f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], P));
   }
 
   // ---- 3. メーカー・種類
@@ -413,11 +413,11 @@ function draw() {
   if (K.count) {
     const g3 = grid(s3);
     for (const [arr, name] of [[D.brand, "メーカー"], [D.kind, "種類"]]) {
-      const tipB = i => `<b>${esc(arr[i].label)}</b>${arr[i].count}件・推定利益 ${yen(arr[i].profit)}<br>1件あたり ${yen(arr[i].avg_profit)}・利益率 ${pct(arr[i].margin)}`;
-      hbars(card(g3, `${name}別の販売件数`).box, {labels: arr.map(b => b.label), values: arr.map(b => b.count), fmt: v => v + "件", tipFn: tipB});
-      const c = card(g3, `${name}別の推定利益（合計）`);
+      const tipB = i => `<b>${esc(arr[i].label)}</b>${arr[i].count}件・利益 ${yen(arr[i].profit)}<br>1件あたり ${yen(arr[i].avg_profit)}・利益率 ${pct(arr[i].margin)}`;
+      hbars(card(g3, `${name}別の販売件数`, name === "種類" ? `出品情報シートの商品種別（${D.kind_from_sheet}件）。無いものは品目名から` : "").box, {labels: arr.map(b => b.label), values: arr.map(b => b.count), fmt: v => v + "件", tipFn: tipB});
+      const c = card(g3, `${name}別の利益（合計）`);
       hbars(c.box, {labels: arr.map(b => b.label), values: arr.map(b => b.profit), fmt: man, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipB});
-      c.card.insertAdjacentHTML("beforeend", table([{h: name, f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "推定利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], arr));
+      c.card.insertAdjacentHTML("beforeend", table([{h: name, f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], arr));
     }
   }
 
@@ -425,11 +425,34 @@ function draw() {
   const s8 = section("models", "機種ランキング", "同じ機種は品目名から自動でまとめています");
   if (K.count) {
     const g8 = grid(s8);
-    for (const [arr, name, key, fmt] of [[D.top_profit, "推定利益の合計 Top10", "profit", man], [D.top_count, "販売回数 Top10", "count", v => v + "回"]]) {
+    for (const [arr, name, key, fmt] of [[D.top_profit, "利益の合計 Top10", "profit", man], [D.top_count, "販売回数 Top10", "count", v => v + "回"]]) {
       hbars(card(g8, name).box, {labels: arr.map(b => b.label), values: arr.map(b => b[key]), fmt, color: key === "profit" ? "--s3" : "--s1",
-        tipFn: i => `<b>${esc(arr[i].label)}</b>${arr[i].count}回・推定利益 ${yen(arr[i].profit)}<br>1件あたり ${yen(arr[i].avg_profit)}・利益率 ${pct(arr[i].margin)}`});
+        tipFn: i => `<b>${esc(arr[i].label)}</b>${arr[i].count}回・利益 ${yen(arr[i].profit)}<br>1件あたり ${yen(arr[i].avg_profit)}・利益率 ${pct(arr[i].margin)}`});
     }
   }
+
+  // ---- 実際の手取り（ebay売上シート）
+  const sa = section("actual", "実際の手取り・返品", D.actual ? `ebay売上シート（eBay の取引レポート。${esc(D.actual.since)}〜）と台帳の No. が一致した ${D.actual.n}件` : "");
+  if (D.actual) {
+    const A = D.actual, diff = A.profit - A.profit_est;
+    sa.insertAdjacentHTML("beforeend", `<div class="grid k">` + [
+      ["実額で計算した利益", yen(A.profit), `${A.n}件`],
+      ["同じ件数の推定との差", (diff >= 0 ? "+" : "") + yen(diff), `推定 ${yen(A.profit_est)}。${diff < 0 ? "推定より実際が少ない" : "推定より実際が多い"}`],
+      ["実際の手数料率", pct(A.fee_rate), `販売額に対する手数料＋広告費。config.toml は ${A.fee_rate_cfg}%`],
+      ["広告費（Promoted）", "$" + A.promo_usd.toLocaleString(), "注文に結び付いた分"],
+      ["返金", "$" + A.refund_usd.toLocaleString(), "利益には含めて計算済み"],
+    ].map(([l, v, h]) => `<div class="card tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="hint">${esc(h)}</div></div>`).join("") + `</div>`);
+  } else empty(sa, D.has_ebay ? "ebay売上シートの Custom label と台帳の No. が一致しませんでした。" : "ebay売上シートがまだ取り込まれていません（<code>python3 tools/ledger_sync.py script</code> でスクリプトを貼り替え）。取り込むと、手数料・広告費・返金の実額で利益を計算します。");
+  if (D.refunds && D.refunds.length) {
+    const ga = grid(sa), R = D.refunds, lab = R.map(r => r.month.slice(2).replace("-", "/"));
+    ga.style.marginTop = "16px";
+    const tipR = i => `<b>${esc(R[i].month)}</b>返金 ${R[i].count}件・${yen(R[i].jpy)}`;
+    columns(card(ga, "返金の件数（月別）").box, {labels: lab, values: R.map(r => r.count), fmt: cnt, axisFmt: v => v, labelEvery: 1, color: "--s2", tipFn: tipR});
+    const rc = card(ga, "返金額（円換算・月別）");
+    columns(rc.box, {labels: lab, values: R.map(r => r.jpy), fmt: yen, labelEvery: 1, color: "--s2", tipFn: tipR});
+    rc.card.insertAdjacentHTML("beforeend", table([{h: "日付", f: r => r.date}, {h: "No.", f: r => r.label || "—"}, {h: "返金額", n: 1, f: r => "$" + (-r.usd).toFixed(2)}], D.refund_list));
+  }
+  if (D.unassigned && D.unassigned.length) sa.insertAdjacentHTML("beforeend", `<p class="note">注文に結び付かない入出金（利益には含めていません）: ${D.unassigned.map(u => `${esc(u.label)} ${yen(u.jpy)}`).join("・")}</p>`);
 
   // ---- 10. 費用の内訳
   const s10 = section("cost", "売上の行き先（費用の内訳）", "売上（円換算）の合計が、どの費用に消えて、いくら残ったか");
@@ -450,7 +473,7 @@ function draw() {
     const cc = card(g5, "販売国", `発送明細（CPaSS）の国。明細と一致しない販売は（不明）`);
     hbars(cc.box, {labels: D.country.map(c => c.label), values: D.country.map(c => c.count), fmt: v => v + "件",
       colorFn: (v, i) => D.country[i].label === "（不明）" ? "--neutral" : "--s1",
-      tipFn: i => `<b>${esc(D.country[i].label)}</b>${D.country[i].count}件（${(D.country[i].count / K.count * 100).toFixed(0)}%）・推定利益 ${yen(D.country[i].profit)}`});
+      tipFn: i => `<b>${esc(D.country[i].label)}</b>${D.country[i].count}件（${(D.country[i].count / K.count * 100).toFixed(0)}%）・利益 ${yen(D.country[i].profit)}`});
   } else empty(g5, "販売国: 古物台帳に国の列が無く、発送明細（data/ledger_costs.csv）とも No. が一致しませんでした。明細の管理番号と台帳の No. の関係を Claude に教えてください。");
   if (D.days_to_sell) {
     columns(card(g5, "販売までの日数", `中央値 ${D.days_to_sell.median ?? "—"}日（${D.days_to_sell.n}件）`).box, {labels: D.days_to_sell.bins.map(b => b.label), values: D.days_to_sell.bins.map(b => b.count), fmt: cnt, axisFmt: v => v, labelEvery: 1});
@@ -461,13 +484,28 @@ function draw() {
   const s11 = section("weekday", "曜日別の販売件数", "販売日（台帳の日付）の曜日");
   if (K.count) columns(card(grid(s11), "").box, {labels: D.weekday.map(w => w.label), values: D.weekday.map(w => w.count), fmt: cnt, axisFmt: v => v, labelEvery: 1});
 
+  // ---- ジャンク（ヤフオク再販）
+  const sj = section("junk", "ジャンク（ヤフオク再販）", "J管理シートから。eBay の数字とは別に集計");
+  if (D.junk) {
+    const J = D.junk;
+    sj.insertAdjacentHTML("beforeend", `<div class="grid k">` + [
+      ["売れた件数", cnt(J.sold), ""], ["実販売の合計", yen(J.sale), ""],
+      ["売上−仕入の合計", yen(J.diff), J.diff < 0 ? "仕入より安く売れている" : ""], ["未販売", cnt(J.stock), "仕入 " + yen(J.stock_cost)],
+    ].map(([l, v, h]) => `<div class="card tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="hint">${esc(h)}</div></div>`).join("") + `</div>`);
+    if (J.monthly.length) {
+      const gj = grid(sj), M = J.monthly; gj.style.marginTop = "16px";
+      const tipJ = i => `<b>${esc(M[i].month)}</b>${M[i].count}件・実販売 ${yen(M[i].sale)}・売上−仕入 ${yen(M[i].diff)}`;
+      columns(card(gj, "売上−仕入（月別）").box, {labels: M.map(m => m.month.slice(2).replace("-", "/")), values: M.map(m => m.diff), fmt: yen, labelEvery: 1, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipJ});
+    }
+  } else empty(sj, "J管理シートがまだ取り込まれていません（<code>python3 tools/ledger_sync.py script</code> でスクリプトを貼り替え）。");
+
   // ---- 4. 仕入先
   const s4 = section("supplier", "仕入先（アカウント）別", "古物台帳のアカウント名ごと。上位10件＋その他");
   if (D.supplier) {
     const g4 = grid(s4), S = D.supplier;
     const tipS = i => `<b>${esc(S[i].label)}</b>${S[i].count}件・1件あたり ${yen(S[i].avg_profit)}・利益率 ${pct(S[i].margin)}`;
     hbars(card(g4, "件数").box, {labels: S.map(s => s.label), values: S.map(s => s.count), fmt: v => v + "件", tipFn: tipS});
-    hbars(card(g4, "1件あたりの推定利益").box, {labels: S.map(s => s.label), values: S.map(s => s.avg_profit), fmt: man, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipS});
+    hbars(card(g4, "1件あたりの利益").box, {labels: S.map(s => s.label), values: S.map(s => s.avg_profit), fmt: man, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipS});
   } else empty(s4, "data/ledger.csv に<b>アカウント名の列が無い</b>ため出せません。<code>python3 tools/ledger_sync.py</code> で古物台帳を取り込み直してください。");
 
   // ---- 9. 出品中の在庫
@@ -485,7 +523,8 @@ function draw() {
   const sc = section("columns", "使ったデータ");
   sc.insertAdjacentHTML("beforeend", `<div class="card"><div class="tbl-wrap"><table><tr><th>古物台帳の項目</th><th>見つかった列</th></tr>` +
     D.columns.map(c => `<tr><td>${esc(c.label)}</td><td>${c.found ? esc(c.found) : c.key === "country" && D.has_costs ? "— 無し（発送明細の国を使用）" : "<span class='status'>— 無し</span>"}</td></tr>`).join("") +
-    `</table></div><p class="note">発送明細（data/ledger_costs.csv）: ${D.has_costs ? `${K.costs_total}件・台帳の No. と一致 ${K.matched}件` : "無し"}　／　eBay 出品一覧: ${D.listings_date || "無し"}</p></div>`);
+    `</table></div><p class="note">発送明細（data/ledger_costs.csv）: ${D.has_costs ? `${K.costs_total}件・台帳の No. と一致 ${K.matched}件` : "無し"}　／　eBay 出品一覧: ${D.listings_date || "無し"}<br>` +
+    `管理シート（状態）: ${D.has_kanri ? "あり" : "無し"}　／　ebay売上シート（手取り）: ${D.has_ebay ? `あり・一致 ${K.fee_actual}件` : "無し"}　／　J管理シート: ${D.junk ? "あり" : "無し"}　／　出品情報シート（種別）: ${D.kind_from_sheet ? `一致 ${D.kind_from_sheet}件` : "無し"}</p></div>`);
   Q.forEach(f => f());
 }
 draw();

@@ -6,6 +6,9 @@
     data/ledger_costs.csv      管理番号ごとの国際送料・関税・発送代行費・販売国（build_ledger_costs.py）
     reports/listings_*.csv     eBay の出品中一覧（python3 tools/ebay_api.py listings）の一番新しいもの
     data/kanri.csv             管理シートの No.・状態・購入日・販売日（ledger_sync.py が取り込む）→ 売れた商品の状態
+    data/ebay_sales.csv        ebay売上シート（eBay の取引レポート）→ 実際の手取り（Net amount）で利益を出す
+    data/junk.csv              J管理シート → ジャンク品のヤフオク再販の成績
+    data/item_types.csv        出品情報シートの商品種別（Lens / Camera Body）→ 種類別のグラフ
     data/targets.toml          目標（任意）。例:
                                    [month]
                                    sales_jpy = 500000
@@ -65,6 +68,8 @@ COUNTRY_JA = {
     "IL": "イスラエル", "MX": "メキシコ", "BR": "ブラジル", "PL": "ポーランド", "DK": "デンマーク",
     "NO": "ノルウェー", "FI": "フィンランド", "PT": "ポルトガル", "TH": "タイ", "MY": "マレーシア",
 }
+MONTHS_EN = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+KIND_JA = {"lens": "レンズ", "camera body": "カメラ（ボディ）"}
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
 # 状態の並び（良い順）。Exc+2 以下はまとめる
 COND_ORDER = ["未使用", "TOP MINT", "MINT", "Almost MINT", "Near MINT", "Exc+5", "Exc+4", "Exc+3", "Exc+2以下",
@@ -105,7 +110,11 @@ def parse_date(v, default_year: int | None = None) -> date | None:
             return date(1899, 12, 30) + timedelta(days=int(n))
         return None
     m = re.match(r"(\d{4})\s*[/\-.年]\s*(\d{1,2})\s*[/\-.月]\s*(\d{1,2})", s)
-    if m:
+    e = re.match(r"(\d{1,2})[-\s]([A-Za-z]{3})[a-z]*[-\s,]+(\d{2,4})$", s)  # eBay のレポート: 17-Aug-26
+    if e and e.group(2).lower() in MONTHS_EN:
+        y = int(e.group(3)) + (2000 if len(e.group(3)) == 2 else 0)
+        mo, d = MONTHS_EN.index(e.group(2).lower()) + 1, int(e.group(1))
+    elif m:
         y, mo, d = map(int, m.groups())
     else:
         m = re.match(r"(\d{1,2})\s*[/月]\s*(\d{1,2})", s)
@@ -234,6 +243,72 @@ def read_kanri(path: Path) -> dict[str, dict]:
     return out
 
 
+def _csv_rows(path: Path) -> list[dict]:
+    return list(csv.DictReader(path.read_text(encoding="utf-8-sig").splitlines())) if path.exists() else []
+
+
+def read_ebay_sales(path: Path) -> dict:
+    """ebay売上（eBay の取引レポート）→ 管理番号（Custom label）ごとの実際の手取り（USD）.
+
+    Order・Other fee（広告費など）・Refund・Claim・Adjustment を合計する。Custom label が空の行は同じ注文番号の Order の
+    ラベルに付ける。Hold（一時保留）・Payout（入金）は売上ではないので数えない。"""
+    rows = _csv_rows(path)
+    if not rows:
+        return {}
+    valid = lambda v: (v or "").strip() not in ("", "--")  # noqa: E731
+    order_label = {r.get("Order number"): norm_sku(r["Custom label"]) for r in rows
+                   if r.get("Type") == "Order" and valid(r.get("Custom label")) and valid(r.get("Order number"))}
+    per: dict[str, dict] = defaultdict(lambda: {"net": 0.0, "gross": 0.0, "orders": 0, "promo": 0.0, "refund": 0.0})
+    unassigned: dict[str, float] = defaultdict(float)
+    refunds, skipped_cur = [], 0
+    for r in rows:
+        typ = (r.get("Type") or "").strip()
+        if typ in ("Hold", "Payout", "Transfer", "") or not valid(r.get("Net amount")):
+            continue
+        if (r.get("Payout currency") or "USD").strip() not in ("USD", "--", ""):
+            skipped_cur += 1
+            continue
+        amt = _num(r["Net amount"]) or 0.0
+        label = norm_sku(r["Custom label"]) if valid(r.get("Custom label")) else order_label.get(r.get("Order number"))
+        day = parse_date(r.get("Transaction creation date"))
+        if typ == "Refund":
+            refunds.append({"date": day.strftime("%Y/%m/%d") if day else "", "label": label or "", "usd": amt})
+        if not label:
+            unassigned[typ] += amt
+            continue
+        p = per[label]
+        p["net"] += amt
+        if typ == "Order":
+            p["orders"] += 1
+            p["gross"] += _num(r.get("Gross transaction amount")) or 0.0
+        elif typ == "Refund":
+            p["refund"] += amt
+        elif "promoted" in (r.get("Description") or "").lower():
+            p["promo"] += amt
+    return {"per": dict(per), "unassigned": dict(unassigned), "refunds": refunds, "skipped_currency": skipped_cur,
+            "first": min((d for d in (parse_date(r.get("Transaction creation date")) for r in rows) if d), default=None)}
+
+
+def read_item_types(path: Path) -> dict[str, str]:
+    out = {}
+    for r in _csv_rows(path):
+        t = KIND_JA.get((r.get("商品種別") or "").strip().lower())
+        if r.get("管理番号") and t:
+            out[norm_sku(r["管理番号"])] = t
+    return out
+
+
+def read_junk(path: Path) -> list[dict]:
+    out = []
+    for r in _csv_rows(path):
+        if not (r.get("No.") or "").strip():
+            continue
+        out.append({"cost": _num(r.get("仕入(円)")) or 0.0, "sale": _num(r.get("実販売(円)")),
+                    "diff": _num(r.get("売上−仕入(円)")), "buy": parse_date(r.get("購入日")),
+                    "sold": parse_date(r.get("販売日")), "where": (r.get("保管") or "").strip()})
+    return out
+
+
 def brand_of(title: str) -> str:
     toks = appraise.title_to_query(title, 20).split()
     known = {b.lower() for b in appraise.BRANDS_EN.values()} | {"zeiss", "carl"}
@@ -277,10 +352,12 @@ def bin_label(v: float, bins) -> str:
 # 利益（appraise.calculate と同じ手数料率。送料は明細があれば実額、無ければ config の一律差し引き）
 # ---------------------------------------------------------------------------
 
-def profit_parts(price_usd: float, cost_jpy: float | None, cfg: dict, fx: float, actual: dict | None) -> dict:
+def profit_parts(price_usd: float, cost_jpy: float | None, cfg: dict, fx: float, actual: dict | None,
+                 net_usd: float | None = None) -> dict:
+    """1件の利益の内訳（円）. net_usd（eBay の実際の手取り）があれば手数料・広告費・返金はその実額、無ければ config の率で推定."""
     e = cfg["ebay"]
     fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
-    fees_usd = price_usd * fee_pct / 100 + e["per_order_fee_usd"]
+    fees_usd = price_usd * fee_pct / 100 + e["per_order_fee_usd"] if net_usd is None else price_usd - net_usd
     loss = (price_usd - fees_usd) * fx * cfg["fx"]["conversion_loss_pct"] / 100
     ship_actual = actual and actual.get("ship")
     ship = ship_actual if ship_actual else cfg["shipping"].get("deduction_usd", 30) * fx
@@ -290,7 +367,8 @@ def profit_parts(price_usd: float, cost_jpy: float | None, cfg: dict, fx: float,
     cost = cost_jpy or 0.0
     profit = sale - fees_usd * fx - loss - ship - duty - aucrevo - cost
     return {"sale": sale, "fees": fees_usd * fx, "loss": loss, "ship": ship, "duty": duty, "aucrevo": aucrevo,
-            "cost": cost, "profit": profit, "ship_is_actual": bool(ship_actual), "has_cost": cost_jpy is not None}
+            "cost": cost, "profit": profit, "ship_is_actual": bool(ship_actual), "has_cost": cost_jpy is not None,
+            "fee_is_actual": net_usd is not None}
 
 
 # ---------------------------------------------------------------------------
@@ -324,14 +402,22 @@ def _group(rows: list[dict], key, top: int | None = None) -> list[dict]:
 
 
 def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], listings_date: str,
-          targets: dict, cfg: dict, fx: float, today: date, kanri: dict | None = None) -> dict:
+          targets: dict, cfg: dict, fx: float, today: date, kanri: dict | None = None,
+          ebay: dict | None = None, item_types: dict | None = None, junk: list | None = None) -> dict:
     j = cfg["judge"]
     sold = [r for r in ledger if r["sold"]]
     stock = [r for r in ledger if not r["sold"]]
+    ebay = ebay or {}
+    per = ebay.get("per", {})
     for r in sold:
-        actual = costs.get(norm_sku(r["sku"])) if r["sku"] else None
+        key = norm_sku(r["sku"]) if r["sku"] else ""
+        actual = costs.get(key) if key else None
         r["matched"] = actual is not None
-        r["p"] = profit_parts(r["price_usd"], r["cost_jpy"], cfg, fx, actual)
+        e = per.get(key) if key else None
+        net = e["net"] if e and e["orders"] else None
+        r["p"] = profit_parts(r["price_usd"], r["cost_jpy"], cfg, fx, actual, net)
+        r["p_est"] = profit_parts(r["price_usd"], r["cost_jpy"], cfg, fx, actual) if net is not None else r["p"]
+        r["ebay"] = e if net is not None else None
         r["margin"] = r["p"]["profit"] / r["p"]["sale"] * 100 if r["p"]["sale"] else 0.0
         r["country_code"] = (r["country"] or (actual or {}).get("country") or "").strip()
     d: dict = {"generated": datetime.now().strftime("%Y/%m/%d %H:%M"), "fx": fx,
@@ -348,6 +434,7 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
                 "no_cost": sum(1 for r in sold if not r["p"]["has_cost"]),
                 "ship_actual": sum(1 for r in sold if r["p"]["ship_is_actual"]),
                 "matched": sum(1 for r in sold if r["matched"]), "costs_total": len(costs),
+                "fee_actual": sum(1 for r in sold if r["p"]["fee_is_actual"]),
                 "stock": len(stock), "stock_cost": round(sum(r["cost_jpy"] or 0 for r in stock)),
                 "first": min((r["sold"] for r in sold), default=None), "last": max((r["sold"] for r in sold), default=None)}
     for k in ("first", "last"):
@@ -396,7 +483,9 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
 
     # 分類別
     d["brand"] = _group(sold, lambda r: brand_of(r["title"]), top=10)
-    d["kind"] = _group(sold, lambda r: kind_of(r["title"]))
+    item_types = item_types or {}
+    d["kind"] = _group(sold, lambda r: item_types.get(norm_sku(r["sku"])) or kind_of(r["title"]))
+    d["kind_from_sheet"] = sum(1 for r in sold if item_types.get(norm_sku(r["sku"])))
     d["supplier"] = _group(sold, lambda r: r["supplier"] or "（空欄）", top=10) if cols.get("supplier") else None
     d["country"] = (_group(sold, lambda r: COUNTRY_JA.get(r["country_code"], r["country_code"] or "（不明）"), top=8)
                     if cols.get("country") or costs else None)
@@ -437,7 +526,7 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
         d["days_to_sell"] = d["stock_days"] = None
 
     # 費用の内訳（売上の行き先）
-    keys = [("cost", "仕入"), ("fees", "eBay手数料"), ("ship", "国際送料"), ("duty", "関税等"),
+    keys = [("cost", "仕入"), ("fees", "eBay手数料・広告・返金"), ("ship", "国際送料"), ("duty", "関税等"),
             ("aucrevo", "発送代行"), ("loss", "円転ロス"), ("profit", "利益")]
     d["breakdown"] = [{"key": k, "label": lab, "value": round(sum(r["p"][k] for r in sold))} for k, lab in keys]
 
@@ -463,6 +552,53 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
                         "clean_avg": avg(clean), "clean_margin": mg(clean)}
     else:
         d["sold_conditions"] = d["stock_conditions"] = d["optical"] = None
+
+    # 実際の手取り（ebay売上）と推定の比較・返金・注文に結び付かない費用
+    act = [r for r in sold if r["ebay"]]
+    d["has_ebay"] = bool(per)
+    if act:
+        gross = sum(r["ebay"]["gross"] for r in act)
+        net = sum(r["ebay"]["net"] - r["ebay"]["refund"] for r in act)  # 手数料率は返金を除いて見る
+        e = cfg["ebay"]
+        d["actual"] = {
+            "n": len(act), "since": ebay["first"].strftime("%Y/%m/%d") if ebay.get("first") else "",
+            "profit": round(sum(r["p"]["profit"] for r in act)), "profit_est": round(sum(r["p_est"]["profit"] for r in act)),
+            "fee_rate": round((1 - net / gross) * 100, 1) if gross else None,
+            "fee_rate_cfg": round(e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"], 2),
+            "promo_usd": round(-sum(r["ebay"]["promo"] for r in act), 2),
+            "refund_usd": round(-sum(r["ebay"]["refund"] for r in act), 2),
+        }
+    else:
+        d["actual"] = None
+    if per:
+        rf = defaultdict(lambda: {"count": 0, "usd": 0.0})
+        for x in ebay.get("refunds", []):
+            if x["date"] and x["usd"] < 0:
+                m = x["date"][:7].replace("/", "-")
+                rf[m]["count"] += 1
+                rf[m]["usd"] += -x["usd"]
+        d["refunds"] = [{"month": m, "count": v["count"], "jpy": round(v["usd"] * fx)} for m, v in sorted(rf.items())]
+        d["refund_list"] = [x for x in ebay.get("refunds", []) if x["usd"] < 0]
+        d["unassigned"] = [{"label": k, "jpy": round(v * fx)} for k, v in ebay.get("unassigned", {}).items() if round(v * fx)]
+    else:
+        d["refunds"] = d["refund_list"] = d["unassigned"] = None
+
+    # ジャンク（ヤフオク再販。J管理シート）
+    if junk:
+        js = [j for j in junk if j["sold"] and j["sale"] is not None]
+        bym = defaultdict(lambda: {"count": 0, "sale": 0.0, "diff": 0.0})
+        for j in js:
+            b = bym[f"{j['sold'].year}-{j['sold'].month:02d}"]
+            b["count"] += 1
+            b["sale"] += j["sale"]
+            b["diff"] += j["diff"] if j["diff"] is not None else j["sale"] - j["cost"]
+        d["junk"] = {"sold": len(js), "sale": round(sum(j["sale"] for j in js)),
+                     "diff": round(sum(j["diff"] if j["diff"] is not None else j["sale"] - j["cost"] for j in js)),
+                     "stock": sum(1 for j in junk if not j["sold"]), "stock_cost": round(sum(j["cost"] for j in junk if not j["sold"])),
+                     "monthly": [{"month": m, "count": v["count"], "sale": round(v["sale"]), "diff": round(v["diff"])}
+                                 for m, v in sorted(bym.items())]}
+    else:
+        d["junk"] = None
 
     # 出品中（eBay）
     d["listings_date"] = listings_date
@@ -501,16 +637,25 @@ def main(argv=None) -> int:
     ap.add_argument("--reports", type=Path, default=REPORTS)
     ap.add_argument("--targets", type=Path, default=DATA / "targets.toml")
     ap.add_argument("--kanri", type=Path, default=DATA / "kanri.csv")
+    ap.add_argument("--ebay-sales", type=Path, default=DATA / "ebay_sales.csv")
+    ap.add_argument("--item-types", type=Path, default=DATA / "item_types.csv")
+    ap.add_argument("--junk", type=Path, default=DATA / "junk.csv")
     ap.add_argument("-o", "--out", type=Path, default=REPORTS / "dashboard.html")
     ap.add_argument("--no-open", action="store_true")
     args = ap.parse_args(argv)
 
     cfg = appraise.load_config(None)
     fx = float(cfg["fx"]["usd_jpy"])
+    if cfg["fx"].get("auto_fetch"):  # 鑑定と同じく、取れれば今日の為替で円にする
+        try:
+            fx = appraise.fetch_fx() or fx
+        except Exception:
+            pass
     ledger, cols = read_ledger(args.ledger)
     listings, ldate = latest_listings(args.reports)
     data = build(ledger, cols, read_costs(args.costs), listings, ldate, read_targets(args.targets), cfg, fx, date.today(),
-                 read_kanri(args.kanri))
+                 read_kanri(args.kanri), read_ebay_sales(args.ebay_sales), read_item_types(args.item_types),
+                 read_junk(args.junk))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(data), encoding="utf-8")
     missing = [COLUMN_LABEL[k] for k, v in cols.items() if not v and not (k == "country" and data["has_costs"])]
@@ -518,8 +663,10 @@ def main(argv=None) -> int:
           f"{data.get('listings_unique') or 0}件 → {args.out.relative_to(ROOT) if args.out.is_relative_to(ROOT) else args.out}")
     if ledger and missing:
         print(f"  古物台帳に見つからない列: {'・'.join(missing)}（そのグラフは出ません。列名を Claude に伝えると対応します）")
-    if not data["has_kanri"]:
-        print("  売れた商品の状態: data/kanri.csv がありません（python3 tools/ledger_sync.py script でスクリプトを貼り替え）")
+    if not data["has_kanri"] or not data["has_ebay"]:
+        print("  管理・ebay売上・J管理・出品情報シートが未取り込みです（python3 tools/ledger_sync.py script でスクリプトを貼り替え）")
+    if data["actual"]:
+        print(f"  実際の手取りで計算: {data['actual']['n']} / {data['kpi']['count']}件（ebay売上シートと No. が一致）")
     if not listings:
         print("  出品中の状態グラフ: eBay の出品一覧がありません（python3 tools/ebay_api.py listings で作れます）")
     if sys.platform == "darwin" and not args.no_open:

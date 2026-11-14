@@ -37,6 +37,23 @@ a002,E5/点カビ(前玉),2026/07/24,2026/10/20
 A003,AlmostMINT/チリ,2026/07/26,2026/11/02
 A005,NMINT,2026/08/10,
 """
+EBAY = """Custom label,Transaction creation date,Type,Order number,Net amount,Payout currency,Quantity,Item subtotal,Shipping and handling,Final Value Fee - fixed,Final Value Fee - variable,International fee,Gross transaction amount,Transaction currency,Description
+A001,3-Oct-26,Order,O-1,155.00,USD,1,180,0,-0.44,-21,-3,180,USD,--
+--,4-Oct-26,Other fee,O-1,-5.00,USD,--,--,--,--,--,--,-5,USD,Promoted Listings - General fee
+--,5-Oct-26,Hold,O-1,-155.00,USD,--,--,--,--,--,--,-155,USD,--
+A002,20-Oct-26,Order,O-2,100.00,USD,1,120,0,-0.44,-15,-2,120,USD,--
+A002,25-Oct-26,Refund,O-2,-100.00,USD,--,--,--,--,--,--,-120,USD,--
+--,1-Nov-26,Adjustment,--,-2.00,USD,--,--,--,--,--,--,-2,USD,--
+"""
+TYPES = """管理番号,商品種別
+A001,Lens
+A004,Camera Body
+A003,要確認
+"""
+JUNK = """No.,仕入(円),実販売(円),売上−仕入(円),購入日,販売日,保管,ヤフオク出品
+J0,"4,868","1,734","-3,134",2026/07/24,2026/10/25,オークレボ,出品：10/22
+J1,3300,,,2026/08/16,,オークレボ,
+"""
 LISTINGS = """days_listed,title,site,currency,price,watchers,quantity,sku,ebay_url
 90,Nikon F3 Body [Near MINT],US,USD,300,0,1,B1,https://www.ebay.com/itm/1
 90,Nikon F3 Body [Near MINT],UK,GBP,240,0,1,B1,https://www.ebay.com/itm/2
@@ -53,6 +70,8 @@ class TestDashboard(unittest.TestCase):
         (self.tmp / "ledger.csv").write_text(LEDGER, encoding="utf-8-sig")
         (self.tmp / "costs.csv").write_text(COSTS, encoding="utf-8")
         (self.tmp / "kanri.csv").write_text(KANRI, encoding="utf-8")
+        for name, text in (("ebay.csv", EBAY), ("types.csv", TYPES), ("junk.csv", JUNK)):
+            (self.tmp / name).write_text(text, encoding="utf-8")
         (self.tmp / "reports").mkdir()
         (self.tmp / "reports" / "listings_20261114.csv").write_text(LISTINGS, encoding="utf-8-sig")
         self.cfg = appraise.load_config(None)
@@ -61,7 +80,9 @@ class TestDashboard(unittest.TestCase):
         ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
         listings, ld = bd.latest_listings(self.tmp / "reports")
         return bd.build(ledger, cols, bd.read_costs(self.tmp / "costs.csv"), listings, ld, targets or {},
-                        self.cfg, 150.0, date(2026, 11, 14), bd.read_kanri(self.tmp / "kanri.csv"))
+                        self.cfg, 150.0, date(2026, 11, 14), bd.read_kanri(self.tmp / "kanri.csv"),
+                        bd.read_ebay_sales(self.tmp / "ebay.csv"), bd.read_item_types(self.tmp / "types.csv"),
+                        bd.read_junk(self.tmp / "junk.csv"))
 
     def test_columns_real_header(self):
         _, cols = bd.read_ledger(self.tmp / "ledger.csv")
@@ -120,6 +141,33 @@ class TestDashboard(unittest.TestCase):
         ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
         d = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14))
         self.assertIsNone(d["sold_conditions"])
+
+    def test_actual_net(self):
+        e = bd.read_ebay_sales(self.tmp / "ebay.csv")
+        self.assertAlmostEqual(e["per"]["A001"]["net"], 150.0)  # 注文 155 − 広告 5（Hold は数えない）
+        self.assertAlmostEqual(e["per"]["A002"]["net"], 0.0)    # 返金で相殺
+        self.assertEqual(e["unassigned"], {"Adjustment": -2.0})
+        self.assertEqual(e["first"], date(2026, 10, 3))
+        d = self.data()
+        self.assertEqual(d["kpi"]["fee_actual"], 2)
+        self.assertEqual(d["actual"]["n"], 2)
+        self.assertEqual(d["refunds"], [{"month": "2026-10", "count": 1, "jpy": 15000}])
+        # 実額の利益 = 手取り150ドル×150円×(1−円転ロス) − 送料3200 − 発送代行500 − 仕入8000
+        a1 = bd.profit_parts(180, 8000, self.cfg, 150.0, {"ship": 3200, "duty": 0, "aucrevo": 500}, 150.0)
+        loss = self.cfg["fx"]["conversion_loss_pct"] / 100
+        self.assertAlmostEqual(a1["profit"], 150 * 150 * (1 - loss) - 3200 - 500 - 8000, places=6)
+        self.assertAlmostEqual(sum(a1[k] for k in ("cost", "fees", "ship", "duty", "aucrevo", "loss", "profit")), a1["sale"], places=6)
+
+    def test_kind_from_sheet_and_junk(self):
+        d = self.data()
+        kinds = {k["label"]: k["count"] for k in d["kind"]}
+        self.assertEqual(kinds["レンズ"], 3)  # A001（シート）＋ A002・A003（要確認 → 品目名の mm で レンズ）
+        self.assertEqual(kinds["カメラ（ボディ）"], 1)
+        self.assertEqual(d["kind_from_sheet"], 2)
+        self.assertEqual((d["junk"]["sold"], d["junk"]["diff"], d["junk"]["stock"]), (1, -3134, 1))
+
+    def test_ebay_date(self):
+        self.assertEqual(bd.parse_date("17-Aug-26"), date(2026, 8, 17))
 
     def test_country_from_costs(self):
         labels = {c["label"] for c in self.data()["country"]}
