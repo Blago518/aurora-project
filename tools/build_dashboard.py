@@ -9,6 +9,8 @@
     data/ebay_sales.csv        ebay売上シート（eBay の取引レポート）→ 実際の手取り（Net amount）で利益を出す
     data/junk.csv              J管理シート → ジャンク品のヤフオク再販の成績
     data/item_types.csv        出品情報シートの商品種別（Lens / Camera Body）→ 種類別のグラフ
+    data/monthly_costs.csv     （任意）月ごとの送料・関税・発送代行の実額（列: 月,CPaSS,関税,オークレボ）。
+                               発送明細（ledger_costs.csv）が無いときに、推定（一律 $30）と比べるのに使う
     data/targets.toml          目標（任意）。例:
                                    [month]
                                    sales_jpy = 500000
@@ -309,6 +311,16 @@ def read_junk(path: Path) -> list[dict]:
     return out
 
 
+def read_monthly_costs(path: Path) -> dict[str, float]:
+    """月 → 送料・関税・発送代行の実額の合計（円）."""
+    out = {}
+    for r in _csv_rows(path):
+        m = parse_date((r.get("月") or "") + "/1")
+        if m:
+            out[f"{m.year}-{m.month:02d}"] = sum(_num(r.get(k)) or 0.0 for k in ("CPaSS", "関税", "オークレボ"))
+    return out
+
+
 def brand_of(title: str) -> str:
     toks = appraise.title_to_query(title, 20).split()
     known = {b.lower() for b in appraise.BRANDS_EN.values()} | {"zeiss", "carl"}
@@ -403,7 +415,8 @@ def _group(rows: list[dict], key, top: int | None = None) -> list[dict]:
 
 def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], listings_date: str,
           targets: dict, cfg: dict, fx: float, today: date, kanri: dict | None = None,
-          ebay: dict | None = None, item_types: dict | None = None, junk: list | None = None) -> dict:
+          ebay: dict | None = None, item_types: dict | None = None, junk: list | None = None,
+          monthly_costs: dict | None = None) -> dict:
     j = cfg["judge"]
     sold = [r for r in ledger if r["sold"]]
     stock = [r for r in ledger if not r["sold"]]
@@ -583,6 +596,26 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
     else:
         d["refunds"] = d["refund_list"] = d["unassigned"] = None
 
+    # eBay で売れたのに古物台帳に販売の記録が無い No.（台帳の記入漏れの確認用）
+    sold_keys = {norm_sku(r["sku"]) for r in sold if r["sku"]}
+    ledger_keys = {norm_sku(r["sku"]) for r in ledger if r["sku"]}
+    d["ebay_not_in_ledger"] = sorted(
+        ({"label": k, "usd": round(v["gross"], 2), "in_ledger": k in ledger_keys}
+         for k, v in per.items() if v["orders"] and v["net"] > 0 and k not in sold_keys),
+        key=lambda x: x["label"])
+
+    # 送料・関税・発送代行: 月ごとの推定と実額（data/monthly_costs.csv があれば）
+    if monthly_costs:
+        est = defaultdict(float)
+        for r in sold:
+            est[f"{r['sold'].year}-{r['sold'].month:02d}"] += r["p"]["ship"] + r["p"]["duty"] + r["p"]["aucrevo"]
+        prof = {m["month"]: m["profit"] for m in d["monthly"]}
+        d["ship_check"] = [{"month": m, "est": round(est[m]), "actual": round(a), "profit": prof.get(m, 0),
+                            "adjusted": round(prof.get(m, 0) + est[m] - a)}
+                           for m, a in sorted(monthly_costs.items()) if a or est[m]]
+    else:
+        d["ship_check"] = None
+
     # ジャンク（ヤフオク再販。J管理シート）
     if junk:
         js = [j for j in junk if j["sold"] and j["sale"] is not None]
@@ -640,6 +673,7 @@ def main(argv=None) -> int:
     ap.add_argument("--ebay-sales", type=Path, default=DATA / "ebay_sales.csv")
     ap.add_argument("--item-types", type=Path, default=DATA / "item_types.csv")
     ap.add_argument("--junk", type=Path, default=DATA / "junk.csv")
+    ap.add_argument("--monthly-costs", type=Path, default=DATA / "monthly_costs.csv")
     ap.add_argument("-o", "--out", type=Path, default=REPORTS / "dashboard.html")
     ap.add_argument("--no-open", action="store_true")
     args = ap.parse_args(argv)
@@ -655,7 +689,7 @@ def main(argv=None) -> int:
     listings, ldate = latest_listings(args.reports)
     data = build(ledger, cols, read_costs(args.costs), listings, ldate, read_targets(args.targets), cfg, fx, date.today(),
                  read_kanri(args.kanri), read_ebay_sales(args.ebay_sales), read_item_types(args.item_types),
-                 read_junk(args.junk))
+                 read_junk(args.junk), read_monthly_costs(args.monthly_costs))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(data), encoding="utf-8")
     missing = [COLUMN_LABEL[k] for k, v in cols.items() if not v and not (k == "country" and data["has_costs"])]

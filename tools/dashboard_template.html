@@ -37,7 +37,8 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.6 system-ui, -apple-system, "Hiragino Sans", "Segoe UI", sans-serif; }
-main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+main { max-width: 1180px; margin: 0 auto; padding-block: 24px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 h1 { font-size: 22px; margin: 0 0 4px; }
 h2 { font-size: 17px; margin: 36px 0 4px; }
 h3 { font-size: 14px; margin: 0 0 2px; font-weight: 600; }
@@ -308,6 +309,10 @@ function draw() {
     ["在庫（未販売）", cnt(K.stock), "仕入額 " + yen(K.stock_cost)],
     ["送料が実額の件数", `${K.ship_actual} / ${K.count}件`, D.has_costs ? `発送明細と No. が一致 ${K.matched}件` : "発送明細なし → 全件 一律$" + D.deduction_usd],
   ];
+  if (D.ship_check && D.ship_check.length) {
+    const sc = D.ship_check, adj = sc.reduce((a, r) => a + r.adjusted, 0);
+    tiles.splice(3, 0, ["送料を実額で直した利益", yen(adj), `${sc[0].month}〜${sc[sc.length - 1].month}。管理シートの月次の送料・関税・発送代行で計算`]);
+  }
   g0.innerHTML = tiles.map(([l, v, h]) => `<div class="card tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="hint">${esc(h)}</div></div>`).join("");
 
   // ---- 1. 状態
@@ -452,6 +457,12 @@ function draw() {
     columns(rc.box, {labels: lab, values: R.map(r => r.jpy), fmt: yen, labelEvery: 1, color: "--s2", tipFn: tipR});
     rc.card.insertAdjacentHTML("beforeend", table([{h: "日付", f: r => r.date}, {h: "No.", f: r => r.label || "—"}, {h: "返金額", n: 1, f: r => "$" + (-r.usd).toFixed(2)}], D.refund_list));
   }
+  if (D.ebay_not_in_ledger && D.ebay_not_in_ledger.length) {
+    const X = D.ebay_not_in_ledger;
+    sa.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>⚠ eBay で売れたのに古物台帳に販売の記録が無い（${X.length}件）</h3>` +
+      `<p class="note" style="margin:0">このページの件数・売上・利益に入っていません。古物台帳の販売日・販売金額を記入すると入ります</p>` +
+      `<p style="margin:6px 0 0;font-size:13px">${X.map(x => `${esc(x.label)}（$${x.usd}${x.in_ledger ? "" : "・台帳に行が無い"}）`).join("、")}</p></div>`);
+  }
   if (D.unassigned && D.unassigned.length) sa.insertAdjacentHTML("beforeend", `<p class="note">注文に結び付かない入出金（利益には含めていません）: ${D.unassigned.map(u => `${esc(u.label)} ${yen(u.jpy)}`).join("・")}</p>`);
 
   // ---- 10. 費用の内訳
@@ -464,6 +475,15 @@ function draw() {
       (parts.find(p => p.key === "profit").value < 0 ? `<p class="note">利益の合計がマイナスのため帯に含めていません</p>` : "") +
       table([{h: "項目", f: r => r.label}, {h: "金額", n: 1, f: r => yen(r.value)}, {h: "売上に対して", n: 1, f: r => pct(r.value / K.sales * 100)}], parts);
     c10.card.insertAdjacentHTML("beforeend", `<p class="note">国際送料: 発送明細と一致した ${K.ship_actual}件は実額、残りは一律 $${D.deduction_usd}。関税・発送代行は明細と一致した分だけ。</p>`);
+  }
+
+  if (D.ship_check && D.ship_check.length) {
+    const SCk = D.ship_check;
+    const sc = card(s10, "送料・関税・発送代行: 推定と実額（月別）", "実額は管理シートの月次サマリー（CPaSS・関税・オークレボ）。発送明細が無い販売は一律 $" + D.deduction_usd + " で推定しているため、実額との差を見て利益を読み替えてください");
+    sc.card.style.marginTop = "16px";
+    sc.box.innerHTML = `<div class="tbl-wrap"><table><tr><th>月</th><th class="n">推定</th><th class="n">実額</th><th class="n">差</th><th class="n">このページの利益</th><th class="n">実額で直した利益</th></tr>` +
+      SCk.map(r => `<tr><td>${esc(r.month)}</td><td class="n">${yen(r.est)}</td><td class="n">${yen(r.actual)}</td><td class="n">${yen(r.actual - r.est)}</td><td class="n">${yen(r.profit)}</td><td class="n"><b>${yen(r.adjusted)}</b></td></tr>`).join("") + `</table></div>` +
+      `<p class="note">実額は発送した月で集計されるため、販売月とずれることがあります</p>`;
   }
 
   // ---- 5. 販売国・販売日数

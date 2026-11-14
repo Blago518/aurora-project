@@ -166,6 +166,19 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(d["kind_from_sheet"], 2)
         self.assertEqual((d["junk"]["sold"], d["junk"]["diff"], d["junk"]["stock"]), (1, -3134, 1))
 
+    def test_not_in_ledger_and_ship_check(self):
+        (self.tmp / "e2.csv").write_text(EBAY + "Z9,1-Nov-26,Order,O-9,90.00,USD,1,100,0,--,--,--,100,USD,--\n",
+                                         encoding="utf-8")
+        ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
+        d = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14),
+                     ebay=bd.read_ebay_sales(self.tmp / "e2.csv"), monthly_costs={"2026-10": 20000.0})
+        self.assertEqual(d["ebay_not_in_ledger"], [{"label": "Z9", "usd": 100.0, "in_ledger": False}])
+        oct_ = d["ship_check"][0]
+        self.assertEqual((oct_["month"], oct_["est"], oct_["actual"]), ("2026-10", 9000, 20000))  # $30×2件×150円
+        self.assertEqual(oct_["adjusted"], oct_["profit"] - 11000)
+        (self.tmp / "mc.csv").write_text('月,CPaSS,関税,オークレボ\n2026/10,"166,585","95,162","39,930"\n', encoding="utf-8")
+        self.assertEqual(bd.read_monthly_costs(self.tmp / "mc.csv"), {"2026-10": 301677.0})
+
     def test_ebay_date(self):
         self.assertEqual(bd.parse_date("17-Aug-26"), date(2026, 8, 17))
 
