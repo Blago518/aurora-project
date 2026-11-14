@@ -386,7 +386,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
 #yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
 #yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
-#yhk .fix{margin-top:4px;white-space:nowrap}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:76px}#yhk .fix button{padding:3px 6px;margin-left:2px}
+#yhk .fix{margin-top:4px;max-width:150px;margin-left:auto}#yhk .fix input{width:58px;padding:2px 4px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:76px}#yhk .fix button{padding:3px 6px;margin-left:2px}
 #yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
 #yhk a{color:#0b5d8c;text-decoration:none}#yhk .m{font-size:15px;font-weight:800}
 #yhk .g{color:#1f7a5c}#yhk .o{color:#1b6387}#yhk .x{color:#a4473a}#yhk .s{font-size:11px;color:#6a7c8e}
@@ -532,6 +532,14 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
     return `<div class="s x">⚠ 説明文: ${d.hits.map((h) => `「…${esc(h.snip)}…」`).join(" ")}</div>`;
   }
   // 過去データの状態（自分・Chatwork の販売実績と頒布会リスト）。例: 状態: Near MINT $255 ・ Exc+++ $265
+  // 上限額で落札したときの利益（上限額の下に表示）。ストアは入札額×1.1を払う
+  function atMax(i) {
+    const c = i.calc;
+    if (!c || !c.maxBid || i.usd == null) return "";
+    const tm = i.tax ? 1 + DATA.cfg.storeTaxPct / 100 : 1;
+    const x = calculate(Object.assign({}, i, { price: Math.round(c.maxBid * tm) }), i.usd, state.fx);
+    return x.profit == null ? "" : `<div class="s" title="上限額ちょうどで落札したときの利益">この額で落札→利益${yen(x.profit)}（${x.margin}%）</div>`;
+  }
   function condLine(i) {
     const rs = (i.refs || []).filter((r) => r.tier <= 2).slice(0, 5);
     if (!rs.length) return "";
@@ -602,7 +610,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\n送料込みの$と、売れた物の状態を入れると、$${DATA.cfg.deductionUsd}を引いて計算します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
-<td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
+<td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
     const waitRow = (w) => {
@@ -615,11 +623,11 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
 <td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
-<td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div><div class="s">分岐 ${yen(c.breakeven)}</div></td>
+<td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div>${atMax(Object.assign({}, i, { calc: c, usd: w.usd }))}<div class="s">分岐 ${yen(c.breakeven)}</div></td>
 <td class="n">${yen(c.profit)}<div class="s">${c.margin != null ? c.margin + "%" : ""}</div>
 <div class="fix" title="sold を見て、売れた価格（送料込$）がこの額以上なら、そのまま［登録］。低ければ直して［登録］。同じ機種の今後の出品にも効きます">${memoInputs(w.label, `value="${w.sg}" class="sug"`, "登録")}</div></td></tr>`;
     };
-    const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th>利益(現在)</th></tr>`;
+    const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th title="今の価格のまま落札できたときの利益">利益（今の価格で落札）</th></tr>`;
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件${waits.length ? ` ・ 仮◎○ ${waits.length}件` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">続きを鑑定（残り${state.total - items.length}件）</button>` : ""}
