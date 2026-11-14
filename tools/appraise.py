@@ -853,7 +853,8 @@ def judge(item: Item) -> tuple[str, str]:
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
     now = c.get("bid_now")
-    lim = f"{c['max_bid_jpy']:,}円" + ("（税抜）" if c.get("tax_excl_bid") else "")
+    lim = f"{c['max_bid_jpy']:,}円" + (
+        f"（このまま入札。ストアなので支払いは税込{round(c['max_bid_jpy'] * 1.1):,}円）" if c.get("tax_excl_bid") else "")
     if now is None:
         return "要確認", prefix + f"現在価格不明。上限 {lim} まで"
     if now <= c["max_bid_jpy"] * 0.8:
@@ -964,7 +965,8 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "利益(現在価格)": c.get("profit_now_jpy"),
                 "利益率%": c.get("margin_now_pct"),
                 "上限入札額": c.get("max_bid_jpy"),
-                "入札額の税": ("税抜（ストア・支払いは×1.1）" if c.get("tax_excl_bid") else "税込（個人）") if c else "",
+                "入札額の税": (f"ストア: このまま入札。支払いは税込{round(c['max_bid_jpy'] * 1.1):,}円" if c.get("tax_excl_bid")
+                              else "個人: このまま入札（税なし）") if c else "",
                 "損益分岐入札額": c.get("breakeven_bid_jpy"),
                 "上限までの余裕": c.get("headroom_jpy"),
                 "注意": " / ".join(it.flags),
@@ -1012,7 +1014,7 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
             f"- 想定販売価格: {_usd(r['想定販売価格USD'])}（{r['価格の根拠'] or '根拠なし'}） → 送料差引後Net {_usd(r['Net販売価格USD'])}",
             f"- 仕入価格(現在+国内送料): {_yen(r['仕入価格(現在+国内送料)'])} / eBay手数料 {_yen(r['eBay手数料'])} / 国際送料 {_yen(r['国際送料'])}",
             f"- 利益(現在価格で落札した場合): {_yen(r['利益(現在価格)'])}（{r['利益率%'] if r['利益率%'] is not None else '-'}%）",
-            f"- **上限入札額: {_yen(r['上限入札額'])}{'（税抜・ストア）' if r['入札額の税'].startswith('税抜') else ''}**（損益分岐 {_yen(r['損益分岐入札額'])}）",
+            f"- **上限入札額: {_yen(r['上限入札額'])}**（{r['入札額の税']}）（損益分岐 {_yen(r['損益分岐入札額'])}）",
         ]
         if r["注意"]:
             lines.append(f"- 注意: {r['注意']}")
@@ -1093,7 +1095,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
   <p class="reason">{e(r['理由'])}{(' ・ ⚠ ' + e(r['注意'])) if r['注意'] else ''}</p>
   <div class="grid">
     <div><label>現在価格</label><b>{_yen(r['現在価格']) or '-'}</b><small>入札{r['入札数'] if r['入札数'] is not None else '-'}・即決{_yen(r['即決価格']) or '-'}</small></div>
-    <div class="hl"><label>上限入札額{"（税抜）" if r["入札額の税"].startswith("税抜") else ""}</label><b>{_yen(r['上限入札額']) or '-'}</b><small>損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
+    <div class="hl"><label>入札する上限額（このまま入札）</label><b>{_yen(r['上限入札額']) or '-'}</b><small>{e(r["入札額の税"])} ・ 損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
     <div><label>想定販売価格</label><b>{_usd(r['想定販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ Net {_usd(r['Net販売価格USD'])}</small></div>
     <div><label>利益（現在価格）</label><b>{_yen(r['利益(現在価格)']) or '-'}</b><small>利益率 {r['利益率%'] if r['利益率%'] is not None else '-'}%</small></div>
     <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料</small></div>
