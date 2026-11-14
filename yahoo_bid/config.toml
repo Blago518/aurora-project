@@ -16,11 +16,13 @@ per_order_fee_usd = 0.40
 # 海外決済手数料（International fee）
 international_fee_pct = 1.65
 # 広告（Promoted Listings）を使う場合の率。使わないなら 0
-ad_rate_pct = 0.0
+ad_rate_pct = 5.0
 # 手数料は「商品価格＋買い手負担送料」に掛かる。買い手から受け取る送料（USD）
 buyer_shipping_usd = 0.0
 
 [shipping]
+# 販売価格から一律で差し引く国際送料（USD）。0なら下の円建てサイズ別を使う
+deduction_usd = 30.0
 # 国際送料（円）。--ship で品目ごとに上書き可。サイズ別の目安
 default_jpy = 3500
 small_jpy = 2500     # レンズ・コンパクト等
@@ -42,7 +44,7 @@ consumption_tax_pct = 10.0
 
 [judge]
 # 入札判断の基準
-min_profit_jpy = 5000
-min_margin_pct = 15.0
+min_profit_jpy = 3000
+min_margin_pct = 10.0
 # 想定販売価格に使うeBay販売済み価格の分位（0.5=中央値。保守的にするなら 0.4 など）
 sold_price_quantile = 0.5

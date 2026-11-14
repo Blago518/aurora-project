@@ -502,10 +502,12 @@ def round_down_to_increment(price: float) -> int:
     return int(price)
 
 
-def intl_shipping(item: Item, cfg: dict) -> int:
+def intl_shipping(item: Item, cfg: dict, fx: float) -> int:
     if item.intl_shipping_jpy is not None:
         return item.intl_shipping_jpy
     s = cfg["shipping"]
+    if s.get("deduction_usd", 0) > 0:  # 販売価格から一律ドルで差し引く方式
+        return round(s["deduction_usd"] * fx)
     return int(s.get(f"{item.ship_size}_jpy", s["default_jpy"])) if item.ship_size else int(s["default_jpy"])
 
 
@@ -522,7 +524,7 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
 
     dom = item.domestic_shipping_jpy
     dom = int(y["default_domestic_shipping_jpy"]) if dom is None else dom
-    ship = intl_shipping(item, cfg)
+    ship = intl_shipping(item, cfg, fx)
     pack = int(cfg["shipping"]["packing_jpy"])
     tax_mult = 1 + y["store_tax_pct"] / 100
     refund_ratio = (
@@ -546,6 +548,7 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
     price_now = item.current_price_jpy
     out = {
         "fx": fx,
+        "net_sale_usd": round(item.expected_price_usd - cfg["shipping"].get("deduction_usd", 0), 2),
         "revenue_jpy": round(revenue_jpy),
         "fees_jpy": round(fees_usd * fx),
         "net_jpy": round(net_jpy),
@@ -674,6 +677,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "過去実績URL": " ".join(m.get("ebay_url", "") for m in it.history_matches if m.get("ebay_url")),
                 "想定販売価格USD": it.expected_price_usd,
                 "価格の根拠": it.price_source,
+                "Net販売価格USD": c.get("net_sale_usd"),
                 "仕入価格(現在+国内送料)": c.get("purchase_jpy"),
                 "eBay手数料": c.get("fees_jpy"),
                 "国際送料": c.get("intl_shipping_jpy"),
@@ -723,7 +727,7 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
             f"- eBay Product Research: {r['eBayProductResearchURL']}",
             f"- eBay相場: 販売済み中央値 {_usd(r['eBay販売済み中央値USD'])}（{r['eBay販売済み件数'] or 0}件） / 出品中最安 {_usd(r['eBay出品中最安USD'])}（{r['eBay出品中件数'] or 0}件）",
             f"- 過去の自分の実績: {r['過去実績件数'] or 0}件 {r['過去実績URL']}",
-            f"- 想定販売価格: {_usd(r['想定販売価格USD'])}（{r['価格の根拠'] or '根拠なし'}）",
+            f"- 想定販売価格: {_usd(r['想定販売価格USD'])}（{r['価格の根拠'] or '根拠なし'}） → 送料差引後Net {_usd(r['Net販売価格USD'])}",
             f"- 仕入価格(現在+国内送料): {_yen(r['仕入価格(現在+国内送料)'])} / eBay手数料 {_yen(r['eBay手数料'])} / 国際送料 {_yen(r['国際送料'])}",
             f"- 利益(現在価格で落札した場合): {_yen(r['利益(現在価格)'])}（{r['利益率%'] if r['利益率%'] is not None else '-'}%）",
             f"- **上限入札額: {_yen(r['上限入札額'])}**（損益分岐 {_yen(r['損益分岐入札額'])}）",
@@ -754,7 +758,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
   <div class="grid">
     <div><label>現在価格</label><b>{_yen(r['現在価格']) or '-'}</b><small>入札{r['入札数'] if r['入札数'] is not None else '-'}・即決{_yen(r['即決価格']) or '-'}</small></div>
     <div class="hl"><label>上限入札額</label><b>{_yen(r['上限入札額']) or '-'}</b><small>損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
-    <div><label>想定販売価格</label><b>{_usd(r['想定販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')}</small></div>
+    <div><label>想定販売価格</label><b>{_usd(r['想定販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ Net {_usd(r['Net販売価格USD'])}</small></div>
     <div><label>利益（現在価格）</label><b>{_yen(r['利益(現在価格)']) or '-'}</b><small>利益率 {r['利益率%'] if r['利益率%'] is not None else '-'}%</small></div>
     <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料</small></div>
     <div><label>eBay手数料／国際送料</label><b>{_yen(r['eBay手数料']) or '-'}</b><small>送料 {_yen(r['国際送料']) or '-'}</small></div>
