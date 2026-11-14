@@ -5,18 +5,16 @@
 
 @knowledge/CLAUDE.md
 
-## 作業のルール（必ず守る）
-- **日本語で、専門用語は噛み砕いて説明する。** ユーザーは副業で始めて1年未満。コードは主に Python。
-- **言われなくても改善する。** 使いやすさ・効率の改善点に気づいたら、その場で実施するか提案する。
-  例: リンクは文字ではなく関連する数字や名前に付ける、長いものは短く、頻繁な操作は1クリックに。
-- **利益計算は保守的に。** 相場は弱気に見積もり、赤字仕入れを防ぐことを優先する。
-  根拠の弱い相場（推定・頒布会の出品価格・ジャンク）はそう明示する。
-- **個人情報・取引情報を公開しない。** GitHub リポジトリ（aurora-research）は**公開**。
-  `data/`（販売実績・仕入値）、`knowledge/`（事業ナレッジ）、`out/`（レポート）は .gitignore 済みで、絶対にコミットしない。
-  コミット前に氏名・住所・口座・仕入値・販売実績が含まれていないか確認する。
-- 判定ロジックは **Python（bid_analyzer.py）と拡張機能（userscript_template.js）の2か所**にある。
-  片方を変えたら必ずもう片方も同じに直し、`python3 -m unittest test_bid_analyzer` の一致テストを通す。
-- 学んだこと・決めたことは `knowledge/` の該当ノートと `knowledge/意思決定ログ.md` に追記する（書き方は knowledge/CLAUDE.md）。
+## 作業のルール
+細かいルールは `.claude/rules/`（毎回自動で読み込まれる）、手順書は `.claude/skills/`、担当者は `.claude/agents/`。
+- 最重要: リポジトリは**公開**。`data/`・`knowledge/`・`out/` はコミットしない（`.claude/rules/情報管理.md`）。
+- 判定ロジックは Python と拡張機能の2か所。必ず両方直してテストする（`.claude/rules/判定ロジック.md`）。
+- 学んだこと・決めたことは `knowledge/` に追記する。
+
+## Mac での置き場所
+すべて `~/aurora-research/` にある（このフォルダ＝`~/aurora-research/yahoo_bid`）。
+- Chrome拡張機能: `~/aurora-research/yahoo_bid/out/chrome_extension`
+- Obsidian の保管庫: `~/aurora-research/yahoo_bid/knowledge`
 
 ## ファイル構成
 | ファイル | 役割 |
