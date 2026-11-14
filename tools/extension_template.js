@@ -486,7 +486,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
 #yhk a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}
 #yhk a.now,#yhk a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}
 #yhk .okb{display:inline-block;font-size:10px;font-weight:700;color:#1f6b50;background:#e3f4ec;border-radius:5px;padding:0 5px}
-#yhk .pills{display:flex;gap:4px;justify-content:flex-end}#yhk a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}
+#yhk .pills{display:flex;gap:4px;justify-content:flex-end}#yhk button.open3{margin-top:3px;font-size:11px;padding:2px 8px}#yhk a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}
 #yhk td.m{white-space:nowrap;width:58px}#yhk tr.soon td{background:#fff6ec}#yhk .hot{color:#c0392b;font-weight:700}
 #yhk .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
 .yhk-badge{display:inline-block;margin:2px 0;padding:2px 7px;border-radius:7px;font:700 12px -apple-system,sans-serif;color:#fff}
@@ -711,7 +711,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
 <div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}</div>${condLine(i)}${descLine(i.id)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
-<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div>
+<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\n送料込みの$と、売れた物の状態を入れると、$${DATA.cfg.deductionUsd}を引いて計算します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
@@ -730,7 +730,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>
 <div class="s">機種: ${esc(w.label)} ・ eBay出品中 最安$${Math.round(w.b.min || 0)}・中央値$${Math.round(w.b.med)}×${DATA.cfg.activeFactor}（${w.b.n}件）の安い方 $${w.sg}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} ＝ $${w.usd}で仮計算（sold未確認）</div>
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
-<td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
+<td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
 <td class="n"><b>${yen(c.maxBid)}</b>${bidButton(Object.assign({}, i, { calc: c }), c, w.usd, true)}<div class="s">仮（sold確認前）</div>${atMax(Object.assign({}, i, { calc: c, usd: w.usd }))}<div class="s">分岐 ${yen(c.breakeven)}</div></td>
 <td class="n">${yen(c.profit)}<div class="s">${c.margin != null ? c.margin + "%" : ""}</div>
@@ -829,6 +829,14 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const a = btn.dataset.a, root = document.getElementById("yhk");
     if (a === "min") { root.classList.toggle("min"); save(LS_OPEN, !root.classList.contains("min")); render(); }
     if (a === "all") loadAll(10000);
+    if (a === "open3") {  // ヤフオク・sold・now を今のタブの右に、この順で開く
+      let urls = [];
+      try { urls = JSON.parse(btn.dataset.urls || "[]"); } catch (e) { urls = []; }
+      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) chrome.runtime.sendMessage({ type: "openTabs", urls });
+      else urls.forEach((u) => window.open(u, "_blank", "noopener"));
+      btn.textContent = "開きました";
+      setTimeout(() => (btn.textContent = "全て開く"), 2000);
+    }
     if (a === "snipe") {
       const info = state.bidInfo[btn.dataset.id];
       if (info && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
