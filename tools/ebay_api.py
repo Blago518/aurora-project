@@ -343,35 +343,50 @@ def cmd_fees(args) -> None:
     SALE の amount は入金通貨（USD）、手数料の対象額・手数料は出品サイトの通貨（GBP・AUD のことがある）。
     通貨が混ざった合計は意味がないので、率は通貨ごとに出す。
     """
-    since = (datetime.now(timezone.utc) - timedelta(days=args.days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    rows, offset = [], 0
-    while True:
-        q = urllib.parse.urlencode({"filter": f"transactionDate:[{since}..]", "limit": 200, "offset": offset})
-        d = get_json(f"{APIZ}/sell/finances/v1/transaction?{q}", user_token())
-        for t in d.get("transactions", []):
-            intl = sum(_money(f.get("amount")) for li in t.get("orderLineItems", []) or []
-                       for f in li.get("marketplaceFees", []) or [] if "INTERNATIONAL" in f.get("feeType", ""))
-            rows.append({
-                "date": (t.get("transactionDate") or "")[:10],
-                "type": t.get("transactionType", ""),
-                "booking": t.get("bookingEntry", ""),  # CREDIT=入金 / DEBIT=引き落とし
-                "order_id": t.get("orderId", ""),
-                "amount": _money(t.get("amount")),
-                "amount_currency": _cur(t.get("amount")),
-                "amount_original": _orig(t.get("amount")),
-                "fee_basis": _money(t.get("totalFeeBasisAmount")),
-                "fee_basis_currency": _cur(t.get("totalFeeBasisAmount")),
-                "total_fee": _money(t.get("totalFeeAmount")),
-                "fee_currency": _cur(t.get("totalFeeAmount")),
-                "intl_fee": round(intl, 2),
-                "fee_type": t.get("feeType", ""),
-                "memo": t.get("transactionMemo", ""),
-                "references": _refs(t),
-                "status": t.get("transactionStatus", ""),
-            })
-        offset += 200
-        if offset >= d.get("total", 0):
-            break
+    fmt = "%Y-%m-%dT%H:%M:%S.000Z"
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=args.days)
+    # Finances API は1回に約90日分までしか返さないので、60日ずつに分けて取る
+    windows = []
+    while start < end:
+        w_end = min(start + timedelta(days=60), end)
+        windows.append((start, w_end))
+        start = w_end
+    rows, seen = [], set()
+    for w_start, w_end in windows:
+        offset = 0
+        while True:
+            q = urllib.parse.urlencode({"filter": f"transactionDate:[{w_start.strftime(fmt)}..{w_end.strftime(fmt)}]",
+                                        "limit": 200, "offset": offset})
+            d = get_json(f"{APIZ}/sell/finances/v1/transaction?{q}", user_token())
+            for t in d.get("transactions", []):
+                if t.get("transactionId") in seen:  # 期間の境目で重複しないように
+                    continue
+                seen.add(t.get("transactionId"))
+                intl = sum(_money(f.get("amount")) for li in t.get("orderLineItems", []) or []
+                           for f in li.get("marketplaceFees", []) or [] if "INTERNATIONAL" in f.get("feeType", ""))
+                rows.append({
+                    "date": (t.get("transactionDate") or "")[:10],
+                    "type": t.get("transactionType", ""),
+                    "booking": t.get("bookingEntry", ""),  # CREDIT=入金 / DEBIT=引き落とし
+                    "order_id": t.get("orderId", ""),
+                    "amount": _money(t.get("amount")),
+                    "amount_currency": _cur(t.get("amount")),
+                    "amount_original": _orig(t.get("amount")),
+                    "fee_basis": _money(t.get("totalFeeBasisAmount")),
+                    "fee_basis_currency": _cur(t.get("totalFeeBasisAmount")),
+                    "total_fee": _money(t.get("totalFeeAmount")),
+                    "fee_currency": _cur(t.get("totalFeeAmount")),
+                    "intl_fee": round(intl, 2),
+                    "fee_type": t.get("feeType", ""),
+                    "memo": t.get("transactionMemo", ""),
+                    "references": _refs(t),
+                    "status": t.get("transactionStatus", ""),
+                })
+            offset += 200
+            if offset >= d.get("total", 0):
+                break
+    rows.sort(key=lambda r: r["date"], reverse=True)
     REPORTS.mkdir(exist_ok=True)
     out = REPORTS / f"ebay_finances_{datetime.now():%Y%m%d}.csv"
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
