@@ -10,6 +10,7 @@
 2. Chatwork の販売報告を公式 API で取り込む（chatwork_sync.py。未設定なら飛ばす）
 3. 作り直す: reference_prices.csv → 拡張機能（extension/）→ スマホ用データ（store_data.json・iCloud・暗号化して自動配信）→ ナレッジ
    拡張機能で［直す］［登録］した相場（ダウンロード/aurora_price_memo.csv）もここで取り込まれる。
+4. 入札リスト: data/search_urls.txt の検索をまとめて鑑定 → reports/bid_report_*.html を開く（◎○の件数を通知）
 
 使い方（aurora フォルダで）:
     python3 tools/update_all.py
@@ -112,6 +113,7 @@ def main(argv=None) -> int:
     ap.add_argument("--days", type=int, default=90, help="この日数より古いダウンロードは見ない")
     ap.add_argument("--dry-run", action="store_true", help="取り込む内容を表示するだけ（作り直さない）")
     ap.add_argument("--notify", action="store_true", help="終わったら Mac の通知を出す（自動実行用）")
+    ap.add_argument("--no-bids", action="store_true", help="入札リスト（data/search_urls.txt の鑑定）を作らない")
     args = ap.parse_args(argv)
 
     print(f"===== {datetime.now():%Y-%m-%d %H:%M} 相場データの更新 =====")
@@ -132,11 +134,38 @@ def main(argv=None) -> int:
     ok &= run("build_extension.py")
     ok &= run("build_store.py")
     ok &= run("build_knowledge.py")
+    bids = None if args.no_bids else bid_list()
     print("\n" + ("✅ 完了" if ok else "⚠ 一部でエラーがありました"))
     print("  Chrome: chrome://extensions で「Aurora 仕入れ鑑定」の ↻（新しい相場を拡張機能に反映）")
     if args.notify:
-        notify("相場データを更新しました" if ok else "相場データの更新で一部エラー（reports/update_all.log）")
+        msg = "相場データを更新しました" if ok else "相場データの更新で一部エラー（reports/update_all.log）"
+        notify(msg + (f"／入札候補 ◎○ {bids}件" if bids is not None else ""))
     return 0 if ok else 1
+
+
+def bid_list() -> int | None:
+    """data/search_urls.txt の検索をまとめて鑑定し、入札リスト（reports/bid_report_*.html）を作って開く. ◎○の件数を返す."""
+    urls = DATA / "search_urls.txt"
+    if not urls.exists() or not urls.read_text(encoding="utf-8", errors="ignore").strip():
+        print("\n入札リスト: data/search_urls.txt が無いので作りません。主要メーカーの検索で始めるなら:\n"
+              "  cp tools/search_urls_example.txt data/search_urls.txt")
+        return None
+    reports = ROOT / "reports"
+    before = set(reports.glob("bid_report_*.csv")) if reports.exists() else set()
+    if not run("appraise.py", "--max-per-search", "500"):
+        return None
+    new = sorted(set(reports.glob("bid_report_*.csv")) - before)
+    if not new:
+        return None
+    import csv
+    rows = list(csv.DictReader(new[-1].read_text(encoding="utf-8-sig").splitlines()))
+    good = [r for r in rows if r.get("判定") in ("◎", "○")]
+    html = new[-1].with_suffix(".html")
+    print(f"\n📋 入札リスト: ◎○ {len(good)}件（全{len(rows)}件を鑑定）→ {html.relative_to(ROOT)}")
+    print("   入札は「上限入札額」をヤフオクの入札欄に入れて放置でOK（自動入札。負けても損はしない）")
+    if sys.platform == "darwin" and html.exists():
+        subprocess.call(["open", str(html)])
+    return len(good)
 
 
 def notify(msg: str) -> None:
