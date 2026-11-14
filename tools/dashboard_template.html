@@ -13,7 +13,7 @@
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --good-text: #006300;
   --q1: #0d366b; --q2: #104281; --q3: #184f95; --q4: #1c5cab; --q5: #256abf; --q6: #2a78d6; --q7: #3987e5; --q8: #5598e7; --q9: #6da7ec;
-  --neutral: #b5b3ab;
+  --neutral: #8f8d86; --neutral2: #d3d1ca;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -23,7 +23,7 @@
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
     --good-text: #0ca30c;
     --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #2a78d6; --q9: #256abf;
-    --neutral: #5f5e59;
+    --neutral: #7a7871; --neutral2: #45443f;
   }
 }
 :root[data-theme="dark"] {
@@ -33,7 +33,7 @@
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
   --good-text: #0ca30c;
   --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #2a78d6; --q9: #256abf;
-  --neutral: #5f5e59;
+  --neutral: #7a7871; --neutral2: #45443f;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.6 system-ui, -apple-system, "Hiragino Sans", "Segoe UI", sans-serif; }
@@ -227,6 +227,8 @@ const lines = lazy(function (box, {labels, series, fmt, axisFmt = man, h = 220, 
   box.appendChild(svg);
 });
 
+const isDarkTheme = () => document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+
 // ---- ドーナツ（割合）
 const donut = lazy(function (box, {items, colors, unit = "件"}) {
   const total = items.reduce((a, b) => a + b.count, 0);
@@ -241,6 +243,11 @@ const donut = lazy(function (box, {items, colors, unit = "件"}) {
     const d = items.length === 1 ? `M${c},${c - R}A${R},${R} 0 1 1 ${c - 0.01},${c - R}L${c - 0.01},${c - r}A${r},${r} 0 1 0 ${c},${c - r}Z`
       : `M${p(s, R)}A${R},${R} 0 ${large} 1 ${p(e, R)}L${p(e, r)}A${r},${r} 0 ${large} 0 ${p(s, r)}Z`;
     el("path", {d, fill: css(colors[i]), "data-tip": `<b>${esc(it.label)}</b>${it.count.toLocaleString()}${unit}（${(it.count / total * 100).toFixed(1)}%）`}, svg);
+    if (a > 0.42 && items.length > 1) {  // 7%くらいより太い区切りだけ、中に%を書く
+      const [x, y] = p(s + (e - s) / 2, (R + r) / 2);
+      const dark = !isDarkTheme() && (colors[i] === "--s4" || colors[i] === "--neutral2");  // 黄色・薄いグレーの上は黒い字
+      txt(svg, x, y + 4, Math.round(it.count / total * 100) + "%", {"text-anchor": "middle", style: `font-size:12px;font-weight:600;fill:${dark ? "#0b0b0b" : "#ffffff"};pointer-events:none`});
+    }
   });
   txt(svg, c, c - 2, total.toLocaleString(), {"text-anchor": "middle", style: `font-size:22px;font-weight:600;fill:${css("--ink")}`});
   txt(svg, c, c + 16, unit === "件" ? "件" : unit, {"text-anchor": "middle"});
@@ -316,9 +323,9 @@ function draw() {
   g0.innerHTML = tiles.map(([l, v, h]) => `<div class="card tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="hint">${esc(h)}</div></div>`).join("");
 
   // ---- 1. 状態
-  const condColor = l => ({"未使用": "--q1", "TOP MINT": "--q2", "MINT": "--q3", "Almost MINT": "--q4", "Near MINT": "--q5", "Exc+5": "--q6", "Exc+4": "--q7", "Exc+3": "--q8", "Exc+2以下": "--q9", "ジャンク": "--s2", "その他": "--neutral", "表記なし": "--neutral"})[l];
-  const isDark = document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-  const s1 = section("cond", "状態の割合（MINT 何%）", `${isDark ? "明るい" : "濃い"}青ほど良い状態。マウスを乗せると件数`);
+  // 状態ごとに違う色（並び順どおりに色の順番を割り当てる。隣どうしが見分けやすい順番）。同じ状態はどのグラフでも同じ色
+  const condColor = l => ({"未使用": "--q1", "TOP MINT": "--s1", "MINT": "--s2", "Almost MINT": "--s3", "Near MINT": "--s4", "Exc+5": "--s5", "Exc+4": "--s6", "Exc+3": "--s7", "Exc+2以下": "--s8", "ジャンク": "--neutral", "その他": "--neutral2", "表記なし": "--neutral2"})[l];
+  const s1 = section("cond", "状態の割合（MINT 何%）", "良い状態から順に並べています。マウスを乗せる（タップする）と件数");
   const g1 = grid(s1);
   if (D.conditions) {
     const a = card(g1, "出品中", `eBay の出品中一覧（${esc(D.listings_date)} 取得・${D.listings_unique}件。UK・豪州の複製は1件）。出品タイトルの MINT・Exc+ などの表記から`);
@@ -334,8 +341,8 @@ function draw() {
   if (D.sold_conditions && D.sold_conditions.length) {
     const SC = D.sold_conditions;
     const tipC = i => `<b>${esc(SC[i].label)}</b>${SC[i].count}件・1件あたり ${yen(SC[i].avg_profit)}・利益率 ${pct(SC[i].margin)}`;
-    hbars(card(g1, "状態別の1件あたり利益（売れた商品）").box, {labels: SC.map(c => c.label), values: SC.map(c => c.avg_profit), fmt: man, colorFn: (v, i) => v < 0 ? "--critical" : condColor(SC[i].label), tipFn: tipC});
-    hbars(card(g1, "状態別の利益率（売れた商品）", `判断基準 ${D.min_margin}%`).box, {labels: SC.map(c => c.label), values: SC.map(c => c.margin ?? 0), fmt: pct, colorFn: (v, i) => v < D.min_margin ? "--critical" : condColor(SC[i].label), tipFn: tipC});
+    hbars(card(g1, "状態別の1件あたり利益（売れた商品）").box, {labels: SC.map(c => c.label), values: SC.map(c => c.avg_profit), fmt: v => man(v) + (v < 0 ? " ⚠ 赤字" : ""), colorFn: (v, i) => condColor(SC[i].label), tipFn: tipC});
+    hbars(card(g1, "状態別の利益率（売れた商品）", `判断基準 ${D.min_margin}%`).box, {labels: SC.map(c => c.label), values: SC.map(c => c.margin ?? 0), fmt: v => pct(v) + (v < D.min_margin ? " ⚠ 基準未満" : ""), colorFn: (v, i) => condColor(SC[i].label), tipFn: tipC});
   }
   if (D.conditions) {
     const b = card(g1, "状態別の平均ウォッチ数（出品中）", "ウォッチが多い状態＝関心を集めやすい");
