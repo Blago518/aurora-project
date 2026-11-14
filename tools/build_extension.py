@@ -58,7 +58,7 @@ def build_data(cfg: dict, fx: float) -> dict:
                             if t["include_consumption_tax_refund"] else 0.0),
             "minProfit": j["min_profit_jpy"], "minMarginPct": j["min_margin_pct"],
             "junkFactor": j.get("junk_price_factor", 1.0),
-            "activeFactor": j.get("active_price_factor", 0.7), "activeMinCount": j.get("active_min_count", 3),
+            "activeFactor": j.get("active_price_factor", 0.7), "activeMinCount": j.get("active_min_count", 5),
             "browse": False,  # eBay のキーがあれば main() で True にする
         },
         "consts": {

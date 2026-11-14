@@ -26,7 +26,7 @@ async function appToken() {
 const median = (a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 async function browse(q) {
-  const key = "browse:" + q.toLowerCase();
+  const key = "browse2:" + q.toLowerCase();  // 集計方法を変えたら番号を上げて読み直す
   const cached = (await chrome.storage.local.get(key))[key];
   if (cached && Date.now() - cached.t < CACHE_MS) return cached;
   const params = new URLSearchParams({ q, limit: "100", filter: "buyingOptions:{FIXED_PRICE|AUCTION},conditions:{USED}" });
@@ -39,9 +39,19 @@ async function browse(q) {
   const ql = q.toLowerCase();
   const words = EXCLUDE_WORDS.filter((w) => !ql.includes(w));
   const re = new RegExp("\\b(" + words.map((w) => w.replace(/ /g, "\\s+")).join("|") + ")\\b", "i");
+  // 検索語の焦点距離（28mm・80-200mm）と F値（F2.8）が、タイトルにも入っている出品だけ使う（別のレンズが混ざらないように）
+  const specs = [];
+  // 焦点距離: 「28mm」「28 mm」、Zeiss 式の「2.8/28」も可。F値: 「F2.8」「f/2.8」「1:2.8」「2.8/28」「135mm 2.8」も可
+  for (const m of q.matchAll(/(\d+(?:-\d+)?)\s*mm/gi)) {
+    const n = m[1].replace("-", "\\s*-\\s*");
+    specs.push(new RegExp("(^|[^\\d.])" + n + "\\s*mm|\\/\\s*" + n + "(?![\\d.])", "i"));
+  }
+  for (const m of q.matchAll(/\bf\/?\s*(\d+(?:\.\d+)?)/gi))
+    specs.push(new RegExp("(^|[^\\d.])" + m[1].replace(".", "\\.") + "(?![\\d])", "i"));
   let totals = [], jp = 0;
   for (const it of d.itemSummaries || []) {
     if (!it.price || it.price.currency !== "USD" || re.test(it.title || "")) continue;
+    if (!specs.every((r) => r.test(it.title || ""))) continue;
     const ships = (it.shippingOptions || []).map((s) => Number(s.shippingCost && s.shippingCost.value)).filter((v) => !isNaN(v));
     totals.push(Number(it.price.value) + (ships.length ? Math.min(...ships) : 0));
     if ((it.itemLocation || {}).country === "JP") jp++;
