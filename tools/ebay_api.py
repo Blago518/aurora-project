@@ -8,9 +8,9 @@
     python3 tools/ebay_api.py setup        # App ID・Cert ID・RuName を入力してキーチェーンに保存（初回）
     python3 tools/ebay_api.py login        # ブラウザで自分の eBay アカウントの利用を許可（初回・約1年半ごと）
     python3 tools/ebay_api.py check        # 接続確認
-    python3 tools/ebay_api.py orders       # 自分の売上（直近90日）→ data/ebay_sales.csv（相場データに自動で入る）
+    python3 tools/ebay_api.py orders       # 自分の売上（直近90日）→ reports/ebay_orders_*.csv（金額は currency 列の通貨）
     python3 tools/ebay_api.py listings     # 自分の出品中の一覧（在庫日数順）→ reports/listings_*.csv
-    python3 tools/ebay_api.py fees         # 実際の手数料率を集計 → config.toml に入れる値を提案
+    python3 tools/ebay_api.py fees         # 取引明細 → reports/ebay_finances_*.csv、手数料率を通貨ごとに集計
     python3 tools/ebay_api.py browse "Nikon FM2"   # 出品中の相場（公式 Browse API）
 
 保存しない情報: 購入者の名前・住所・ユーザー名（国だけ保存）。
@@ -193,6 +193,16 @@ def _money(d: dict | None) -> float:
         return 0.0
 
 
+def _cur(d: dict | None) -> str:
+    return (d or {}).get("currency", "")
+
+
+def _orig(d: dict | None) -> str:
+    """通貨換算があったときの元の金額（例: "93.43 AUD"）。無ければ空."""
+    d = d or {}
+    return f"{d['convertedFromValue']} {d.get('convertedFromCurrency', '')}" if d.get("convertedFromValue") else ""
+
+
 def fetch_orders(days: int) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     rows, offset = [], 0
@@ -203,16 +213,26 @@ def fetch_orders(days: int) -> list[dict]:
             ship_to = ((o.get("fulfillmentStartInstructions") or [{}])[0].get("shippingStep") or {}).get("shipTo") or {}
             country = (ship_to.get("contactAddress") or {}).get("countryCode", "")
             for li in o.get("lineItems", []):
-                ship = _money((li.get("deliveryCost") or {}).get("shippingCost"))
+                ship_d = (li.get("deliveryCost") or {}).get("shippingCost")
+                item_d = li.get("lineItemCost")
+                total_d = (o.get("pricingSummary") or {}).get("total")
+                fee_d = o.get("totalMarketplaceFee")
                 rows.append({
                     "date": o.get("creationDate", "")[:10],
+                    "order_id": o.get("orderId", ""),
                     "title": li.get("title", ""),
                     "sku": li.get("sku", ""),
                     "quantity": li.get("quantity", 1),
-                    "item_usd": _money(li.get("lineItemCost")),
-                    "shipping_usd": ship,
-                    "order_total_usd": _money((o.get("pricingSummary") or {}).get("total")),
-                    "marketplace_fee_usd": _money(o.get("totalMarketplaceFee")),
+                    # 金額の通貨は currency 列を見る（英国・豪州サイト経由は GBP・AUD のことがある）
+                    "currency": _cur(item_d),
+                    "item_price": _money(item_d),
+                    "shipping": _money(ship_d),
+                    "order_total": _money(total_d),
+                    "marketplace_fee": _money(fee_d),
+                    "fee_currency": _cur(fee_d),
+                    "item_price_original": _orig(item_d),
+                    "order_total_original": _orig(total_d),
+                    "site": li.get("listingMarketplaceId", ""),  # EBAY_US / EBAY_GB / EBAY_AU など
                     "country": country,  # 購入者の名前・住所・IDは保存しない
                     "status": o.get("orderFulfillmentStatus", ""),
                     "ebay_url": f"https://www.ebay.com/itm/{li.get('legacyItemId', '')}",
@@ -236,16 +256,25 @@ def cmd_orders(args) -> None:
         w = csv.DictWriter(f, fieldnames=["date", "title", "ebay_query", "sold_price_usd", "shipping_charged_usd",
                                           "purchase_jpy", "ebay_url", "source"])
         w.writeheader()
+        skipped = 0
         for r in rows:
-            if r["item_usd"] <= 0:
+            if r["item_price"] <= 0:
                 continue
-            w.writerow({"date": r["date"], "title": r["title"], "ebay_query": "", "sold_price_usd": r["item_usd"],
-                        "shipping_charged_usd": r["shipping_usd"], "purchase_jpy": "", "ebay_url": r["ebay_url"],
+            if r["currency"] != "USD":  # ドル以外は相場データに混ぜない（明細には残る）
+                skipped += 1
+                continue
+            w.writerow({"date": r["date"], "title": r["title"], "ebay_query": "", "sold_price_usd": r["item_price"],
+                        "shipping_charged_usd": r["shipping"], "purchase_jpy": "", "ebay_url": r["ebay_url"],
                         "source": "自分の販売実績(eBay API)"})
-    total = sum(r["item_usd"] + r["shipping_usd"] for r in rows)
-    print(f"直近{args.days}日の注文 {len(rows)}件・売上 ${total:,.2f}")
-    print(f"→ {sales}（相場データとして自動で使われます）\n→ {detail}（明細）")
-    print("拡張機能に反映するには: python3 tools/build_extension.py")
+    by_cur: dict[str, float] = {}
+    for r in rows:
+        by_cur[r["currency"] or "?"] = by_cur.get(r["currency"] or "?", 0) + r["item_price"] + r["shipping"]
+    print(f"直近{args.days}日の注文 {len(rows)}件・売上（送料込み）: "
+          + " / ".join(f"{v:,.2f} {k}" for k, v in sorted(by_cur.items())))
+    if skipped:
+        print(f"  ドル以外の {skipped}件は相場データに入れていません（明細の currency 列を確認）")
+    # 拡張機能の相場は古物台帳（data/ledger.csv → reference_prices.csv）から作る。同じ販売を二重に数えないよう、ここの結果は混ぜない
+    print(f"→ {sales}（ドル建ての販売の控え。拡張機能の相場は古物台帳から作るので、ここは混ぜません）\n→ {detail}（明細）")
 
 
 def cmd_listings(_args) -> None:
@@ -270,11 +299,18 @@ def cmd_listings(_args) -> None:
         for it in (al.findall(".//e:Item", ns) if al is not None else []):
             start = it.findtext("e:ListingDetails/e:StartTime", default="", namespaces=ns)
             days = (now - datetime.fromisoformat(start.replace("Z", "+00:00"))).days if start else ""
+            price_el = it.find("e:SellingStatus/e:CurrentPrice", ns)
+            if price_el is None:
+                price_el = it.find("e:BuyItNowPrice", ns)
             rows.append({
                 "days_listed": days,
                 "title": it.findtext("e:Title", default="", namespaces=ns),
-                "price_usd": it.findtext("e:SellingStatus/e:CurrentPrice", default="", namespaces=ns)
-                or it.findtext("e:BuyItNowPrice", default="", namespaces=ns),
+                # Site が返らないことがあるので、通貨から補う（eBay Mag で英国・豪州に複製した出品）
+                "site": it.findtext("e:Site", default="", namespaces=ns)
+                or {"USD": "US", "GBP": "UK", "AUD": "Australia", "EUR": "EU"}.get(
+                    price_el.get("currencyID", "") if price_el is not None else "", ""),
+                "currency": price_el.get("currencyID", "") if price_el is not None else "",
+                "price": (price_el.text or "") if price_el is not None else "",
                 "watchers": it.findtext("e:WatchCount", default="0", namespaces=ns),
                 "quantity": it.findtext("e:QuantityAvailable", default="", namespaces=ns),
                 "sku": it.findtext("e:SKU", default="", namespaces=ns),
@@ -294,50 +330,87 @@ def cmd_listings(_args) -> None:
     old = [r for r in rows if isinstance(r["days_listed"], int) and r["days_listed"] >= 60]
     print(f"出品中 {len(rows)}件（60日以上: {len(old)}件）→ {out}")
     for r in rows[:10]:
-        print(f"  {r['days_listed']:>4}日  ${r['price_usd']:>8}  ウォッチ{r['watchers']:>3}  {r['title'][:60]}")
+        print(f"  {r['days_listed']:>4}日  {r['price']:>8} {r['currency']:<3} {r['site'][:9]:<9}  ウォッチ{r['watchers']:>3}  {r['title'][:60]}")
+
+
+def _refs(t: dict) -> str:
+    return " ".join(f"{r.get('referenceType', '')}:{r.get('referenceId', '')}" for r in t.get("references", []) or [])
 
 
 def cmd_fees(args) -> None:
-    since = (datetime.now(timezone.utc) - timedelta(days=args.days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    sales = fees = ads = intl = 0.0
-    n, offset = 0, 0
-    by_type: dict[str, float] = {}
-    while True:
-        q = urllib.parse.urlencode({"filter": f"transactionDate:[{since}..]", "limit": 200, "offset": offset})
-        d = get_json(f"{APIZ}/sell/finances/v1/transaction?{q}", user_token())
-        for t in d.get("transactions", []):
-            typ = t.get("transactionType", "")
-            amt = _money(t.get("amount"))
-            if typ == "SALE":
-                n += 1
-                gross = _money(t.get("totalFeeBasisAmount")) or amt + _money(t.get("totalFeeAmount"))
-                sales += gross
-                fees += _money(t.get("totalFeeAmount"))
-                for li in t.get("orderLineItems", []):
-                    for fee in li.get("marketplaceFees", []):
-                        if "INTERNATIONAL" in fee.get("feeType", ""):
-                            intl += _money(fee.get("amount"))
-            elif typ == "NON_SALE_CHARGE":
-                memo = (t.get("transactionMemo") or "") + (t.get("feeType") or "")
-                by_type[memo or "その他"] = by_type.get(memo or "その他", 0) + amt
-                if "AD" in memo.upper() or "PROMOTED" in memo.upper():
-                    ads += amt
-        offset += 200
-        if offset >= d.get("total", 0):
-            break
+    """取引明細（Finances API）を1行ずつ保存し、手数料率を通貨ごとに集計する.
+
+    SALE の amount は入金通貨（USD）、手数料の対象額・手数料は出品サイトの通貨（GBP・AUD のことがある）。
+    通貨が混ざった合計は意味がないので、率は通貨ごとに出す。
+    """
+    fmt = "%Y-%m-%dT%H:%M:%S.000Z"
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=args.days)
+    # Finances API は1回に約90日分までしか返さないので、60日ずつに分けて取る
+    windows = []
+    while start < end:
+        w_end = min(start + timedelta(days=60), end)
+        windows.append((start, w_end))
+        start = w_end
+    rows, seen = [], set()
+    for w_start, w_end in windows:
+        offset = 0
+        while True:
+            q = urllib.parse.urlencode({"filter": f"transactionDate:[{w_start.strftime(fmt)}..{w_end.strftime(fmt)}]",
+                                        "limit": 200, "offset": offset})
+            d = get_json(f"{APIZ}/sell/finances/v1/transaction?{q}", user_token())
+            for t in d.get("transactions", []):
+                if t.get("transactionId") in seen:  # 期間の境目で重複しないように
+                    continue
+                seen.add(t.get("transactionId"))
+                intl = sum(_money(f.get("amount")) for li in t.get("orderLineItems", []) or []
+                           for f in li.get("marketplaceFees", []) or [] if "INTERNATIONAL" in f.get("feeType", ""))
+                rows.append({
+                    "date": (t.get("transactionDate") or "")[:10],
+                    "type": t.get("transactionType", ""),
+                    "booking": t.get("bookingEntry", ""),  # CREDIT=入金 / DEBIT=引き落とし
+                    "order_id": t.get("orderId", ""),
+                    "amount": _money(t.get("amount")),
+                    "amount_currency": _cur(t.get("amount")),
+                    "amount_original": _orig(t.get("amount")),
+                    "fee_basis": _money(t.get("totalFeeBasisAmount")),
+                    "fee_basis_currency": _cur(t.get("totalFeeBasisAmount")),
+                    "total_fee": _money(t.get("totalFeeAmount")),
+                    "fee_currency": _cur(t.get("totalFeeAmount")),
+                    "intl_fee": round(intl, 2),
+                    "fee_type": t.get("feeType", ""),
+                    "memo": t.get("transactionMemo", ""),
+                    "references": _refs(t),
+                    "status": t.get("transactionStatus", ""),
+                })
+            offset += 200
+            if offset >= d.get("total", 0):
+                break
+    rows.sort(key=lambda r: r["date"], reverse=True)
+    REPORTS.mkdir(exist_ok=True)
+    out = REPORTS / f"ebay_finances_{datetime.now():%Y%m%d}.csv"
+    with open(out, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else ["date"])
+        w.writeheader(); w.writerows(rows)
+    sales = [r for r in rows if r["type"] == "SALE"]
     if not sales:
-        print(f"直近{args.days}日の売上取引がありません。")
+        print(f"直近{args.days}日の売上取引がありません。→ {out}")
         return
-    pct = lambda v: v / sales * 100
-    print(f"直近{args.days}日: 売上 {n}件・${sales:,.2f}（手数料の対象額）")
-    print(f"  落札手数料など（totalFee）: ${fees:,.2f} = {pct(fees):.2f}%（うち海外決済 {pct(intl):.2f}%）")
-    print(f"  広告費（Promoted）: ${ads:,.2f} = {pct(ads):.2f}%")
-    for k, v in sorted(by_type.items(), key=lambda x: -x[1])[:8]:
-        print(f"    その他の請求 {k}: ${v:,.2f}")
-    print("\nconfig.toml の目安:")
-    print(f"  final_value_fee_pct = {pct(fees - intl):.2f}   # 現在の設定と比べて、差が大きければ更新")
-    print(f"  international_fee_pct = {pct(intl):.2f}")
-    print(f"  ad_rate_pct = {pct(ads):.2f}")
+    print(f"直近{args.days}日の取引 {len(rows)}行（うち売上 {len(sales)}件）→ {out}")
+    for cur in sorted({r["fee_basis_currency"] or r["amount_currency"] for r in sales}):
+        grp = [r for r in sales if (r["fee_basis_currency"] or r["amount_currency"]) == cur]
+        basis = sum(r["fee_basis"] for r in grp) or 1
+        fee, intl = sum(r["total_fee"] for r in grp), sum(r["intl_fee"] for r in grp)
+        print(f"  {cur}: {len(grp)}件 対象額 {basis:,.2f}  手数料 {fee / basis * 100:.2f}%"
+              f"（うち海外決済 {intl / basis * 100:.2f}%）")
+    other: dict[str, float] = {}
+    for r in rows:
+        if r["type"] != "SALE":
+            k = f"{r['type']} {r['fee_type']}".strip() + f" [{r['amount_currency']}]"
+            other[k] = other.get(k, 0) + (r["amount"] if r["booking"] != "CREDIT" else -r["amount"])
+    for k, v in sorted(other.items(), key=lambda x: -x[1]):
+        print(f"    {k}: {v:,.2f}")
+    print("広告費（AD_FEE）は上の一覧。率は Claude が注文ごとに計算します。")
 
 
 def browse_search(query: str, limit: int = 50) -> list[dict]:

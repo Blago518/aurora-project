@@ -28,7 +28,7 @@ class CoreSync(unittest.TestCase):
 class RecKey(unittest.TestCase):
     def test_mount_separates_lenses(self):
         fd = bs.rec_key("Canon New FD 50mm f/1.4 Lens")
-        self.assertEqual(fd[1:], ("canon new fd 50mm f1.4", "lens"))
+        self.assertEqual(fd[1:], ("canon newfd 50mm f1.4", "lens"))
         self.assertEqual(bs.rec_key("Canon NFD 50mm F1.4")[1], fd[1])
         self.assertNotEqual(bs.rec_key("Canon EF 50mm F1.4 USM")[1], fd[1])
 
@@ -44,7 +44,7 @@ class RecKey(unittest.TestCase):
 class Recommendations(unittest.TestCase):
     def test_sample(self):
         recs = bs.recommendations(ba.read_sales(SAMPLES / "sales_history.csv"), CFG, 150.0)
-        self.assertEqual([r["label"] for r in recs], ["Nikon FM2", "Canon New FD 50mm F1.4"])
+        self.assertEqual([r["label"] for r in recs], ["Nikon FM2", "Canon NewFD 50mm F1.4"])
         fm2 = recs[0]
         self.assertEqual((fm2["sales"], fm2["usd"], fm2["kind"]), (3, 255.0, "camera"))
         # 上限額で買えば基準を満たす

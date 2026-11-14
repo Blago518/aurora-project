@@ -6,6 +6,7 @@ function makeCore(DATA) {
   // ------------------------------------------------------------------ 文字列処理（appraise.py と同じ規則）
   const BRAND_SET = new Set(Object.values(C.brandsEn).map((b) => b.toLowerCase()));
   const NOISE = new Set(C.noise), THIRD = new Set(C.thirdParty), COLORS = new Set(C.colors);
+  const VNORM = C.variantNormalize.map(([p, r]) => [new RegExp(p, "gi"), r]);
   const GENS = new Set(C.generations), PREMIUM = new Set(C.premium);
   const ACCESSORY_RE = new RegExp(C.accessoryRe, "i");
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
@@ -19,6 +20,7 @@ function makeCore(DATA) {
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
     t = t.replace(/[①-⑳]/g, " ");
     t = t.replace(/非\s*-?\s*A[iI](?![-sS])/g, " nonAi ");
+    for (const [re, rep] of VNORM) t = t.replace(re, rep);  // 型の表記をそろえる（Python と同じ）
     t = t.replace(/[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b/g, " ");
     t = t.replace(/(\d)\s*[・･]\s*(\d)/g, "$1.$2");
     t = t.replace(/\b[fF]\s*\/\s*(\d)/g, "F$1");
@@ -58,7 +60,7 @@ function makeCore(DATA) {
 
   function tokensOf(s) {
     let q = titleToQuery(s, 20).normalize("NFKC").toLowerCase();
-    q = q.replace(/(\d)\s*mm/g, "$1mm").replace(/\bf\s*\/\s*(\d)/g, "f$1").replace(/[()\[\]+&]/g, " ");
+    q = q.replace(/(\d)\s*mm(?![a-z])/g, "$1mm").replace(/\bf\s*\/\s*(\d)/g, "f$1").replace(/[()\[\]+&]/g, " ");
     const out = new Set();
     for (let t of q.split(/[\s/,]+/)) {
       t = t.replace(/^[.\-]+|[.\-]+$/g, "");
@@ -73,6 +75,43 @@ function makeCore(DATA) {
   const has = (set, pred) => { for (const x of set) if (pred(x)) return true; return false; };
   const sub = (a, b) => { for (const x of a) if (!b.has(x)) return false; return true; };
   const inter = (a, b) => { let n = 0; for (const x of a) if (b.has(x)) n++; return n; };
+  function variantsConflict(qt, rt) {
+    for (const g of C.variantGroups) {
+      if (!g.ctx.some((c) => qt.has(c) || rt.has(c))) continue;
+      const vs = Object.keys(g.vars);
+      const qv = vs.filter((v) => qt.has(v)).sort().join("|"), rv = vs.filter((v) => rt.has(v)).sort().join("|");
+      if (g.strict ? qv !== rv : qv && rv && qv !== rv) return true;
+    }
+    return false;
+  }
+  // タイトルの型（1つに決まるときだけ）: label は機種名に入れる表記、must/not は eBay出品中の集計で使う
+  const VLABEL = { newfd: "New FD", ssc: "SSC", sc: "SC", nonai: "Non-Ai", ai: "Ai", "ai-s": "Ai-S", aikai: "Ai改" };
+  function variantOf(toks) {
+    for (const g of C.variantGroups) {
+      if (!g.ctx.some((c) => toks.has(c))) continue;
+      const found = Object.keys(g.vars).filter((v) => toks.has(v));
+      if (found.length !== 1) continue;
+      const v = found[0];
+      return { label: VLABEL[v] || g.vars[v], must: g.neg ? [g.vars[v]] : [],
+        not: g.neg ? Object.entries(g.vars).filter(([k]) => k !== v).map(([, d]) => d) : [] };
+    }
+    return null;
+  }
+  // eBay 検索語に型を入れ、neg のグループはほかの型を除外（Python の ebay_search_query と同じ）
+  function ebaySearchQuery(query, title) {
+    const toks = tokensOf(query + " " + (title || ""));
+    let words = query.split(" ").filter(Boolean);
+    for (const g of C.variantGroups) {
+      if (!g.ctx.some((c) => toks.has(c))) continue;
+      const found = Object.keys(g.vars).filter((v) => toks.has(v));
+      if (found.length !== 1) continue;
+      const v = found[0], disp = g.vars[v];
+      words = words.map((w) => (w.toLowerCase() === v ? disp : w));
+      if (!words.includes(disp)) words.push(disp);
+      if (g.neg) for (const [k, d] of Object.entries(g.vars)) if (k !== v && d !== disp) words.push("-" + d);
+    }
+    return [...new Set(words)].join(" ");
+  }
   const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
 
   function detectFlags(title) {
@@ -95,6 +134,7 @@ function makeCore(DATA) {
       if (pick(qt, PREMIUM) !== pick(rt, PREMIUM)) continue;
       if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
+      if (variantsConflict(qt, rt)) continue;
       const digits = new Set([...rt].filter((t) => /\d/.test(t)));
       if (!sub(digits, qt)) continue;
       if (!digits.size) {
@@ -175,8 +215,13 @@ function makeCore(DATA) {
     const toks = titleToQuery(title, 20).split(" ").filter(Boolean);
     const brand = toks.length && BRAND_SET.has(toks[0].toLowerCase()) ? toks[0] : "";
     const rest = brand ? toks.slice(1) : toks;
-    const keyToks = rest.filter((t) => /\d/.test(t)).slice(0, 3);
-    const label = (brand ? [brand] : []).concat(keyToks.length ? keyToks : rest.slice(0, 2)).join(" ");
+    // 管理番号らしい語（C-2436・OL4709・IC0144・A-164、レンズの機種名に混ざった 3桁以上の数字）は機種名に入れない
+    const isLens = rest.some((t) => /mm$/i.test(t));
+    const code = (t) => /^[A-Za-z]{1,2}-\d{3,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
+    const keyToks = rest.filter((t) => /\d/.test(t) && !code(t)).slice(0, 3);
+    const vt = variantOf(tokensOf(title));
+    const label = (brand ? [brand] : []).concat(keyToks.length ? keyToks : rest.slice(0, 2))
+      .concat(vt ? [vt.label] : []).join(" ");
     const norm = label.toLowerCase().split(" ").map((t) => {
       if (/^f\/?\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t)) t = t.replace(/^f\/?/, "");
       return /^\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t) && t.includes(".") ? "f" + t : t;
