@@ -14,7 +14,7 @@
     data/junk.csv              J管理シート → ジャンク品のヤフオク再販の成績
     data/item_types.csv        出品情報シートの商品種別（Lens / Camera Body）→ 種類別のグラフ
     data/monthly_costs.csv     （任意）月ごとの送料・関税・発送代行の実額（列: 月,CPaSS,関税,オークレボ）。
-                               発送明細（ledger_costs.csv）が無いときに、推定（一律 $30）と比べるのに使う
+                               発送明細（ledger_costs.csv）が無いときに、推定（config.toml の deduction_usd で一律）と比べるのに使う
     data/sku_fix.csv           昔の注文（SKU_TRUSTED_FROM より前）の SKU の対応表（列: order_id,正しいNo.,メモ）。
                                その頃は eBay の SKU（Custom label）が No. と合っていないので、SKU は使わずこの表で No. を決める。
                                候補は python3 tools/build_dashboard.py --sku-candidates → reports/sku_fix_candidates.csv
