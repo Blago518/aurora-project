@@ -473,10 +473,35 @@ def read_monthly_costs(path: Path) -> dict[str, float]:
     return out
 
 
+# グラフ用のメーカー名（製品名・別表記 → メーカー）。入札判断の照合（appraise.py の BRANDS_EN）には影響させない
+BRAND_ALIASES = [
+    (r"rolleiflex|rolleicord|rollei", "Rollei"), (r"leotax", "Leotax"), (r"topcon|topcor", "Topcon"),
+    (r"yongnuo", "Yongnuo"), (r"hasselblad", "Hasselblad"), (r"mamiya|sekor", "Mamiya"), (r"bronica|zenza", "Bronica"),
+    (r"fujica|fujinon|fujifilm|\bfuji\b", "Fujifilm"), (r"voigtl[aä]nder", "Voigtlander"),
+    (r"zeiss|planar|sonnar|distagon|tessar|biogon", "Zeiss"), (r"konica|hexanon|hexar", "Konica"),
+    (r"minolta|rokkor", "Minolta"), (r"takumar|asahi", "Pentax"), (r"zuiko", "Olympus"), (r"nikkor", "Nikon"),
+    (r"serenar", "Canon"), (r"chinon", "Chinon"), (r"cosina", "Cosina"), (r"vivitar", "Vivitar"), (r"tamron", "Tamron"),
+    (r"tokina", "Tokina"), (r"samyang|rokinon", "Samyang"), (r"kodak", "Kodak"), (r"polaroid", "Polaroid"),
+    (r"praktica|pentacon", "Praktica"), (r"zenit|helios|jupiter|kiev|lomo", "ロシア製（Zenit など）"),
+    (r"petri", "Petri"), (r"miranda", "Miranda"), (r"exakta|ihagee", "Exakta"), (r"plaubel", "Plaubel"),
+    (r"linhof", "Linhof"), (r"horseman", "Horseman"), (r"ricoh", "Ricoh"), (r"kyocera|yashica", "Yashica"),
+]
+
+
 def brand_of(title: str) -> str:
+    """品目名 → メーカー. 入札判断と同じ読み取り → グラフ用の表 → 品目名の最初の英単語 の順。空のときだけ「（品目名なし）」."""
     toks = appraise.title_to_query(title, 20).split()
     known = {b.lower() for b in appraise.BRANDS_EN.values()} | {"zeiss", "carl"}
-    return toks[0] if toks and toks[0].lower() in known else "不明"
+    if toks and toks[0].lower() in known:
+        return "Zeiss" if toks[0].lower() in ("carl", "zeiss") else toks[0]
+    t = unicodedata.normalize("NFKC", title or "").lower()
+    for pat, name in BRAND_ALIASES:
+        if re.search(pat, t):
+            return name
+    m = re.search(r"[A-Za-z][A-Za-z\-]+", unicodedata.normalize("NFKC", title or ""))
+    if m:
+        return m.group(0).capitalize()
+    return (title or "").split()[0] if (title or "").strip() else "（品目名なし）"
 
 
 def kind_of(title: str) -> str:

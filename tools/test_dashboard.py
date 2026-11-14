@@ -248,6 +248,14 @@ class TestDashboard(unittest.TestCase):
         new = [{**orders[0], "date": "2026-08-18", "order_id": "NEW1", "sku": "A001"}]
         self.assertEqual(bd.sales_from_api(new, {}, ledger, {}, 150.0)["sales"][0]["cost_jpy"], 8000)
 
+    def test_brand_never_unknown(self):
+        cases = {"Rolleiflex 2.8 gx": "Rollei", "Rolleicord Vb Whiteface": "Rollei", "Yongnuo EF 35mm 2": "Yongnuo",
+                 "leotax F + Topcor-S 50mm 2 L39": "Leotax", "Topcon 35-S Topcor 44mm f/2": "Topcon",
+                 "Canon FD 50mm F1.4": "Canon", "Carl Zeiss Planar 50mm": "Zeiss", "ニコン FM2 ボディ": "Nikon",
+                 "Asahi Takumar 55mm": "Pentax", "Zorki 4K": "Zorki"}
+        for title, brand in cases.items():
+            self.assertEqual(bd.brand_of(title), brand, title)
+
     def test_ebay_date(self):
         self.assertEqual(bd.parse_date("17-Aug-26"), date(2026, 8, 17))
 
