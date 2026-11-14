@@ -26,7 +26,7 @@ async function appToken() {
 const median = (a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 async function browse(q, must = [], not = []) {
-  const key = "browse3:" + [q, ...must, ...not.map((x) => "-" + x)].join(" ").toLowerCase();  // 集計方法を変えたら番号を上げて読み直す
+  const key = "browse4:" + [q, ...must, ...not.map((x) => "-" + x)].join(" ").toLowerCase();  // 集計方法を変えたら番号を上げて読み直す
   const word = (w) => new RegExp("(^|[^A-Za-z])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z])", "i");
   const mustRe = must.map(word), notRe = not.map(word);  // 型（Contax の MMJ など）: その型の出品だけ数え、ほかの型は除く
   const cached = (await chrome.storage.local.get(key))[key];
@@ -49,7 +49,7 @@ async function browse(q, must = [], not = []) {
     specs.push(new RegExp("(^|[^\\d.])" + n + "\\s*mm|\\/\\s*" + n + "(?![\\d.])", "i"));
   }
   for (const m of q.matchAll(/\bf\/?\s*(\d+(?:\.\d+)?)/gi))
-    specs.push(new RegExp("(^|[^\\d.])" + m[1].replace(".", "\\.") + "(?![\\d])", "i"));
+    specs.push(new RegExp("(^|[^\\d.])" + m[1].replace(".", "\\.") + "(?![\\d]|\\.\\d)", "i"));  // F2 で F2.8 を数えない
   let totals = [], jp = 0;
   for (const it of d.itemSummaries || []) {
     if (!it.price || it.price.currency !== "USD" || re.test(it.title || "")) continue;
@@ -73,6 +73,16 @@ function saveMemo(csv) {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+  // オークファンの入札予約: ヤフオクのパネルの［予約］→ 予約ページを開き、URL と上限額を渡す（予約するのは人）
+  if (msg && msg.type === "aucfanReserve") {
+    chrome.storage.local.set({ aucfanPending: Object.assign({}, msg.item, { t: Date.now() }) })
+      .then(() => chrome.tabs.create({ url: "https://tools.aucfan.com/v2/snipe/item?trflg=1" })).then(() => send({ ok: true }));
+    return true;
+  }
+  if (msg && msg.type === "aucfanPending") {
+    chrome.storage.local.get("aucfanPending").then((r) => send({ pending: r.aucfanPending || null }));
+    return true;
+  }
   if (msg && msg.type === "saveFile" && /^aurora_[a-z_]+\.csv$/.test(msg.name || "")) {  // 安心ストアの一覧など
     const url = "data:text/csv;charset=utf-8," + encodeURIComponent("\ufeff" + msg.csv);
     chrome.downloads.download({ url, filename: msg.name, conflictAction: "overwrite", saveAs: false })

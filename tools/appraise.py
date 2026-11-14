@@ -112,6 +112,7 @@ class Item:
     seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
+    tentative: dict = field(default_factory=dict)   # 仮◎○（相場が無いが eBay 出品中の価格なら利益が出る。tentative.py）
 
 
 # ---------------------------------------------------------------------------
@@ -1245,6 +1246,14 @@ def rows_for_output(items: list[Item]) -> list[dict]:
             {
                 "判定": mark,
                 "枠": "安心" if it.trusted else "チャレンジ",
+                "仮判定": it.tentative.get("mark", ""),
+                "仮の上限入札額": it.tentative.get("max_bid"),
+                "仮の想定USD": it.tentative.get("usd"),
+                "仮の利益(現在価格)": it.tentative.get("profit"),
+                "仮の根拠": (f"{it.tentative['label']} ・ eBay出品中 最安${it.tentative['min']:.0f}・中央値${it.tentative['med']:.0f}"
+                          f"×0.7（{it.tentative['n']}件）の安い方 ${it.tentative['sg']}") if it.tentative else "",
+                "仮のsoldURL": (it.tentative.get("links") or {}).get("sold", ""),
+                "仮の出品中URL": (it.tentative.get("links") or {}).get("active", ""),
                 "理由": reason,
                 "タイトル": it.title,
                 "ヤフオクURL": it.url,
@@ -1390,6 +1399,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
     cards: dict[str, list[str]] = {"安心": [], "チャレンジ": [], "要確認": []}
     shown = [r for r in rows if r["判定"] in ("◎", "○") or (r["判定"] == "要確認" and r["想定販売価格USD"])]
     hidden_bad = [r for r in rows if r["判定"] == "×"]
+    tent = sorted((r for r in rows if r.get("仮判定")), key=lambda r: -(r.get("仮の利益(現在価格)") or 0))
     for r in shown:
         cls = {"◎": "good", "○": "ok", "×": "bad"}.get(r["判定"], "unk")
         def link(u, label):
@@ -1447,6 +1457,14 @@ eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['inter
 {''.join(cards['安心']) or '<p class="summary">ありません（ストアのページを開くと、フォロー中なら拡張機能が自動で安心ストアに登録します）。</p>'}
 <h2>チャレンジ枠（その他の出品者）{len(cards['チャレンジ'])}件</h2>
 {''.join(cards['チャレンジ']) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
+<h2>仮◎○（相場は未登録・eBay出品中の価格で仮に計算）{len(tent)}件</h2>
+<p class="summary">sold を見て、売れた価格が「仮の想定」以上なら入札してよい候補。ヤフオクの検索ページで拡張機能の［登録］を押すと ◎○ に上がり、同じ機種の今後の出品にも効きます。利益の大きい順。</p>
+<table class="tbl"><tr><th>判定</th><th>商品</th><th>現在</th><th>仮の上限（このまま入札）</th><th>仮の利益</th><th>根拠</th><th>eBay</th></tr>{''.join(
+    f'<tr><td>仮{e(r["仮判定"])}</td><td>{"★ " if r.get("枠") == "安心" else ""}<a href="{e(r["ヤフオクURL"])}" target="_blank" rel="noopener">{e(r["タイトル"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small></td>'
+    f'<td>{_yen(r["現在価格"])}</td><td><b>{_yen(r["仮の上限入札額"])}</b></td><td>{_yen(r["仮の利益(現在価格)"])}</td>'
+    f'<td><small>{e(r["仮の根拠"])}</small></td><td><a href="{e(r["仮のsoldURL"])}" target="_blank" rel="noopener">sold</a> '
+    f'<a href="{e(r["仮の出品中URL"])}" target="_blank" rel="noopener">now</a></td></tr>'
+    for r in tent)}</table>
 <details><summary>要確認（説明文の難・付属品の可能性など）{len(cards['要確認'])}件</summary>{''.join(cards['要確認'])}</details>
 <details><summary>× 見送り {len(hidden_bad)}件</summary><ul class="mini">{''.join(
     f'<li><a href="{e(r["ヤフオクURL"])}" target="_blank" rel="noopener">{e(r["タイトル"][:60])}</a> 現在{_yen(r["現在価格"])} / 上限{_yen(r["上限入札額"])}</li>'
@@ -1536,6 +1554,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.offline:
         n = check_descriptions(items, args.delay)
         print(f"説明文チェック: ◎○ {n}件を確認（カビ・クモリ等があれば要確認に）", file=sys.stderr)
+        import tentative  # 相場が無い出品を eBay 出品中の価格（公式 Browse API）で仮に判定
+        t = tentative.add_tentative(items, cfg, fx)
+        print(f"仮◎○: {t}件（sold を見て、拡張機能で［登録］すると ◎○ に）", file=sys.stderr)
 
 
     rows = rows_for_output(items)
