@@ -11,6 +11,7 @@
 3. 作り直す: reference_prices.csv → 拡張機能（extension/）→ スマホ用データ（store_data.json・iCloud・暗号化して自動配信）→ ナレッジ
    拡張機能で［直す］［登録］した相場（ダウンロード/aurora_price_memo.csv）もここで取り込まれる。
 4. 入札リスト: data/search_urls.txt の検索をまとめて鑑定 → reports/bid_report_*.html を開く（◎○の件数を通知）
+5. 入札の結果: 拡張機能の［入札した］の記録を取り込み、終わった出品の最終価格から落札率などを集計 → reports/bid_results.md
 
 使い方（aurora フォルダで）:
     python3 tools/update_all.py
@@ -135,11 +136,19 @@ def main(argv=None) -> int:
     ok &= run("build_store.py")
     ok &= run("build_knowledge.py")
     bids = None if args.no_bids else bid_list()
+    results = None
+    try:
+        import bid_results  # 入札の結果（落札率・利益が出る落札の率）
+        print("\n▶ 入札の結果")
+        results = bid_results.run()
+    except Exception as e:  # 集計の失敗で更新全体を止めない
+        print(f"  入札の結果を集計できませんでした（{e}）")
     print("\n" + ("✅ 完了" if ok else "⚠ 一部でエラーがありました"))
     print("  Chrome: chrome://extensions で「Aurora 仕入れ鑑定」の ↻（新しい相場を拡張機能に反映）")
     if args.notify:
         msg = "相場データを更新しました" if ok else "相場データの更新で一部エラー（reports/update_all.log）"
-        notify(msg + (f"／入札候補 ◎○ {bids}件" if bids is not None else ""))
+        wr = results and results.get("win_rate")
+        notify(msg + (f"／入札候補 ◎○ {bids}件" if bids is not None else "") + (f"／落札率 {wr}%" if wr is not None else ""))
     return 0 if ok else 1
 
 

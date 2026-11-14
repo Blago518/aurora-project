@@ -185,7 +185,10 @@ function makeCore(DATA) {
     const tm = it.tax ? 1 + g.storeTaxPct / 100 : 1;  // ストアは入札が税抜、支払いは×1.1
     const k = tm * (1 - g.refundRatio);
     const fixed = net - dom - intl - g.packing;
-    const maxBid = Math.max(0, roundDown(Math.min((fixed - g.minProfit) / k, (fixed - g.minMarginPct / 100 * revJpy) / k)));
+    // 安心ストア（フォロー中）は基準を緩める（appraise.py の calculate と同じ）
+    const minP = it.trusted ? (g.trustedMinProfit ?? g.minProfit) : g.minProfit;
+    const minM = it.trusted ? (g.trustedMinMarginPct ?? g.minMarginPct) : g.minMarginPct;
+    const maxBid = Math.max(0, roundDown(Math.min((fixed - minP) / k, (fixed - minM / 100 * revJpy) / k)));
     const be = Math.max(0, roundDown(fixed / k));
     const out = { tax: !!it.tax, maxBid, breakeven: be, fees: Math.round(fees * fx), intl, dom, net: Math.round(net), netUsd: usd - g.deductionUsd };
     if (it.price != null) {

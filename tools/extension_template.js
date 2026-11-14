@@ -200,7 +200,10 @@
     const tm = it.tax ? 1 + g.storeTaxPct / 100 : 1;  // ストアは入札が税抜、支払いは×1.1
     const k = tm * (1 - g.refundRatio);
     const fixed = net - dom - intl - g.packing;
-    const maxBid = Math.max(0, roundDown(Math.min((fixed - g.minProfit) / k, (fixed - g.minMarginPct / 100 * revJpy) / k)));
+    // 安心ストア（フォロー中）は基準を緩める（appraise.py の calculate と同じ）
+    const minP = it.trusted ? (g.trustedMinProfit ?? g.minProfit) : g.minProfit;
+    const minM = it.trusted ? (g.trustedMinMarginPct ?? g.minMarginPct) : g.minMarginPct;
+    const maxBid = Math.max(0, roundDown(Math.min((fixed - minP) / k, (fixed - minM / 100 * revJpy) / k)));
     const be = Math.max(0, roundDown(fixed / k));
     const out = { tax: !!it.tax, maxBid, breakeven: be, fees: Math.round(fees * fx), intl, dom, net: Math.round(net), netUsd: usd - g.deductionUsd };
     if (it.price != null) {
@@ -299,6 +302,62 @@
   }
   // @core-end
 
+  // ------------------------------------------------------------------ 安心ストア（フォロー中のストア）
+  // DATA.trusted（Mac の data/trusted_sellers.csv）＋このブラウザでの追加・削除（LS_TRUST: {id: {name, on}}）
+  const LS_TRUST = "yhkTrustV1";
+  function trustedList() {
+    const m = new Map((DATA.trusted || []).map((t) => [t.id, t.name || ""]));
+    for (const [id, v] of Object.entries(load(LS_TRUST, {}))) { if (v.on) m.set(id, v.name || m.get(id) || ""); else m.delete(id); }
+    return m;
+  }
+  const trustedIds = () => new Set(trustedList().keys());
+  // ---- 入札記録: ［入札した］で記録 → ダウンロード/aurora_bids.csv（全件）→ Mac の data/bid_log.csv。
+  //      毎朝 update_all.py が終わった出品の最終価格を見て、落札率・負けた差・利益が出る落札の率をまとめる
+  const LS_BIDS = "yhkBidsV1";
+  const BID_FIELDS = ["auction_id", "title", "max_bid", "pay_max", "usd", "profit_at_max", "end", "trusted", "tentative", "store_tax", "ship", "bid_at"];
+  function bidCsv() {
+    const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    return BID_FIELDS.join(",") + "\n" + Object.values(load(LS_BIDS, {})).map((b) => BID_FIELDS.map((f) => q(b[f])).join(",")).join("\n");
+  }
+  function toggleBid(info) {
+    const all = load(LS_BIDS, {});
+    if (all[info.auction_id]) delete all[info.auction_id];
+    else all[info.auction_id] = Object.assign({}, info, { bid_at: new Date().toISOString() });
+    save(LS_BIDS, all);
+    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id)
+      try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_bids.csv", csv: bidCsv() }, () => void chrome.runtime.lastError); } catch (e) {}
+  }
+  const bidOf = (id) => load(LS_BIDS, {})[id];
+  // 行の［入札した］ボタン。押した後は「入札済み」（もう一度押すと取り消し）
+  function bidButton(i, c, usd, tentative) {
+    if (!c || !c.maxBid) return "";
+    const tm = i.tax ? 1 + DATA.cfg.storeTaxPct / 100 : 1;
+    const at = calculate(Object.assign({}, i, { price: Math.round(c.maxBid * tm) }), usd, state.fx);
+    state.bidInfo[i.id] = { auction_id: i.id, title: i.title, max_bid: c.maxBid, pay_max: Math.round(c.maxBid * tm), usd,
+      profit_at_max: at.profit, end: i.end, trusted: i.trusted ? 1 : 0, tentative: tentative ? 1 : 0, store_tax: i.tax ? 1 : 0, ship: i.ship ?? "" };
+    const done = bidOf(i.id);
+    return `<div><button data-a="bid" data-id="${esc(i.id)}" class="${done ? "bidon" : ""}" title="ヤフオクで上限額を入札したら押す（落札率・利益の集計に使う）">${done ? "✓入札済み" : "入札した"}</button></div>`;
+  }
+
+  function setTrusted(id, name, on) {
+    const t = load(LS_TRUST, {}); t[id] = { name, on }; save(LS_TRUST, t);
+    const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+    const csv = "user_id,name,on\n" + [...trustedList()].map(([i, n]) => `${q(i)},${q(n)},1`).join("\n");
+    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id)  // Mac の data/trusted_sellers.csv へ（update_all.py が取り込む）
+      try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_trusted_sellers.csv", csv }, () => void chrome.runtime.lastError); } catch (e) {}
+  }
+  // ストアのページ（/seller/<id>）: 「フォロー中」なら自動で安心ストアに（自分で外したストアは自動では戻さない）
+  const pageSeller = () => { const m = location.pathname.match(/^\/seller\/([^/?#]+)/); return m ? m[1] : ""; };
+  function autoTrustFollowed() {
+    const id = pageSeller();
+    if (!id || id in load(LS_TRUST, {}) || trustedIds().has(id)) return false;
+    const followed = [...document.querySelectorAll("button, a, span")].some((e) => e.childElementCount === 0 && e.textContent.trim() === "フォロー中");
+    if (!followed) return false;
+    const name = (document.title || "").replace(/\s*[-|｜].*$/, "").trim();
+    setTrusted(id, name, true);
+    return true;
+  }
+
   // ------------------------------------------------------------------ 相場メモ（このブラウザに保存）
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
@@ -339,6 +398,7 @@
       id: x.auctionId, title: x.title || "", price: x.price ?? null, buyNow: x.buyNowPrice || null,
       bids: x.bidCount ?? 0, end: x.endTime || "", ship: x.isFreeShipping ? 0 : (x.currentPriceShippingFee ?? null),
       watch: x.watchCount ?? 0, store: !!(x.seller && x.seller.isStore), tax: x.taxFlag === 1,
+      sellerId: String((x.seller && x.seller.userId) || ""), sellerName: String((x.seller && x.seller.displayName) || ""),
     }));
   }
 
@@ -360,7 +420,9 @@
   function evaluate(items, fx) {
     const refs = DATA.refs.concat(memoRefs());
     const memoPool = refs.filter(isMemo), otherPool = refs.filter((r) => !isMemo(r));
+    const trusted = trustedIds();
     for (const it of items) {
+      it.trusted = !!it.sellerId && trusted.has(it.sellerId);
       it.flags = detectFlags(it.title);
       it.query = titleToQuery(it.title);
       it.eq = ebaySearchQuery(it.query, it.title);  // eBay のリンク用（型と除外語入り）
@@ -401,6 +463,8 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .hd button{background:#24496a;color:#fff}
 #yhk .bd{padding:10px 12px}#yhk table{width:100%;border-collapse:collapse}
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
+#yhk button.bidon{background:#1f7a5c;color:#fff}
+#yhk .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal{background:#eef3f8;color:#2d4a63}
 #yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
 #yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
 #yhk .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button{padding:3px 6px;margin-left:2px}
@@ -418,10 +482,10 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
 .yhk-badge{display:inline-block;margin:2px 0;padding:2px 7px;border-radius:7px;font:700 12px -apple-system,sans-serif;color:#fff}
 .yhk-badge.g{background:#1f7a5c}.yhk-badge.o{background:#1b6387}.yhk-badge.x{background:#9aa6b2}
-@media (prefers-color-scheme:dark){#yhk tr.soon td{background:#2a2216}#yhk tr.tent td{background:#1f2129}#yhk .tsep{background:#3a2f17;color:#f2d79a}#yhk{background:#152231;color:#e2eaf2}#yhk th,#yhk td{border-color:#26394b}#yhk a{color:#7cc4ee}
+@media (prefers-color-scheme:dark){#yhk tr.soon td{background:#2a2216}#yhk tr.tent td{background:#1f2129}#yhk .tsep{background:#3a2f17;color:#f2d79a}#yhk .tsep.trust{background:#173a28;color:#a8e6c1}#yhk .tsep.chal{background:#1c2c3c;color:#b9d3ea}#yhk{background:#152231;color:#e2eaf2}#yhk th,#yhk td{border-color:#26394b}#yhk a{color:#7cc4ee}
 #yhk button{background:#24384c;color:#d6e6f2}#yhk input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}}`;
 
-  let state = { items: [], total: null, fx: Number(load(LS_FX, DATA.cfg.fx)) || DATA.cfg.fx, loading: "", browse: {} };
+  let state = { bidInfo: {}, items: [], total: null, fx: Number(load(LS_FX, DATA.cfg.fx)) || DATA.cfg.fx, loading: "", browse: {} };
 
   // ------------------------------------------------------------------ eBay出品中の相場（公式 Browse API・裏方の background.js 経由）
   const canBrowse = () => DATA.cfg.browse && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id;
@@ -623,14 +687,19 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
         (junk ? `\nジャンク評価 ×${Math.round(DATA.cfg.junkFactor * 100)}% → $${i.usd}` : "") + `\n送料$${DATA.cfg.deductionUsd}差引後 Net $${c ? c.netUsd.toFixed(0) : "-"}`;
       const [left, soon] = remain(i.end);
       return `<tr class="${soon ? "soon" : ""}"><td class="m ${cls}">${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
-<td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
+<td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
 <div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}</div>${condLine(i)}${descLine(i.id)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">$${i.usd}</a>${junk ? `<div class="s">元$${r.price}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\n送料込みの$と、売れた物の状態を入れると、$${DATA.cfg.deductionUsd}を引いて計算します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
-<td class="n"><b>${yen(c && c.maxBid)}</b><div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
+<td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
+    };
+    // 安心枠（フォロー中のストア）の行
+    const trustRows = (list) => {
+      const t = list.filter((i) => i.trusted);
+      return t.length ? `<tr><td colspan="6" class="tsep trust">★ 安心枠（フォロー中のストア） ${t.length}件 ― 基準 利益${(DATA.cfg.trustedMinProfit ?? DATA.cfg.minProfit).toLocaleString()}円以上・利益率${DATA.cfg.trustedMinMarginPct ?? DATA.cfg.minMarginPct}%以上（緩め）</td></tr>${t.map(row).join("")}` : "";
     };
     const waitRow = (w) => {
       const i = w.i, c = w.c, e = ebay(w.label);
@@ -642,7 +711,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
 <td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送${i.ship == null ? "?" : yen(i.ship)}</div></td>
-<td class="n"><b>${yen(c.maxBid)}</b><div class="s">仮（sold確認前）</div>${atMax(Object.assign({}, i, { calc: c, usd: w.usd }))}<div class="s">分岐 ${yen(c.breakeven)}</div></td>
+<td class="n"><b>${yen(c.maxBid)}</b>${bidButton(Object.assign({}, i, { calc: c }), c, w.usd, true)}<div class="s">仮（sold確認前）</div>${atMax(Object.assign({}, i, { calc: c, usd: w.usd }))}<div class="s">分岐 ${yen(c.breakeven)}</div></td>
 <td class="n">${yen(c.profit)}<div class="s">${c.margin != null ? c.margin + "%" : ""}</div>
 <div class="fix" title="sold を見て、売れた価格（送料込$）がこの額以上なら、そのまま［登録］。低ければ直して［登録］。同じ機種の今後の出品にも効きます">${memoInputs(w.label, `value="${w.sg}" class="sug"`, "登録")}</div></td></tr>`;
     };
@@ -650,10 +719,10 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件${waits.length ? ` ・ 仮◎○ ${waits.length}件` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">続きを鑑定（残り${state.total - items.length}件）</button>` : ""}
-<button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
+${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ 送料$${DATA.cfg.deductionUsd}差引 ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）</h4>
-${good.length || waits.length ? `<table>${head}${good.map(row).join("")}${waits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値と中央値×${DATA.cfg.activeFactor}の安い方で仮に計算。<b>sold を見て、売れた価格が入っている額以上なら［登録］</b>（低ければ直して［登録］）→ ◎○に上がり、同じ機種の今後の出品にも効きます</td></tr>${waits.map(waitRow).join("")}` : ""}</table>` : `<div class="s">このページには基準を満たす出品がありません。</div>`}
+${good.length || waits.length ? `<table>${head}${trustRows(good)}${good.filter((i) => !i.trusted).length ? `<tr><td colspan="6" class="tsep chal">チャレンジ枠（その他の出品者） ${good.filter((i) => !i.trusted).length}件 ― 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上</td></tr>` : ""}${good.filter((i) => !i.trusted).map(row).join("")}${waits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値と中央値×${DATA.cfg.activeFactor}の安い方で仮に計算。<b>sold を見て、売れた価格が入っている額以上なら［登録］</b>（低ければ直して［登録］）→ ◎○に上がり、同じ機種の今後の出品にも効きます</td></tr>${waits.map(waitRow).join("")}` : ""}</table>` : `<div class="s">このページには基準を満たす出品がありません。</div>`}
 ${canBrowse() && !waits.length ? `<div class="s">${Object.keys(state.browse).length ? "仮◎○はありません" : "eBay出品中の価格を調べています…（仮◎○）"}</div>` : ""}
 <details><summary>要確認（相場はあるが付属品・セット等の可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
@@ -705,6 +774,14 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const a = btn.dataset.a, root = document.getElementById("yhk");
     if (a === "min") { root.classList.toggle("min"); save(LS_OPEN, !root.classList.contains("min")); render(); }
     if (a === "all") loadAll(10000);
+    if (a === "bid") {
+      const info = state.bidInfo[btn.dataset.id];
+      if (info) { toggleBid(info); render(); }
+    }
+    if (a === "trust") {
+      const id = pageSeller();
+      if (id) { setTrusted(id, (document.title || "").replace(/\s*[-|｜].*$/, "").trim(), !trustedIds().has(id)); evaluate(state.items, state.fx); render(); }
+    }
     if (a === "memo") {
       const k = btn.dataset.k, box = btn.parentElement;
       const inp = box.querySelector("input[data-memo]") || root.querySelector(`input[data-memo="${CSS.escape(k)}"]`);
@@ -767,8 +844,10 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     state.total = totalFromJson(json);
     state.done = !state.total || state.total <= state.items.length;
     if (!state.items.length) return;
+    autoTrustFollowed();
     evaluate(state.items, state.fx);
     render();
+    setTimeout(() => { if (autoTrustFollowed()) { evaluate(state.items, state.fx); render(); } }, 2500);  // ボタンが後から出るページ用
     if (!state.done) loadAll(DATA.cfg.autoMaxItems);  // 開いたら自動で上限（config.toml）まで全ページを鑑定
   }
 
