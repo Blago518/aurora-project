@@ -36,6 +36,9 @@ python3 -m unittest test_bid_analyzer
 
 ### 入力ファイル
 
+- **ヤフオクの検索結果URL（おすすめ）**: Safariのブックマークに保存している検索条件のURLをそのまま1行に1つ貼ります。
+  検索結果の上から30件（`--max-per-search` で変更）を自動で取り出して判定します。落札相場（closedsearch）のURLは無視します。
+
 - **URL一覧（.txt）**: ヤフオクのURLを1行に1つ。
 - **ブックマークHTML**: ブラウザの「ブックマークをエクスポート」したファイルをそのまま指定。ヤフオクの出品リンクだけを拾います。
 - **ウォッチリストを保存したHTML**: ヤフオクのウォッチリスト画面を「名前を付けて保存」したものも可。
@@ -54,11 +57,13 @@ python3 -m unittest test_bid_analyzer
 
 ```bash
 python3 build_sales.py --ledger data/古物台帳.csv --hanpu data/頒布会_2026_09.xlsx data/頒布会_2026_10.xlsx -o data/sales.csv
-python3 bid_analyzer.py "Safari Bookmarks.html" --sales data/sales.csv
+python3 bid_analyzer.py 検索URL.txt --sales data/sales.csv data/chatwork_sales.csv
 ```
 
 - 古物台帳: 販売日が入っている行だけを「自分の販売実績」として使います（販売金額$は送料込み）。
-- 頒布会リスト: 販売金額($)を参考相場として使います。自分の実績で一致するものがあればそちらを優先します。
+- 頒布会リスト: 販売金額($)を参考相場として使います。
+- Chatworkの販売報告: `data/chatwork_sales.csv` に同じ形式で追記します（source列は `Chatwork販売実績`）。
+- 優先順位: 自分の販売実績 → Chatwork販売実績 → 頒布会リスト。
 - 照合ルール: 型番・焦点距離・F値など数字を含む語が一致すること。付属品だけの実績や、チタン・ゴールド・限定・AF/MFの違いは別物として除外。
 - `data/` フォルダは個人データなので Git には含めません。
 

@@ -16,8 +16,8 @@ final_value_fee_pct = 12.0
 per_order_fee_usd = 0.44
 # 海外決済手数料（International fee）
 international_fee_pct = 1.45
-# 広告（Promoted Listings）。ebay売上シートの広告費は売上の 1〜2% 程度だったため 2% で仮置き
-ad_rate_pct = 2.0
+# 広告（Promoted Listings）の率
+ad_rate_pct = 2.2
 # 手数料は「商品価格＋買い手負担送料」に掛かる。買い手から受け取る送料（USD）
 buyer_shipping_usd = 0.0
 

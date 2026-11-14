@@ -232,6 +232,50 @@ def fetch_fx() -> float | None:
 
 
 # ---------------------------------------------------------------------------
+# ヤフオクの検索結果URL（Safariのブックマーク等）→ 出品URLに展開
+# ---------------------------------------------------------------------------
+
+YAHOO_LIST_RE = re.compile(r"https?://auctions\.yahoo\.co\.jp/[^\s\"'<>]+", re.I)
+
+
+def find_search_urls(text: str) -> list[str]:
+    """出品ページ以外のヤフオクURL（検索結果・出品者・カテゴリ一覧）を拾う。落札相場は除く."""
+    out: list[str] = []
+    for m in YAHOO_LIST_RE.finditer(text):
+        u = html.unescape(m.group(0)).rstrip(").,")
+        if AUCTION_ID_RE.search(u) or "closedsearch" in u:
+            continue
+        path = urllib.parse.urlparse(u).path
+        if path.strip("/") == "" or not re.search(r"search|seller|category|list|user", path):
+            continue
+        if u not in out:
+            out.append(u)
+    return out
+
+
+def expand_search_url(url: str, limit: int) -> list[tuple[str, str]]:
+    """検索結果ページを開き、(出品URL, タイトル) を上から limit 件返す."""
+    page = http_get(url)
+    titles: dict[str, str] = {}  # 出品ID → タイトル（出現順を保つ）
+    for m in re.finditer(
+        r'<a[^>]+href="https://auctions\.yahoo\.co\.jp/jp/auction/([a-z]?\d{6,12})[^"]*"[^>]*>(.*?)</a>',
+        page, re.S,
+    ):
+        title = html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
+        if m.group(1) not in titles and len(titles) >= limit:
+            break
+        if not titles.get(m.group(1)):
+            titles[m.group(1)] = title
+    if not titles:  # リンクの形が変わった場合の保険
+        for m in AUCTION_ID_RE.finditer(page):
+            titles.setdefault(m.group(1), "")
+            if len(titles) >= limit:
+                break
+    found = [(f"https://auctions.yahoo.co.jp/jp/auction/{aid}", t) for aid, t in titles.items()]
+    return found
+
+
+# ---------------------------------------------------------------------------
 # ヤフオクのページ解析
 # ---------------------------------------------------------------------------
 
@@ -358,8 +402,8 @@ FLAG_RULES = [
     ("動作品", r"動作確認済|動作品|動作良好|完動"),
     ("美品", r"超美品|極上|美品|新品同様|未使用"),
     ("セット品", r"セット|まとめ|おまとめ|大量|\d+\s*点"),
-    ("付属品のみ?", r"(?:ボディ|レンズ|リア|フロント)?キャップ(?!付|あり|有)|ストラップ(?!付|あり|有)|"
-                   r"(?<!付属)ケース(?!付|あり|有)|フード(?!付|あり|有)|カタログ|取扱説明書|説明書のみ|フィルター(?!付)"),
+    ("付属品のみ?", r"(?:キャップ|ストラップ|ケース|フード|フィルター|背面|裏蓋|データバック|ファインダー)"
+                   r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|取扱説明書|説明書のみ|\bback\b"),
 ]
 
 
@@ -518,7 +562,20 @@ def read_sales(path: Path | None) -> list[dict]:
 
 
 ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)
+GENERATIONS = {"ii", "iii", "iv", "mkii", "mkiii", "mk2", "mk3", "mark"}
 PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定", "whiteface", "af"}
+
+
+SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト"]
+
+
+def source_tier(row: dict) -> int:
+    src = row.get("source") or "自分の販売実績"
+    if src.startswith("Chatwork"):
+        return 1
+    if src.startswith("頒布会"):
+        return 2
+    return 0
 
 
 def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[dict]:
@@ -538,6 +595,9 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         # 限定・チタン・ゴールド等は相場が別物なので、片方にだけあれば除外
         if (qt & PREMIUM_VARIANTS) != (rt & PREMIUM_VARIANTS):
             continue
+        # II / III などの世代違いは別機種
+        if (qt & GENERATIONS) != (rt & GENERATIONS):
+            continue
         # 型番・焦点距離・F値など数字を含む語は、実績側のものが全部一致すること
         digits = {t for t in rt if re.search(r"\d", t)}
         if not digits <= qt:
@@ -548,9 +608,12 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         score = len(qt & rt) / len(rt)
         if score >= threshold:
             scored.append((score, row))
-    # 自分の実績を優先し、無ければ頒布会リストなどの参考データを使う
-    own = [x for x in scored if x[1].get("source", "自分の販売実績") == "自分の販売実績"]
-    chosen = own or scored
+    # 自分の実績 → Chatwork（他メンバーの実績）→ 頒布会リスト の順に優先
+    chosen = []
+    for tier in (0, 1, 2):
+        chosen = [x for x in scored if source_tier(x[1]) == tier]
+        if chosen:
+            break
     chosen.sort(key=lambda x: -x[0])
     return [dict(r, _score=round(s, 2)) for s, r in chosen[:10]]
 
@@ -648,7 +711,7 @@ def judge(item: Item) -> tuple[str, str]:
     else:
         prefix = ""
     now = item.current_price_jpy
-    if "付属品のみ?" in item.flags and (now is None or now < c["breakeven_bid_jpy"] * 0.3):
+    if "付属品のみ?" in item.flags:
         return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
@@ -703,8 +766,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
         elif item.history_matches:
             ps = [m["_price"] for m in item.history_matches]
             item.expected_price_usd = round(statistics.median(ps), 2)
-            src = item.history_matches[0].get("source", "自分の販売実績")
-            label = "自分の販売実績" if src == "自分の販売実績" else "頒布会リスト"
+            label = SOURCE_LABELS[source_tier(item.history_matches[0])]
             item.price_source = f"{label}{len(ps)}件の中央値"
         item.calc = calculate(item, cfg, fx)
 
@@ -883,13 +945,14 @@ eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['inter
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="ヤフオク入札判断ツール")
-    ap.add_argument("input", type=Path, help="ヤフオクURL一覧(.txt) / ブックマークHTML / ウォッチリストHTML / CSV")
+    ap.add_argument("input", type=Path, help="ヤフオクの出品URL・検索結果URLの一覧(.txt) / ブックマークHTML / CSV")
     ap.add_argument("--sales", type=Path, nargs="*", default=[], help="過去の販売実績CSV（複数可）")
     ap.add_argument("--config", type=Path, help="設定ファイル（既定: config.toml）")
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
     ap.add_argument("--offline", action="store_true", help="通信しない（手入力値と販売実績のみで計算）")
     ap.add_argument("--no-ebay-fetch", action="store_true", help="eBay相場の自動取得をしない（リンクだけ作る）")
     ap.add_argument("--delay", type=float, default=1.5, help="通信の間隔（秒）")
+    ap.add_argument("--max-per-search", type=int, default=30, help="検索URL1つあたりに調べる出品数（上から）")
     ap.add_argument("--out", type=Path, default=Path("out"), help="出力フォルダ")
     args = ap.parse_args(argv)
 
@@ -904,6 +967,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"為替は設定値を使用: 1USD = {fx:.2f}円", file=sys.stderr)
 
     items = read_items(args.input)
+    if not args.offline:
+        text = args.input.read_text(encoding="utf-8-sig", errors="replace")
+        known = {it.auction_id for it in items}
+        for su in find_search_urls(text):
+            try:
+                got = expand_search_url(su, args.max_per_search)
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                print(f"検索URLを開けません({e.__class__.__name__}): {su}", file=sys.stderr)
+                continue
+            new = 0
+            for url, title in got:
+                aid = AUCTION_ID_RE.search(url).group(1)
+                if aid not in known:
+                    known.add(aid)
+                    items.append(Item(url=url, auction_id=aid, title=title, memo="検索URLから抽出"))
+                    new += 1
+            print(f"検索URLから {new}件 抽出: {su[:80]}", file=sys.stderr)
+            time.sleep(args.delay)
     if not items:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1

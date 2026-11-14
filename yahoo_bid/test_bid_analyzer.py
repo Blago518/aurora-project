@@ -125,5 +125,48 @@ class Sales(unittest.TestCase):
         self.assertEqual(sales[1]["_price"], 160.0)
 
 
+class SearchUrls(unittest.TestCase):
+    def test_find(self):
+        text = (
+            '<A HREF="https://auctions.yahoo.co.jp/search/search?p=Nikon+F3&amp;va=Nikon+F3">F3</A>\n'
+            "https://auctions.yahoo.co.jp/jp/auction/x123456789\n"
+            "https://auctions.yahoo.co.jp/closedsearch/closedsearch?p=Nikon\n"
+            "https://auctions.yahoo.co.jp/seller/abc123\n"
+        )
+        self.assertEqual(ba.find_search_urls(text), [
+            "https://auctions.yahoo.co.jp/search/search?p=Nikon+F3&va=Nikon+F3",
+            "https://auctions.yahoo.co.jp/seller/abc123",
+        ])
+
+
+class MatchingRules(unittest.TestCase):
+    SALES = [
+        {"title": t, "source": src, "_price": p, "_tokens": ba._tokens(t)}
+        for t, src, p in [
+            ("Contax TVS", "Chatwork販売実績", 399.99),
+            ("Contax T2 Gold", "頒布会リスト", 1899.99),
+            ("Pentax 645 strap", "自分の販売実績", 79.99),
+            ("Pentax 645 本体", "自分の販売実績", 398.10),
+            ("Nikon Ai-s 50mm f/1.8", "頒布会リスト", 179.99),
+            ("Nikon Ai-s 50mm f/1.8", "自分の販売実績", 139.99),
+        ]
+    ]
+
+    def titles(self, q):
+        return [m["title"] for m in ba.match_sales(q, self.SALES)]
+
+    def test_generation(self):
+        self.assertEqual(self.titles("Contax TVS III"), [])
+        self.assertEqual(self.titles("Contax TVS"), ["Contax TVS"])
+
+    def test_variant_and_accessory(self):
+        self.assertEqual(self.titles("Contax T2"), [])
+        self.assertEqual(self.titles("Pentax 645 ボディ"), ["Pentax 645 本体"])
+
+    def test_own_sales_first(self):
+        m = ba.match_sales("ニコン Ai-S NIKKOR 50mm F1.8", self.SALES)
+        self.assertEqual([x["_price"] for x in m], [139.99])
+
+
 if __name__ == "__main__":
     unittest.main()
