@@ -138,7 +138,11 @@ class AccessoryOnly(unittest.TestCase):
     CASES = {"コンタックス　NX　使用説明書　キ38": True, "ニコン 取扱説明書": True, "キヤノン AE-1 説明書のみ": True,
              "カメラスタイル21 やっぱりこれですね！ カールツァイス・レンズは": True, "【美品】CONTAX 55mm P-FILTER シルバー": True,
              "Nikon F3 取扱説明書付 美品": False, "CONTAX NX ボディ 説明書付き": False, "Contax 50mm F1.4 説明書あり": False,
-             "Contax Planar 50mm F1.4 フィルター付き": False}
+             "Contax Planar 50mm F1.4 フィルター付き": False,
+             "未使用*保管品【CONTAX】72/86■Planar T*135mmF2/Sonnar T*180mmF2.8用*元箱付き": True,
+             "CONTAX Carl Zeiss Sonnar T* 2.8/180mm": False,
+             "1円～/TAMRON/SP/500mm/F8/TELE MACRO/55BB/for Nikon/ニコン用/ミラーレンズ": False,
+             "SIGMA 70-300mm F4-5.6 キヤノン用": False}
 
     def test_python(self):
         for t, acc in self.CASES.items():
