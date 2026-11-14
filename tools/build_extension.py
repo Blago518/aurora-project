@@ -60,6 +60,8 @@ def build_data(cfg: dict, fx: float) -> dict:
             "junkFactor": j.get("junk_price_factor", 1.0),
             "activeFactor": j.get("active_price_factor", 0.7), "activeMinCount": j.get("active_min_count", 5),
             "browse": False,  # eBay のキーがあれば main() で True にする
+            "autoMaxItems": cfg.get("extension", {}).get("auto_max_items", 2000),
+            "browseMaxModels": cfg.get("extension", {}).get("browse_max_models", 400),
         },
         "consts": {
             "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN,
@@ -67,6 +69,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS),
             "premium": sorted(ba.PREMIUM_VARIANTS), "accessoryRe": ba.ACCESSORY_RE.pattern,
             "flagRules": [[n, p] for n, p in ba.FLAG_RULES],
+            "variantNormalize": [[p, r] for p, r in ba.VARIANT_NORMALIZE], "variantGroups": ba.VARIANT_GROUPS,
             "increments": [[0 if math.isinf(lim) else lim, step] for lim, step in ba.YAHOO_INCREMENTS],
         },
     }

@@ -16,7 +16,7 @@ class TitleToQuery(unittest.TestCase):
 
     def test_lens(self):
         q = ba.title_to_query("キヤノン New FD 50mm F1.4 単焦点 #123456")
-        self.assertEqual(q, "Canon New FD 50mm F1.4")
+        self.assertEqual(q, "Canon NewFD 50mm F1.4")  # eBay のリンクでは ebay_search_query が ("New FD",nFD) にする
 
     def test_flags(self):
         self.assertIn("ジャンク", ba.detect_flags("ジャンク ペンタックス 67 部品取り"))
@@ -248,6 +248,47 @@ class DescriptionCheck(unittest.TestCase):
                                   "console.log(m.descHits('良品です','全体的に状態が悪い').length)"],
                                  capture_output=True, text=True, check=True).stdout
         self.assertEqual(out.strip(), "1")
+
+
+class Variants(unittest.TestCase):
+    """型の違い（Contax の MMG/MMJ/AEG/AEJ など）: 照合しない・eBay 検索語に型と除外語を入れる。Python と JS で同じ."""
+
+    TITLES = ["CONTAX Carl Zeiss Planar T* 50mm F1.4 AE Japan", "コンタックス Distagon 35mm F1.4 MMJ",
+              "Contax Sonnar 135mm F2.8 AEG", "Canon FD 50mm F1.4 S.S.C.", "Canon New FD 50mm F1.4",
+              "Nikon Ai-s 50mm f1.8", "Hasselblad Planar CF 80mm F2.8", "Minolta MC Rokkor-PF 58mm F1.4",
+              "Contax Planar 50mm F1.4 From JAPAN"]
+
+    def test_conflict(self):
+        q = ba._tokens("Contax Planar 50mm F1.4 AEJ")
+        self.assertTrue(ba.variants_conflict(q, ba._tokens("Contax Planar 50mm f/1.4 MMJ")))
+        self.assertTrue(ba.variants_conflict(q, ba._tokens("Contax Planar 50mm F1.4")))  # Contax は型の表記が無い実績も別物
+        self.assertFalse(ba.variants_conflict(q, ba._tokens("Contax Planar 50mm F1.4 AE Japan")))
+        n = ba._tokens("Nikon Ai-S 50mm F1.8")
+        self.assertTrue(ba.variants_conflict(n, ba._tokens("Nikon Ai 50mm F1.8")))
+        self.assertFalse(ba.variants_conflict(n, ba._tokens("Nikon 50mm F1.8")))  # Nikon は片方だけなら照合する
+        self.assertNotIn("f1.4mmj", ba._tokens("Contax 35mm F1.4 MMJ"))
+
+    def test_query(self):
+        q = ba.ebay_search_query(ba.title_to_query(self.TITLES[1]), self.TITLES[1])
+        self.assertEqual(q, "Contax Distagon 35mm F1.4 MMJ -MMG -AEG -AEJ")
+        q = ba.ebay_search_query(ba.title_to_query(self.TITLES[8]), self.TITLES[8])
+        self.assertNotIn("AEJ", q)  # 「From JAPAN」は AEJ ではない
+
+    def test_js_same(self):
+        import shutil, subprocess
+        import build_extension as bu
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        py = [ba.ebay_search_query(ba.title_to_query(t), t) for t in self.TITLES]
+        data = bu.build_data(CFG, 150.0)
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"const m=require({json.dumps(str(js))});const t={json.dumps(self.TITLES, ensure_ascii=False)};"
+                    "console.log(JSON.stringify(t.map(x=>m.ebaySearchQuery(m.titleToQuery(x),x))))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), py)
 
 
 class NoScraping(unittest.TestCase):

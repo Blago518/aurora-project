@@ -56,3 +56,9 @@ junk_price_factor = 0.7
 active_price_factor = 0.7
 # 出品中の件数（同じ焦点距離・F値の物だけ数える）がこれ未満なら案を出さない（根拠が弱すぎる）
 active_min_count = 5
+
+[extension]
+# 検索ページを開いたとき自動で鑑定する件数の上限（100件ごとに約1秒）。超えた分は［続きを鑑定］で読む
+auto_max_items = 2000
+# eBay出品中の価格（公式 Browse API）を自動で調べる機種数の上限（1検索あたり。件数の多い機種から）
+browse_max_models = 400

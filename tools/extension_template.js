@@ -20,6 +20,7 @@
   // ------------------------------------------------------------------ 文字列処理（appraise.py と同じ規則）
   const BRAND_SET = new Set(Object.values(C.brandsEn).map((b) => b.toLowerCase()));
   const NOISE = new Set(C.noise), THIRD = new Set(C.thirdParty), COLORS = new Set(C.colors);
+  const VNORM = C.variantNormalize.map(([p, r]) => [new RegExp(p, "gi"), r]);
   const GENS = new Set(C.generations), PREMIUM = new Set(C.premium);
   const ACCESSORY_RE = new RegExp(C.accessoryRe, "i");
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
@@ -33,6 +34,7 @@
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
     t = t.replace(/[①-⑳]/g, " ");
     t = t.replace(/非\s*-?\s*A[iI](?![-sS])/g, " nonAi ");
+    for (const [re, rep] of VNORM) t = t.replace(re, rep);  // 型の表記をそろえる（Python と同じ）
     t = t.replace(/[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b/g, " ");
     t = t.replace(/(\d)\s*[・･]\s*(\d)/g, "$1.$2");
     t = t.replace(/\b[fF]\s*\/\s*(\d)/g, "F$1");
@@ -72,7 +74,7 @@
 
   function tokensOf(s) {
     let q = titleToQuery(s, 20).normalize("NFKC").toLowerCase();
-    q = q.replace(/(\d)\s*mm/g, "$1mm").replace(/\bf\s*\/\s*(\d)/g, "f$1").replace(/[()\[\]+&]/g, " ");
+    q = q.replace(/(\d)\s*mm(?![a-z])/g, "$1mm").replace(/\bf\s*\/\s*(\d)/g, "f$1").replace(/[()\[\]+&]/g, " ");
     const out = new Set();
     for (let t of q.split(/[\s/,]+/)) {
       t = t.replace(/^[.\-]+|[.\-]+$/g, "");
@@ -87,6 +89,43 @@
   const has = (set, pred) => { for (const x of set) if (pred(x)) return true; return false; };
   const sub = (a, b) => { for (const x of a) if (!b.has(x)) return false; return true; };
   const inter = (a, b) => { let n = 0; for (const x of a) if (b.has(x)) n++; return n; };
+  function variantsConflict(qt, rt) {
+    for (const g of C.variantGroups) {
+      if (!g.ctx.some((c) => qt.has(c) || rt.has(c))) continue;
+      const vs = Object.keys(g.vars);
+      const qv = vs.filter((v) => qt.has(v)).sort().join("|"), rv = vs.filter((v) => rt.has(v)).sort().join("|");
+      if (g.strict ? qv !== rv : qv && rv && qv !== rv) return true;
+    }
+    return false;
+  }
+  // タイトルの型（1つに決まるときだけ）: label は機種名に入れる表記、must/not は eBay出品中の集計で使う
+  const VLABEL = { newfd: "New FD", ssc: "SSC", sc: "SC", nonai: "Non-Ai", ai: "Ai", "ai-s": "Ai-S", aikai: "Ai改" };
+  function variantOf(toks) {
+    for (const g of C.variantGroups) {
+      if (!g.ctx.some((c) => toks.has(c))) continue;
+      const found = Object.keys(g.vars).filter((v) => toks.has(v));
+      if (found.length !== 1) continue;
+      const v = found[0];
+      return { label: VLABEL[v] || g.vars[v], must: g.neg ? [g.vars[v]] : [],
+        not: g.neg ? Object.entries(g.vars).filter(([k]) => k !== v).map(([, d]) => d) : [] };
+    }
+    return null;
+  }
+  // eBay 検索語に型を入れ、neg のグループはほかの型を除外（Python の ebay_search_query と同じ）
+  function ebaySearchQuery(query, title) {
+    const toks = tokensOf(query + " " + (title || ""));
+    let words = query.split(" ").filter(Boolean);
+    for (const g of C.variantGroups) {
+      if (!g.ctx.some((c) => toks.has(c))) continue;
+      const found = Object.keys(g.vars).filter((v) => toks.has(v));
+      if (found.length !== 1) continue;
+      const v = found[0], disp = g.vars[v];
+      words = words.map((w) => (w.toLowerCase() === v ? disp : w));
+      if (!words.includes(disp)) words.push(disp);
+      if (g.neg) for (const [k, d] of Object.entries(g.vars)) if (k !== v && d !== disp) words.push("-" + d);
+    }
+    return [...new Set(words)].join(" ");
+  }
   const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
 
   function detectFlags(title) {
@@ -109,6 +148,7 @@
       if (pick(qt, PREMIUM) !== pick(rt, PREMIUM)) continue;
       if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
+      if (variantsConflict(qt, rt)) continue;
       const digits = new Set([...rt].filter((t) => /\d/.test(t)));
       if (!sub(digits, qt)) continue;
       if (!digits.size) {
@@ -198,8 +238,13 @@
     const toks = titleToQuery(title, 20).split(" ").filter(Boolean);
     const brand = toks.length && BRAND_SET.has(toks[0].toLowerCase()) ? toks[0] : "";
     const rest = brand ? toks.slice(1) : toks;
-    const keyToks = rest.filter((t) => /\d/.test(t)).slice(0, 3);
-    const label = (brand ? [brand] : []).concat(keyToks.length ? keyToks : rest.slice(0, 2)).join(" ");
+    // 管理番号らしい語（C-2436・OL4709・IC0144・A-164、レンズの機種名に混ざった 3桁以上の数字）は機種名に入れない
+    const isLens = rest.some((t) => /mm$/i.test(t));
+    const code = (t) => /^[A-Za-z]{1,2}-\d{3,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
+    const keyToks = rest.filter((t) => /\d/.test(t) && !code(t)).slice(0, 3);
+    const vt = variantOf(tokensOf(title));
+    const label = (brand ? [brand] : []).concat(keyToks.length ? keyToks : rest.slice(0, 2))
+      .concat(vt ? [vt.label] : []).join(" ");
     const norm = label.toLowerCase().split(" ").map((t) => {
       if (/^f\/?\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t)) t = t.replace(/^f\/?/, "");
       return /^\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t) && t.includes(".") ? "f" + t : t;
@@ -256,6 +301,7 @@
     for (const it of items) {
       it.flags = detectFlags(it.title);
       it.query = titleToQuery(it.title);
+      it.eq = ebaySearchQuery(it.query, it.title);  // eBay のリンク用（型と除外語入り）
       let m = matchRefs(it.query + " " + it.title, refs);
       if (!m.length) m = matchKantei(it.title);
       it.refs = m;
@@ -338,7 +384,8 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
         fresh++;
         const res = await new Promise((ok) => {
           try {
-            chrome.runtime.sendMessage({ type: "browse", q: label },
+            const vt = variantOf(tokensOf(label));
+            chrome.runtime.sendMessage({ type: "browse", q: label, must: vt ? vt.must : [], not: vt ? vt.not : [] },
               (r) => ok(r || { error: (chrome.runtime.lastError || {}).message || "応答なし" }));
           } catch (e) { ok({ error: String(e.message || e) }); }
         });
@@ -482,14 +529,14 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       if (mk === "◎" || mk === "○") waits.push({ i, c, usd, label, b: state.browse[label] });
     }
     waits.sort((a, b) => (a.i.end < b.i.end ? -1 : 1));
-    const more = !state.done && state.total && state.total > 100;
+    const more = !state.done && state.total && state.total > items.length;
 
     const row = (i) => {
-      const c = i.calc, r = i.refs[0] || {}, e = ebay(i.query);
+      const c = i.calc, r = i.refs[0] || {}, e = ebay(i.eq || i.query);
       const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";
       const junk = i.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1;
       const flags = i.flags.filter((f) => !["動作品", "美品"].includes(f)).map((f) => `<span class="flag">${esc(f)}</span>`).join("");
-      const tip = `eBay検索語: ${i.query}（価格+送料の高い順）\n根拠: ${r.title || ""} $${r.price} [${r.source || ""}]` +
+      const tip = `eBay検索語: ${i.eq || i.query}（価格+送料の高い順）\n根拠: ${r.title || ""} $${r.price} [${r.source || ""}]` +
         (junk ? `\nジャンク評価 ×${Math.round(DATA.cfg.junkFactor * 100)}% → $${i.usd}` : "") + `\n送料$${DATA.cfg.deductionUsd}差引後 Net $${c ? c.netUsd.toFixed(0) : "-"}`;
       const [left, soon] = remain(i.end);
       return `<tr class="${soon ? "soon" : ""}"><td class="m ${cls}">${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
@@ -517,7 +564,7 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th>利益(現在)</th></tr>`;
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件</span>
-<span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">全ページ鑑定（残り${state.total - items.length}件）</button>` : ""}
+<span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">続きを鑑定（残り${state.total - items.length}件）</button>` : ""}
 <button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ 送料$${DATA.cfg.deductionUsd}差引 ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）</h4>
@@ -536,7 +583,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
 <span class="s">コピーした内容を data/price_memo.csv に貼るか Claude に送ると、全端末の相場データに取り込めます</span></div></details></div>`;
     badges();
-    fetchBrowse(groupList.slice(0, 150).map((g) => g.label));
+    if (!state.loading) fetchBrowse(groupList.slice(0, DATA.cfg.browseMaxModels).map((g) => g.label));
     checkDescs(good.map((i) => i.id));
   }
 
@@ -554,7 +601,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits };
+    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict };
     return;
   }
 
@@ -563,23 +610,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     if (!btn) return;
     const a = btn.dataset.a, root = document.getElementById("yhk");
     if (a === "min") { root.classList.toggle("min"); save(LS_OPEN, !root.classList.contains("min")); render(); }
-    if (a === "all") {
-      const seen = new Set(state.items.map((i) => i.id));
-      try {
-        for (let start = 101; start <= (state.total || 0) && start <= 5001; start += 100) {
-          state.loading = `読み込み中… ${start - 1}/${state.total}`; render();
-          const json = await fetchPage(start);
-          const fresh = parseItems(json || {}).filter((it) => !seen.has(it.id));
-          fresh.forEach((it) => seen.add(it.id));
-          state.items.push(...evaluate(fresh, state.fx));  // ページごとに鑑定して順次表示
-          await new Promise((r) => setTimeout(r, 800));
-        }
-      } catch (e) {
-        alert("読み込みに失敗しました: " + e.message);
-      } finally {
-        state.loading = ""; state.done = true; render();
-      }
-    }
+    if (a === "all") loadAll(10000);
     if (a === "memo") {
       const k = btn.dataset.k, prev = btn.previousElementSibling;
       const inp = prev && prev.matches("input[data-memo]") ? prev : root.querySelector(`input[data-memo="${CSS.escape(k)}"]`);
@@ -597,7 +628,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     }
     if (a === "copy") {
       const good = state.items.filter((i) => i.mark === "◎" || i.mark === "○").sort((x, y) => (x.end < y.end ? -1 : 1));
-      const txt = good.map((i) => `${i.mark} ${endStr(i.end)} 入札上限${yen(i.calc.maxBid)}（このまま入札）${i.tax ? `・ストア支払い${yen(Math.round(i.calc.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}` : ""} 現在${yen(i.price)} ${i.title}\nhttps://auctions.yahoo.co.jp/jp/auction/${i.id}\nsold: ${ebay(i.query).sold}\nnow: ${ebay(i.query).now}`).join("\n\n");
+      const txt = good.map((i) => `${i.mark} ${endStr(i.end)} 入札上限${yen(i.calc.maxBid)}（このまま入札）${i.tax ? `・ストア支払い${yen(Math.round(i.calc.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}` : ""} 現在${yen(i.price)} ${i.title}\nhttps://auctions.yahoo.co.jp/jp/auction/${i.id}\nsold: ${ebay(i.eq || i.query).sold}\nnow: ${ebay(i.eq || i.query).now}`).join("\n\n");
       await navigator.clipboard.writeText(txt).catch(() => {});
       btn.textContent = "コピーしました";
     }
@@ -608,6 +639,29 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     }
   });
 
+  // ------------------------------------------------------------------ 全ページの読み込み（100件ずつ、約1秒間隔）
+  async function loadAll(limit) {
+    if (state.loading) return;
+    const seen = new Set(state.items.map((i) => i.id));
+    const cur = Number(new URL(location.href).searchParams.get("b") || 1);
+    const last = Math.min(state.total || 0, limit);
+    try {
+      for (let start = 1; start <= last; start += 100) {
+        if (start === cur) continue;  // 今開いているページは読み込み済み
+        state.loading = `読み込み中… ${Math.min(start + 99, last)}/${last}件`; render();
+        const json = await fetchPage(start);
+        const fresh = parseItems(json || {}).filter((it) => !seen.has(it.id));
+        fresh.forEach((it) => seen.add(it.id));
+        state.items.push(...evaluate(fresh, state.fx));  // ページごとに鑑定して順次表示
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    } catch (e) {
+      alert("読み込みに失敗しました: " + e.message);
+    } finally {
+      state.loading = ""; state.done = state.items.length >= (state.total || 0) || last >= (state.total || 0); render();
+    }
+  }
+
   // ------------------------------------------------------------------ 起動
   function start() {
     const el = document.getElementById("__NEXT_DATA__");
@@ -615,10 +669,11 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const json = JSON.parse(el.textContent);
     state.items = parseItems(json);
     state.total = totalFromJson(json);
-    state.done = !state.total || state.total <= 100 || new URL(location.href).searchParams.get("b") > "1";
+    state.done = !state.total || state.total <= state.items.length;
     if (!state.items.length) return;
     evaluate(state.items, state.fx);
     render();
+    if (!state.done) loadAll(DATA.cfg.autoMaxItems);  // 開いたら自動で上限（config.toml）まで全ページを鑑定
   }
 
   start();

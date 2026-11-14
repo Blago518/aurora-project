@@ -25,8 +25,10 @@ async function appToken() {
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
-async function browse(q) {
-  const key = "browse2:" + q.toLowerCase();  // 集計方法を変えたら番号を上げて読み直す
+async function browse(q, must = [], not = []) {
+  const key = "browse3:" + [q, ...must, ...not.map((x) => "-" + x)].join(" ").toLowerCase();  // 集計方法を変えたら番号を上げて読み直す
+  const word = (w) => new RegExp("(^|[^A-Za-z])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z])", "i");
+  const mustRe = must.map(word), notRe = not.map(word);  // 型（Contax の MMJ など）: その型の出品だけ数え、ほかの型は除く
   const cached = (await chrome.storage.local.get(key))[key];
   if (cached && Date.now() - cached.t < CACHE_MS) return cached;
   const params = new URLSearchParams({ q, limit: "100", filter: "buyingOptions:{FIXED_PRICE|AUCTION},conditions:{USED}" });
@@ -52,6 +54,7 @@ async function browse(q) {
   for (const it of d.itemSummaries || []) {
     if (!it.price || it.price.currency !== "USD" || re.test(it.title || "")) continue;
     if (!specs.every((r) => r.test(it.title || ""))) continue;
+    if (!mustRe.every((r) => r.test(it.title || "")) || notRe.some((r) => r.test(it.title || ""))) continue;
     const ships = (it.shippingOptions || []).map((s) => Number(s.shippingCost && s.shippingCost.value)).filter((v) => !isNaN(v));
     totals.push(Number(it.price.value) + (ships.length ? Math.min(...ships) : 0));
     if ((it.itemLocation || {}).country === "JP") jp++;
@@ -65,7 +68,7 @@ async function browse(q) {
 
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   if (msg && msg.type === "browse") {
-    browse(msg.q).then(send, (e) => send({ error: String((e && e.message) || e) }));
+    browse(msg.q, msg.must || [], msg.not || []).then(send, (e) => send({ error: String((e && e.message) || e) }));
     return true; // 非同期で返す
   }
 });

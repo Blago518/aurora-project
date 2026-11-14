@@ -452,6 +452,34 @@ NOISE_TOKENS = {
     "1", "the", "and", "with", "from", "japan", "mint", "exc", "exc+", "exc++", "exc+++", "near",
     "n", "a", "b", "c", "ab", "aa", "aaa", "s", "sale", "free", "shipping", "used", "ok",
 }
+# 同じ機種でも「型」で相場が違うもの。タイトルの書き方をそろえてから（VARIANT_NORMALIZE）、
+# 型が違う実績とは照合しない。strict=True は「片方にだけ型の表記がある」場合も別物とみなす（保守的）。
+# neg=True は eBay の検索語に、ほかの型を除外する語（-MMG など）も入れる。ebay は eBay 検索で使う表記。
+VARIANT_NORMALIZE = [
+    (r"\bAE\s*[-/]?\s*(?:West\s*)?(?:G\b|Germany\b)", " AEG "),
+    (r"\bAE\s*[-/]?\s*(?:J\b|Japan\b)", " AEJ "),
+    (r"\bMM\s*[-/]?\s*(?:West\s*)?(?:G\b|Germany\b)", " MMG "),
+    (r"\bMM\s*[-/]?\s*(?:J\b|Japan\b)", " MMJ "),
+    (r"\bAi\s*改|\bAi[-\s]?converted\b|\bAi'?d\b", " AiKai "),
+    (r"\bAi\s*-?\s*S\b", " Ai-S "),
+    (r"(?<![A-Za-z])S\s*\.\s*S\s*\.\s*C\b\.?", " SSC "),
+    (r"(?<![A-Za-z.])S\s*\.\s*C\b\.?", " SC "),
+    (r"\bNew\s*FD\b|\bnFD\b|\bFDn\b|ニュー\s*FD", " NewFD "),
+]
+VARIANT_GROUPS = [
+    {"name": "Contax/Yashica（ツァイス C/Y）", "ctx": ["contax", "yashica"], "strict": True, "neg": True,
+     "vars": {"mmg": "MMG", "mmj": "MMJ", "aeg": "AEG", "aej": "AEJ"}},
+    {"name": "Hasselblad", "ctx": ["hasselblad"], "strict": True, "neg": True,
+     "vars": {"cfe": "CFE", "cfi": "CFi", "cf": "CF", "cb": "CB", "fe": "FE"}},
+    {"name": "Nikon（非Ai/Ai/Ai-S/Ai改）", "ctx": ["nikon", "nikkor"], "strict": False, "neg": False,
+     "vars": {"nonai": "Non-Ai", "ai": "Ai", "ai-s": "(Ai-S,AIS)", "aikai": "Ai"}},
+    {"name": "Canon FD（S.S.C./S.C./New FD）", "ctx": ["fd", "newfd"], "strict": False, "neg": False,
+     "vars": {"ssc": "(SSC,S.S.C.)", "sc": "(S.C.,SC)", "newfd": '("New FD",nFD)'}},
+    {"name": "Minolta（MC/MD）", "ctx": ["minolta", "rokkor"], "strict": False, "neg": True,
+     "vars": {"mc": "MC", "md": "MD"}},
+]
+
+
 FLAG_RULES = [
     ("ジャンク", r"ジャンク|部品取り|現状品|動作未確認|動作不良|不具合|故障|for\s*parts"),
     ("光学難あり", r"カビ|クモリ|曇り|バルサム|ヤケ|傷あり|キズあり|拭き傷"),
@@ -459,7 +487,7 @@ FLAG_RULES = [
     ("美品", r"超美品|極上|美品|新品同様|未使用"),
     ("セット品", r"セット|まとめ|おまとめ|大量|\d+\s*点"),
     ("アダプター等", r"アダプタ|adapter|コンバーター|converter|接写リング|中間リング|エクステンション|テレプラス|"
-                   r"teleplus|テレコンバーター|テレコン|ムター|mutar|エクステンダー|extender|塗料|ペイント|マウント変換|→"),
+                   r"teleplus|テレコンバーター|テレコン|ムター|mutar|エクステンダー|extender|塗料|ペイント|マウント変換|→|adapt-?all"),
     ("付属品のみ?", r"(?:キャップ|ストラップ|ケース|フード|フィルター|背面|裏蓋|データバック|ファインダー)"
                    r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|取扱説明書|説明書のみ|\bback\b|"
                    r"ポーチ|月号|雑誌|ムック|書籍|magazine|マグニファイ|アイピース|ルーペ|アイカップ|接眼|magnifier|eyepiece"),
@@ -478,6 +506,8 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = re.sub(r"(\d)\s*(mm|㎜)\s*([fF]\s*/?\s*\d)", r"\1mm \3", t)  # 75-150mmF4 → 75-150mm F4
     t = re.sub(r"[①-⑳]", " ", t)  # まとめ⑤ 等の丸数字
     t = re.sub(r"非\s*-?\s*A[iI](?![-sS])", " nonAi ", t)  # 非Ai（Ai/Ai-Sとは相場が違う）
+    for pat, rep in VARIANT_NORMALIZE:  # 型の表記をそろえる（AE Japan → AEJ、S.S.C. → SSC など）
+        t = re.sub(pat, rep, t, flags=re.I)
     t = re.sub(r"[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b", " ", t)  # #v4081 等の管理番号
     t = re.sub(r"(\d)\s*[・･]\s*(\d)", r"\1.\2", t)        # f2・8 → f2.8
     t = re.sub(r"\b[fF]\s*/\s*(\d)", r"F\1", t)              # f/2.8 → F2.8
@@ -563,7 +593,7 @@ def quantile(values: list[float], q: float) -> float:
 def _tokens(s: str) -> set[str]:
     q = title_to_query(s, max_tokens=20)
     q = unicodedata.normalize("NFKC", q).lower()
-    q = re.sub(r"(\d)\s*mm", r"\1mm", q)
+    q = re.sub(r"(\d)\s*mm(?![a-z])", r"\1mm", q)  # 「50 mm」→50mm（「F1.4 MMJ」はつなげない）
     q = re.sub(r"\bf\s*/\s*(\d)", r"f\1", q)  # f/1.4 → f1.4
     q = re.sub(r"[()\[\]+&]", " ", q)
     out = set()
@@ -621,6 +651,36 @@ COLOR_WORDS = {"black", "silver", "chrome", "white", "red", "blue", "green", "br
 GENERATIONS = {"ii", "iii", "iv", "mkii", "mkiii", "mk2", "mk3", "mark"}
 PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定", "whiteface", "af"}
 
+def variants_conflict(qt: set, rt: set) -> bool:
+    """型が違う（または strict のグループで片方にだけ型がある）なら True."""
+    for g in VARIANT_GROUPS:
+        if not (set(g["ctx"]) & (qt | rt)):
+            continue
+        qv, rv = qt & set(g["vars"]), rt & set(g["vars"])
+        if (qv != rv) if g["strict"] else (qv and rv and qv != rv):
+            return True
+    return False
+
+
+def ebay_search_query(query: str, title: str = "") -> str:
+    """eBay 検索語に型を入れる（入っていなければ足す）。neg のグループはほかの型を除外する語も足す."""
+    toks = _tokens(f"{query} {title}")
+    words = query.split()
+    for g in VARIANT_GROUPS:
+        if not (set(g["ctx"]) & toks):
+            continue
+        found = [v for v in g["vars"] if v in toks]
+        if len(found) != 1:
+            continue
+        v = found[0]
+        disp = g["vars"][v]
+        words = [disp if w.lower() == v else w for w in words]
+        if disp not in words:
+            words.append(disp)
+        if g["neg"]:
+            words += ["-" + d for k, d in g["vars"].items() if k != v and d != disp]
+    return " ".join(dict.fromkeys(words))
+
 
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表"]
 
@@ -665,6 +725,9 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
             continue
         # II / III などの世代違いは別機種
         if (qt & GENERATIONS) != (rt & GENERATIONS):
+            continue
+        # 型違い（Contax の MMJ と AEG など）は相場が違う
+        if variants_conflict(qt, rt):
             continue
         # 型番・焦点距離・F値など数字を含む語は、実績側のものが全部一致すること
         digits = {t for t in rt if re.search(r"\d", t)}
@@ -934,7 +997,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
     for it in items:
         mark, reason = judge(it)
         c = it.calc
-        links = ebay_links(it.ebay_query) if it.ebay_query else {}
+        links = ebay_links(ebay_search_query(it.ebay_query, it.title)) if it.ebay_query else {}
         rows.append(
             {
                 "判定": mark,
@@ -945,7 +1008,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "即決価格": it.buy_now_jpy,
                 "入札数": it.bids,
                 "終了": it.end_time,
-                "eBay検索語": it.ebay_query,
+                "eBay検索語": ebay_search_query(it.ebay_query, it.title) if it.ebay_query else "",
                 "eBay販売済みURL": links.get("sold", ""),
                 "eBay出品中URL": links.get("active", ""),
                 "eBayProductResearchURL": links.get("research", ""),
