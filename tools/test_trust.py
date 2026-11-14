@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import appraise as ba
@@ -95,6 +96,41 @@ class TrustedImport(unittest.TestCase):
                 + "</script>")
         items, _ = ba.parse_listing_page(page)
         self.assertEqual(items[0].seller_id, "8GwLRL")
+
+
+class Shipping(unittest.TestCase):
+    """出品ページの送料（検索結果に無いとき）. Python と JS で同じ."""
+    ITEMS = [
+        {"chargeForShipping": "winner", "shipping": {"methods": [{"shippingFee": 1300}, {"shippingFee": 910}]}},  # 安い方
+        {"chargeForShipping": "seller", "shipping": {"methods": []}},                                          # 送料無料
+        {"chargeForShipping": "winner", "shipping": {"methods": [{"name": "着払い"}]}},                         # 不明
+        {},
+    ]
+
+    def page(self, item):
+        return ('<script id="__NEXT_DATA__" type="application/json">' + json.dumps(
+            {"props": {"pageProps": {"initialState": {"item": {"detail": {"item": item}}}}}}) + "</script>")
+
+    def test_python(self):
+        self.assertEqual([ba.item_shipping(self.page(i)) for i in self.ITEMS], [910, 0, None, None])
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(self.ITEMS)}.map(i=>m.shipFee(i))))")
+        self.assertEqual(out, [910, 0, None, None])
+
+    def test_recalc_with_page_shipping(self):
+        it = ba.Item(url="u", auction_id="a1", title="Nikon FM2", current_price_jpy=10000, expected_price_usd=260.0)
+        it.calc = ba.calculate(it, CFG, 150.0)
+        before = it.calc["profit_now_jpy"]  # 送料不明 → 1,000円で計算
+        with unittest.mock.patch.object(ba, "http_get", lambda u: self.page(self.ITEMS[0])), \
+                unittest.mock.patch.object(ba, "judge", lambda i: ("◎", "")):
+            ba.check_descriptions([it], 0, CFG, 150.0)
+        self.assertEqual(it.domestic_shipping_jpy, 910)
+        self.assertEqual(it.calc["profit_now_jpy"], before + 90)  # 1,000円 → 910円
 
 
 if __name__ == "__main__":
