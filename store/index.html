@@ -272,8 +272,8 @@ function storeReason(r) {  // 拡張機能（ヤフオク向け）の言葉を�
 
 // 過去データの状態（Near MINT $229.99 など）。手で直した相場（相場メモ）は除く
 function conds(refs) {
-  return refs.filter((x) => x.tier <= 2 && !core.isMemo(x)).slice(0, 5)
-    .map((x) => `${esc(core.conditionOf(x) || "記載なし")} ${usd(x.price)}`).join("<br>");
+  return refs.filter((x) => x.tier <= 2).slice(0, 5)
+    .map((x) => `${esc(core.conditionOf(x) || "記載なし")} ${usd(x.price)}${core.isMemo(x) ? "（直した相場）" : ""}`).join("<br>");
 }
 function renderResult(name, price, r) {
   const el = $("result");

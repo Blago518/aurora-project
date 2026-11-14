@@ -255,12 +255,14 @@ function makeCore(DATA) {
     [/\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り/i, "ジャンク"],
   ];
   function conditionOf(r) {
-    // 頒布会リストはコンディション欄（source の括弧内。例: 頒布会リスト(Near Mint 小傷)）を先に、無ければ商品名を見る
-    const h = String(r.source || "").normalize("NFKC").match(/^頒布会リスト\((.*)\)?$/);
-    for (const t of [h ? h[1] : "", String(r.title || "").normalize("NFKC")]) {
+    // 頒布会リストのコンディション欄・手で直した相場の状態（source の括弧内。例: 頒布会リスト(Near Mint 小傷)・相場メモ(MINT)）を先に、
+    // 無ければ商品名を見る
+    const h = String(r.source || "").normalize("NFKC").match(/^(頒布会リスト|相場メモ)\((.*?)\)?$/);
+    for (const t of [h ? h[2] : "", String(r.title || "").normalize("NFKC")]) {
       for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return typeof out === "function" ? out(m) : out; }
     }
-    const w = h && h[1].match(/^[^\s)]+/);
+    if (h && h[1] === "相場メモ") return h[2].trim();
+    const w = h && h[2].match(/^[^\s)]+/);
     return w ? w[0] : "";
   }
   return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf };

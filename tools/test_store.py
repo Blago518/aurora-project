@@ -187,5 +187,37 @@ class AdaptallFlag(unittest.TestCase):
         self.assertEqual(json.loads(out), list(self.CASES.values()))
 
 
+class MemoCondition(unittest.TestCase):
+    """［直す］［登録］で入れた状態（相場メモ(MINT)）が取り込まれ、表示される."""
+
+    def test_import_keeps_condition(self):
+        with tempfile.TemporaryDirectory() as d:
+            dl, dest = Path(d) / "dl", Path(d) / "price_memo.csv"
+            dl.mkdir()
+            (dl / "aurora_price_memo.csv").write_text(
+                'title,sold_price_usd,source\n"Olympus F2 35mm",139.99,"相場メモ(Near MINT)"\n"Nikon FM2",230,相場メモ\n', encoding="utf-8")
+            self.assertEqual(ba.import_extension_memo(dl, dest), (2, 0))
+            rows = {r["title"]: r for r in ba.read_sales(dest)}
+            self.assertEqual(rows["Olympus F2 35mm"]["source"], "相場メモ(Near MINT)")
+            self.assertTrue(ba.is_memo(rows["Olympus F2 35mm"]))  # 状態付きでも相場メモとして優先される
+            (dl / "aurora_price_memo.csv").write_text('title,sold_price_usd,source\n"Nikon FM2",230,"相場メモ(MINT)"\n', encoding="utf-8")
+            self.assertEqual(ba.import_extension_memo(dl, dest), (0, 1))  # 状態だけ変えても更新
+
+    def test_js_condition(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        with tempfile.TemporaryDirectory() as d:
+            dp = Path(d) / "d.json"
+            dp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            code = (f"const {{makeCore}}=require({json.dumps(str(bs.CORE_JS))});const c=makeCore(require({json.dumps(str(dp))}));"
+                    "console.log(JSON.stringify(['相場メモ(Near MINT)','相場メモ(Exc+++)','相場メモ(ジャンク)','相場メモ']"
+                    ".map(s=>[c.conditionOf({title:'Olympus F2 35mm',source:s}),c.isMemo({source:s})])))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), [["Near MINT", True], ["Exc+++", True], ["ジャンク", True], ["", True]])
+
+
 if __name__ == "__main__":
     unittest.main()
