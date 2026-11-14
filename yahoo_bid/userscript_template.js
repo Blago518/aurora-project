@@ -31,6 +31,7 @@
     t = t.replace(/\b[wW]\s*\/\s*/g, " ");
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
     t = t.replace(/[①-⑳]/g, " ");
+    t = t.replace(/非\s*-?\s*A[iI](?![-sS])/g, " nonAi ");
     t = t.replace(/[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b/g, " ");
     t = t.replace(/(\d)\s*[・･]\s*(\d)/g, "$1.$2");
     t = t.replace(/\b[fF]\s*\/\s*(\d)/g, "F$1");
@@ -39,8 +40,9 @@
     t = t.replace(/\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b/g, "$1 $2");
     t = t.replace(/[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+/g, " ");
     let brand = "";
+    const allBrands = [];
     for (const [ja, en] of C.brandsJa) {
-      if (t.includes(ja)) { brand = brand || en; t = t.split(ja).join(" "); }
+      if (t.includes(ja)) { brand = brand || en; allBrands.push(en); t = t.split(ja).join(" "); }
     }
     for (const [ja, en] of C.wordsJa) t = t.split(ja).join(` ${en} `);
     const tokens = [];
@@ -54,11 +56,14 @@
       if (C.lensLines[line]) brand = brand || C.lensLines[line];
       if (C.brandsEn[low]) {
         brand = brand || C.brandsEn[low];
+        allBrands.push(C.brandsEn[low]);
         if (C.brandsEn[low] !== "Carl") continue;
       }
       if (!tokens.some((x) => x.toLowerCase() === low)) tokens.push(tok);
     }
-    return (brand ? [brand] : []).concat(tokens).slice(0, maxTokens).join(" ");
+    const words = (brand ? [brand] : []).concat(tokens);
+    if (maxTokens > 7) { for (const b of new Set(allBrands)) if (b !== brand) words.push(b); return words.join(" "); }
+    return words.slice(0, maxTokens).join(" ");
   }
 
   function tokensOf(s) {
@@ -98,6 +103,7 @@
       if (qmm !== has(rt, (t) => t.endsWith("mm"))) continue;
       if (r.acc && !qAcc) continue;
       if (pick(qt, PREMIUM) !== pick(rt, PREMIUM)) continue;
+      if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
       const digits = new Set([...rt].filter((t) => /\d/.test(t)));
       if (!sub(digits, qt)) continue;
@@ -122,6 +128,8 @@
     for (const r of KANTEI) {
       if (!r.re.every((re) => re && re.test(t))) continue;
       const rt = new Set(r.tokens);
+      if ([...qt].some((x) => THIRD.has(x) && !rt.has(x))) continue;
+      if (qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) continue;
       if (qmm !== has(rt, (x) => x.endsWith("mm"))) continue;
       const model = [...rt].filter((x) => /\d/.test(x) && !x.endsWith("mm") && !x.startsWith("f"));
       if (model.length && !model.every((x) => qt.has(x))) continue;
@@ -244,6 +252,8 @@
       if (!m.length) m = matchKantei(it.title);
       it.refs = m;
       it.usd = m.length ? median(m.map((r) => r.price)) : null;
+      if (it.usd != null && it.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1)
+        it.usd = Math.round(it.usd * DATA.cfg.junkFactor * 100) / 100;
       it.calc = it.usd != null ? calculate(it, it.usd, fx) : null;
       [it.mark, it.reason] = judge(it);
     }
@@ -309,7 +319,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
       const flags = i.flags.filter((f) => !["動作品", "美品"].includes(f)).map((f) => `<span class="flag">${esc(f)}</span>`).join("");
       return `<tr><td class="m ${cls}">${i.mark}</td><td class="n">${endStr(i.end)}</td>
 <td><a href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener">${esc(i.title.slice(0, 70))}</a>${flags}
-<div class="s">根拠: ${esc(r.title || "")} $${i.usd} [${esc(srcLabel(r))}]（Net $${c ? c.netUsd.toFixed(0) : "-"}） ・
+<div class="s">根拠: ${esc(r.title || "")} $${r.price}${i.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? ` ×ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%=$${i.usd}` : ""} [${esc(srcLabel(r))}]（Net $${c ? c.netUsd.toFixed(0) : "-"}） ・
 <a href="${ebay(i.query).sold}" target="_blank" rel="noopener">eBay販売済み</a></div></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・送料${i.ship == null ? "?" : yen(i.ship)}</div></td>
 <td class="n"><b>${yen(c && c.maxBid)}</b><div class="s">損益分岐 ${yen(c && c.breakeven)}</div></td>
@@ -320,7 +330,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">全ページ鑑定（残り${state.total - items.length}件）</button>` : ""}
 <button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
-<div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ 送料$${DATA.cfg.deductionUsd}差引 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
+<div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ 送料$${DATA.cfg.deductionUsd}差引 ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）</h4>
 ${good.length ? `<table>${head}${good.map(row).join("")}</table>` : `<div class="s">このページには基準を満たす出品がありません。</div>`}
 <details><summary>要確認（相場はあるが付属品・セット等の可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>

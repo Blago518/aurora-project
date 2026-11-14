@@ -55,6 +55,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "refundRatio": (t["consumption_tax_pct"] / (100 + t["consumption_tax_pct"])
                             if t["include_consumption_tax_refund"] else 0.0),
             "minProfit": j["min_profit_jpy"], "minMarginPct": j["min_margin_pct"],
+            "junkFactor": j.get("junk_price_factor", 1.0),
         },
         "consts": {
             "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN,

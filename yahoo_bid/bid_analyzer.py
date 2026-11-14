@@ -467,6 +467,7 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = re.sub(r"\b[wW]\s*/\s*", " ", t)  # w/case（with）
     t = re.sub(r"(\d)\s*(mm|㎜)\s*([fF]\s*/?\s*\d)", r"\1mm \3", t)  # 75-150mmF4 → 75-150mm F4
     t = re.sub(r"[①-⑳]", " ", t)  # まとめ⑤ 等の丸数字
+    t = re.sub(r"非\s*-?\s*A[iI](?![-sS])", " nonAi ", t)  # 非Ai（Ai/Ai-Sとは相場が違う）
     t = re.sub(r"[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b", " ", t)  # #v4081 等の管理番号
     t = re.sub(r"(\d)\s*[・･]\s*(\d)", r"\1.\2", t)        # f2・8 → f2.8
     t = re.sub(r"\b[fF]\s*/\s*(\d)", r"F\1", t)              # f/2.8 → F2.8
@@ -475,9 +476,11 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = re.sub(r"\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b", r"\1 \2", t)  # F2L → F2 L
     t = re.sub(r"[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+", " ", t)
     brand = ""
+    all_brands: list[str] = []
     for ja, en in BRANDS_JA:
         if ja in t:
             brand = brand or en
+            all_brands.append(en)
             t = t.replace(ja, " ")
     for ja, en in WORDS_JA:
         t = t.replace(ja, f" {en} ")
@@ -496,12 +499,15 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
             brand = brand or LENS_LINES[line]
         if low in BRANDS_EN:
             brand = brand or BRANDS_EN[low]
+            all_brands.append(BRANDS_EN[low])
             if BRANDS_EN[low] != "Carl":
                 continue
         if not any(x.lower() == low for x in tokens):
             tokens.append(tok)
     words = ([brand] if brand else []) + tokens
-    return " ".join(words[:max_tokens])
+    if max_tokens > 7:  # 照合用: タイトル中の全メーカー名を残す（「タムロン ニコン用」等）
+        words += [b for b in dict.fromkeys(all_brands) if b != brand]
+    return " ".join(words[:max_tokens] if max_tokens <= 7 else words)
 
 
 # ---------------------------------------------------------------------------
@@ -620,7 +626,7 @@ def read_sales(path: Path | None) -> list[dict]:
 
 
 ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)
-THIRD_PARTY = {"7artisans", "ttartisan", "brightin", "kenko", "pixco", "k&f", "meike", "viltrox", "laowa",
+THIRD_PARTY = {"tamron", "sigma", "tokina", "7artisans", "ttartisan", "brightin", "kenko", "pixco", "k&f", "meike", "viltrox", "laowa",
                "samyang", "yongnuo", "kipon", "fotodiox", "neewer", "commlite", "sg-image", "pergear",
                "kamlan", "zonlai", "fujian", "rokinon", "vello"}
 COLOR_WORDS = {"black", "silver", "chrome", "white", "red", "blue", "green", "brown"}
@@ -665,6 +671,9 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
             continue
         # 限定・チタン・ゴールド等は相場が別物なので、片方にだけあれば除外
         if (qt & PREMIUM_VARIANTS) != (rt & PREMIUM_VARIANTS):
+            continue
+        # 非Ai と Ai/Ai-S は相場が違う
+        if ("nonai" in qt and rt & {"ai", "ai-s"}) or ("nonai" in rt and qt & {"ai", "ai-s"}):
             continue
         # II / III などの世代違いは別機種
         if (qt & GENERATIONS) != (rt & GENERATIONS):
@@ -740,6 +749,10 @@ def match_kantei(title: str, table: list[dict]) -> list[dict]:
             continue
         # 表のパターンが緩い場合の保険: 型番（数字を含む語）とレンズ/ボディの区別を確認
         rt = _tokens(row["title"])
+        if (qt & THIRD_PARTY) - rt:  # 「for Nikon」等の社外品
+            continue
+        if "nonai" in qt and rt & {"ai", "ai-s"}:
+            continue
         if any(x.endswith("mm") for x in qt) != any(x.endswith("mm") for x in rt):
             continue
         model = {x for x in rt if re.search(r"\d", x) and not x.endswith("mm") and not x.startswith("f")}
@@ -877,6 +890,11 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
         if src.startswith(("相場メモ", "鑑定表", "eBay")):
             label = src
         item.price_source = f"{label} {len(ps)}件の中央値" if len(ps) > 1 else label
+    if item.expected_price_usd is not None and "ジャンク" in item.flags and item.ebay_price_usd is None:
+        factor = cfg["judge"].get("junk_price_factor", 1.0)
+        if factor < 1:
+            item.expected_price_usd = round(item.expected_price_usd * factor, 2)
+            item.price_source += f" ×ジャンク{int(factor * 100)}%"
     item.calc = calculate(item, cfg, fx)
 
 
