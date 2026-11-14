@@ -1,4 +1,4 @@
-# aurora-research
+# aurora（GitHub上のリポジトリ名は aurora-research）
 
 - `index.html` ほか: 店舗仕入れ用の相場リサーチPWA（GitHub Pages で公開）。
 - `yahoo_bid/`: ヤフオク入札判断ツール。作業ルールと事業ナレッジはそちらにある。

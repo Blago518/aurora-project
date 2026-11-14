@@ -12,9 +12,9 @@
 - 学んだこと・決めたことは `knowledge/` に追記する。
 
 ## Mac での置き場所
-すべて `~/aurora-research/` にある（このフォルダ＝`~/aurora-research/yahoo_bid`）。
-- Chrome拡張機能: `~/aurora-research/yahoo_bid/out/chrome_extension`
-- Obsidian の保管庫: `~/aurora-research/yahoo_bid/knowledge`
+すべて `~/aurora/` にある（このフォルダ＝`~/aurora/yahoo_bid`）。
+- Chrome拡張機能: `~/aurora/yahoo_bid/out/chrome_extension`
+- Obsidian の保管庫: `~/aurora/yahoo_bid/knowledge`
 
 ## ファイル構成
 | ファイル | 役割 |
