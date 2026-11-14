@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aurora 数字のグラフ</title>
+<!-- tools/build_dashboard.py が /*__DATA__*/ の所に集計結果を入れて reports/dashboard.html を作る。ネット接続なしで開ける -->
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --good-text: #006300;
+  --q1: #0d366b; --q2: #104281; --q3: #184f95; --q4: #1c5cab; --q5: #256abf; --q6: #2a78d6; --q7: #3987e5; --q8: #6da7ec;
+  --neutral: #b5b3ab;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
+    --good-text: #0ca30c;
+    --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #256abf;
+    --neutral: #5f5e59;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
+  --good-text: #0ca30c;
+  --q1: #cde2fb; --q2: #b7d3f6; --q3: #9ec5f4; --q4: #86b6ef; --q5: #6da7ec; --q6: #5598e7; --q7: #3987e5; --q8: #256abf;
+  --neutral: #5f5e59;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.6 system-ui, -apple-system, "Hiragino Sans", "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 36px 0 4px; }
+h3 { font-size: 14px; margin: 0 0 2px; font-weight: 600; }
+.sub { color: var(--ink2); font-size: 13px; margin: 0 0 12px; }
+.note { color: var(--muted); font-size: 12px; }
+nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 8px; }
+nav a { font-size: 12px; color: var(--ink2); text-decoration: none; border: 1px solid var(--ring); border-radius: 999px; padding: 2px 10px; background: var(--surface); }
+nav a:hover { color: var(--ink); }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.grid.k { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; min-width: 0; }
+.tile .label { color: var(--ink2); font-size: 12px; }
+.tile .value { font-size: 24px; font-weight: 600; line-height: 1.3; }
+.tile .hint { color: var(--muted); font-size: 11px; }
+.chart { width: 100%; position: relative; }
+svg { display: block; overflow: visible; }
+svg text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg text.v { fill: var(--ink2); }
+svg text.c { fill: #fff; font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 0; font-size: 12px; color: var(--ink2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.legend i.line { height: 2px; border-radius: 1px; vertical-align: 3px; width: 14px; }
+.empty { color: var(--ink2); background: var(--page); border: 1px dashed var(--axis); border-radius: 8px; padding: 12px; font-size: 13px; }
+.empty code, .note code { font-size: 12px; background: var(--grid); padding: 1px 5px; border-radius: 4px; }
+details { margin-top: 8px; font-size: 12px; }
+summary { cursor: pointer; color: var(--muted); }
+table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--grid); }
+td.n, th.n { text-align: right; }
+.tbl-wrap { overflow-x: auto; }
+#tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--ring);
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); border-radius: 8px; padding: 6px 10px; font-size: 12px; max-width: 320px; display: none; z-index: 10; }
+#tip b { display: block; font-weight: 600; }
+.status { display: inline-flex; align-items: center; gap: 4px; }
+.seg { display: flex; height: 28px; gap: 2px; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+.seg div { min-width: 2px; }
+a { color: var(--s1); }
+[data-tip] { cursor: default; }
+</style>
+</head>
+<body>
+<main>
+  <h1>aurora 数字のグラフ</h1>
+  <p class="sub" id="meta"></p>
+  <nav id="toc"></nav>
+  <div id="app"></div>
+</main>
+<div id="tip"></div>
+<script>
+const D = /*__DATA__*/null;
+const $ = (s, e = document) => e.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const yen = v => v == null ? "—" : (v < 0 ? "−" : "") + "¥" + Math.abs(Math.round(v)).toLocaleString("ja-JP");
+const man = v => { const a = Math.abs(v); const s = a >= 1e8 ? (a / 1e8).toFixed(1).replace(/\.0$/, "") + "億" : a >= 1e4 ? (a / 1e4).toFixed(a >= 1e5 ? 0 : 1).replace(/\.0$/, "") + "万" : Math.round(a).toLocaleString(); return (v < 0 ? "−" : "") + s; };
+const pct = v => v == null ? "—" : v.toFixed(1) + "%";
+const cnt = v => v.toLocaleString() + "件";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const SER = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s7", "--s8"];
+const NS = "http://www.w3.org/2000/svg";
+
+// ---- ツールチップ（data-tip を持つ図形にマウスを乗せると出る）
+const tip = $("#tip");
+document.addEventListener("mousemove", e => {
+  const t = e.target.closest && e.target.closest("[data-tip]");
+  if (!t) { tip.style.display = "none"; return; }
+  tip.innerHTML = t.getAttribute("data-tip");
+  tip.style.display = "block";
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - w - 8) + "px";
+  tip.style.top = (e.clientY + h + 20 > innerHeight ? e.clientY - h - 10 : e.clientY + 14) + "px";
+});
+
+// グラフはカードを全部並べてから描く（先に描くと、並ぶ前の広い幅で測ってしまう）
+let Q = [];
+const lazy = fn => (box, o) => { Q.push(() => fn(box, o)); };
+function el(tag, attrs = {}, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function txt(parent, x, y, s, attrs = {}) { const t = el("text", {x, y, ...attrs}, parent); t.textContent = s; return t; }
+function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; }
+function ticks(lo, hi, n = 4) {
+  const span = niceMax((hi - lo) / n); const out = [];
+  const end = Math.ceil(hi / span - 1e-9) * span;  // 最大値を必ず含む所まで
+  for (let v = Math.floor(lo / span) * span; v <= end + 1e-9; v += span) out.push(+v.toFixed(6));
+  return out;
+}
+// 上だけ角丸（4px）の棒。高さが負なら下だけ角丸
+function barPath(x, y0, w, h) {
+  const r = Math.min(4, Math.abs(h), w / 2);
+  if (h >= 0) { const y = y0 - h; return `M${x},${y0}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y0}Z`; }
+  const y = y0 - h; return `M${x},${y0}V${y - r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y - r}V${y0}Z`;
+}
+function hbarPath(x0, y, w, h) {
+  const r = Math.min(4, w, h / 2); const x = x0 + w;
+  return `M${x0},${y}H${x - r}Q${x},${y} ${x},${y + r}V${y + h - r}Q${x},${y + h} ${x - r},${y + h}H${x0}Z`;
+}
+function table(cols, rows) {
+  return `<details><summary>表で見る</summary><div class="tbl-wrap"><table><tr>${cols.map(c => `<th class="${c.n ? "n" : ""}">${esc(c.h)}</th>`).join("")}</tr>` +
+    rows.map(r => `<tr>${cols.map(c => `<td class="${c.n ? "n" : ""}">${c.html ? c.f(r) : esc(c.f(r))}</td>`).join("")}</tr>`).join("") + `</table></div></details>`;
+}
+const legend = items => `<div class="legend">${items.map(i => `<span><i class="${i.line ? "line" : ""}" style="background:var(${i.c})"></i>${esc(i.t)}</span>`).join("")}</div>`;
+
+// ---- 縦棒（1系列。負の値も可）
+const columns = lazy(function (box, {labels, values, fmt, axisFmt = man, color = "--s1", colorFn, tipFn, h = 200, labelEvery}) {
+  const W = box.clientWidth || 340, H = h, L = 44, R = 8, T = 26, B = 34;
+  const svg = el("svg", {width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img"});
+  const vmax = Math.max(0, ...values), vmin = Math.min(0, ...values);
+  const tk = ticks(vmin, niceMax(vmax || 1)); const top = Math.max(...tk), bot = Math.min(...tk);
+  const sy = v => T + (top - v) / (top - bot || 1) * (H - T - B);
+  for (const t of tk) { el("line", {x1: L, x2: W - R, y1: sy(t), y2: sy(t), stroke: t === 0 ? css("--axis") : css("--grid")}, svg); txt(svg, L - 6, sy(t) + 4, axisFmt(t), {"text-anchor": "end"}); }
+  const n = values.length, band = (W - L - R) / n, bw = Math.min(24, band * 0.7);
+  const every = labelEvery || Math.ceil(n / Math.floor((W - L - R) / 44));
+  const imax = values.indexOf(Math.max(...values)), ilast = n - 1;
+  values.forEach((v, i) => {
+    const x = L + band * i + (band - bw) / 2;
+    const tipHtml = tipFn ? tipFn(i) : `<b>${esc(labels[i])}</b>${esc(fmt(v))}`;
+    el("rect", {x: L + band * i, y: T, width: band, height: H - T - B, fill: "transparent", "data-tip": tipHtml}, svg);
+    if (v) el("path", {d: barPath(x, sy(0), bw, sy(0) - sy(v)), fill: css(colorFn ? colorFn(v, i) : color), "data-tip": tipHtml}, svg);
+    if ((i % every === 0 && ilast - i >= every * 0.6) || i === ilast) txt(svg, x + bw / 2, H - B + 16, labels[i], {"text-anchor": "middle"});
+    if ((i === imax || i === ilast) && v && n > 1) txt(svg, x + bw / 2, v >= 0 ? sy(v) - 5 : sy(v) + 13, axisFmt(v), {"text-anchor": "middle", class: "v"});
+  });
+  box.appendChild(svg);
+});
+
+// ---- 横棒（1系列）
+const hbars = lazy(function (box, {labels, values, fmt, color = "--s1", colorFn, tipFn}) {
+  const W = box.clientWidth || 340, rowH = 26, L = Math.min(150, W * 0.38), R = 64, T = 4;
+  const H = T + rowH * labels.length + 4;
+  const svg = el("svg", {width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img"});
+  const vmax = Math.max(...values.map(Math.abs), 1), vmin = Math.min(0, ...values);
+  const span = vmax - vmin, x0 = L + (-vmin) / span * (W - L - R), sx = v => v / span * (W - L - R);
+  el("line", {x1: x0, x2: x0, y1: T, y2: H - 4, stroke: css("--axis")}, svg);
+  labels.forEach((lab, i) => {
+    const y = T + rowH * i, v = values[i], bh = 16;
+    const tipHtml = tipFn ? tipFn(i) : `<b>${esc(lab)}</b>${esc(fmt(v))}`;
+    el("rect", {x: 0, y, width: W, height: rowH, fill: "transparent", "data-tip": tipHtml}, svg);
+    const short = lab.length > 18 ? lab.slice(0, 17) + "…" : lab;
+    txt(svg, L - 8, y + rowH / 2 + 4, short, {"text-anchor": "end", class: "v"});
+    const w = Math.abs(sx(v));
+    if (w > 0) {
+      const p = v >= 0 ? hbarPath(x0, y + (rowH - bh) / 2, w, bh) : hbarPath(x0, y + (rowH - bh) / 2, w, bh);
+      const node = el("path", {d: p, fill: css(colorFn ? colorFn(v, i) : color), "data-tip": tipHtml}, svg);
+      if (v < 0) node.setAttribute("transform", `translate(${2 * x0},0) scale(-1,1)`);
+    }
+    txt(svg, v >= 0 ? x0 + w + 6 : x0 + 6, y + rowH / 2 + 4, fmt(v), {class: "v"});
+  });
+  box.appendChild(svg);
+});
+
+// ---- 折れ線（最大3系列・同じ単位）
+const lines = lazy(function (box, {labels, series, fmt, axisFmt = man, h = 220, xLabel = i => labels[i]}) {
+  const W = box.clientWidth || 340, H = h, L = 44, R = 70, T = 14, B = 30;
+  const svg = el("svg", {width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img"});
+  const all = series.flatMap(s => s.values.filter(v => v != null));
+  const tk = ticks(Math.min(0, ...all), niceMax(Math.max(1, ...all))); const top = Math.max(...tk), bot = Math.min(...tk);
+  const n = labels.length, sx = i => L + (n === 1 ? 0 : i / (n - 1)) * (W - L - R), sy = v => T + (top - v) / (top - bot || 1) * (H - T - B);
+  for (const t of tk) { el("line", {x1: L, x2: W - R, y1: sy(t), y2: sy(t), stroke: t === 0 ? css("--axis") : css("--grid")}, svg); txt(svg, L - 6, sy(t) + 4, axisFmt(t), {"text-anchor": "end"}); }
+  const every = Math.ceil(n / Math.floor((W - L - R) / 40));
+  labels.forEach((_, i) => { if ((i % every === 0 && n - 1 - i >= every * 0.6) || i === n - 1) txt(svg, sx(i), H - B + 16, xLabel(i), {"text-anchor": "middle"}); });
+  for (const s of series) {
+    let d = "", last = null;
+    s.values.forEach((v, i) => { if (v == null) return; d += (d ? "L" : "M") + sx(i) + "," + sy(v); last = i; });
+    if (!d) continue;
+    el("path", {d, fill: "none", stroke: css(s.c), "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "stroke-dasharray": s.dash ? "1 5" : null, opacity: s.dim ? 0.6 : 1}, svg);
+    el("circle", {cx: sx(last), cy: sy(s.values[last]), r: 4, fill: css(s.c), stroke: css("--surface"), "stroke-width": 2}, svg);
+    s._end = {x: sx(last), y: sy(s.values[last]), v: s.values[last]};
+  }
+  // 終点ラベル（重なるときは片方を省く）
+  const ends = series.filter(s => s._end).sort((a, b) => a._end.y - b._end.y); const placed = [];
+  for (const s of ends) {
+    if (placed.some(p => Math.abs(p.y - s._end.y) < 14 && Math.abs(p.x - s._end.x) < 60)) continue;
+    txt(svg, s._end.x + 8, s._end.y + 4, axisFmt(s._end.v), {class: "v"}); placed.push(s._end);
+  }
+  // クロスヘア
+  const cross = el("line", {y1: T, y2: H - B, stroke: css("--axis"), visibility: "hidden"}, svg);
+  const hit = el("rect", {x: L, y: T, width: W - L - R, height: H - T - B, fill: "transparent"}, svg);
+  hit.addEventListener("mousemove", e => {
+    const r = svg.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.round((e.clientX - r.left - L) / ((W - L - R) / Math.max(1, n - 1)))));
+    cross.setAttribute("x1", sx(i)); cross.setAttribute("x2", sx(i)); cross.setAttribute("visibility", "visible");
+    hit.setAttribute("data-tip", `<b>${esc(xLabel(i))}</b>` + series.map(s => `<span class="status"><i style="display:inline-block;width:10px;height:2px;background:var(${s.c})"></i>${esc(s.name)}: ${esc(s.values[i] == null ? "—" : fmt(s.values[i]))}</span>`).join("<br>"));
+  });
+  hit.addEventListener("mouseleave", () => cross.setAttribute("visibility", "hidden"));
+  box.appendChild(svg);
+});
+
+// ---- ドーナツ（割合）
+const donut = lazy(function (box, {items, colors, unit = "件"}) {
+  const total = items.reduce((a, b) => a + b.count, 0);
+  const S = Math.min(220, (box.clientWidth || 300) - 8), R = S / 2, r = R * 0.6, c = S / 2;
+  const svg = el("svg", {width: S, height: S, viewBox: `0 0 ${S} ${S}`, role: "img", style: "margin:4px auto"});
+  let a0 = -Math.PI / 2; const gap = items.length > 1 ? 0.012 : 0;
+  items.forEach((it, i) => {
+    const a = it.count / total * Math.PI * 2, s = a0 + gap / 2, e = a0 + a - gap / 2; a0 += a;
+    if (a <= 0) return;
+    const p = (ang, rad) => [c + rad * Math.cos(ang), c + rad * Math.sin(ang)];
+    const large = e - s > Math.PI ? 1 : 0;
+    const d = items.length === 1 ? `M${c},${c - R}A${R},${R} 0 1 1 ${c - 0.01},${c - R}L${c - 0.01},${c - r}A${r},${r} 0 1 0 ${c},${c - r}Z`
+      : `M${p(s, R)}A${R},${R} 0 ${large} 1 ${p(e, R)}L${p(e, r)}A${r},${r} 0 ${large} 0 ${p(s, r)}Z`;
+    el("path", {d, fill: css(colors[i]), "data-tip": `<b>${esc(it.label)}</b>${it.count.toLocaleString()}${unit}（${(it.count / total * 100).toFixed(1)}%）`}, svg);
+  });
+  txt(svg, c, c - 2, total.toLocaleString(), {"text-anchor": "middle", style: `font-size:22px;font-weight:600;fill:${css("--ink")}`});
+  txt(svg, c, c + 16, unit === "件" ? "件" : unit, {"text-anchor": "middle"});
+  box.appendChild(svg);
+  const lg = document.createElement("div"); lg.className = "legend";
+  lg.innerHTML = items.map((it, i) => `<span><i style="background:var(${colors[i]})"></i>${esc(it.label)} <b>${(it.count / total * 100).toFixed(0)}%</b></span>`).join("");
+  box.appendChild(lg);
+});
+
+// ---- 散布図（出品日数×ウォッチ数）
+const scatter = lazy(function (box, {points, h = 260}) {
+  const W = box.clientWidth || 340, H = h, L = 40, R = 12, T = 12, B = 34;
+  const svg = el("svg", {width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img"});
+  const xt = ticks(0, niceMax(Math.max(60, ...points.map(p => p.days)))), yt = ticks(0, niceMax(Math.max(4, ...points.map(p => p.watch))), 5);
+  const xm = Math.max(...xt), ym = Math.max(...yt), sx = v => L + v / xm * (W - L - R), sy = v => T + (ym - v) / ym * (H - T - B);
+  for (const t of yt) { el("line", {x1: L, x2: W - R, y1: sy(t), y2: sy(t), stroke: t === 0 ? css("--axis") : css("--grid")}, svg); txt(svg, L - 6, sy(t) + 4, t, {"text-anchor": "end"}); }
+  for (const t of xt) txt(svg, sx(t), H - B + 16, t + "日", {"text-anchor": "middle"});
+  el("line", {x1: sx(60), x2: sx(60), y1: T, y2: H - B, stroke: css("--axis")}, svg);
+  txt(svg, sx(60) + 4, T + 10, "60日", {});
+  txt(svg, L, H - 2, "横: 出品してからの日数　縦: ウォッチ数", {});
+  for (const p of points) {
+    const old = p.days >= 60 && p.watch <= 1;
+    const node = el("circle", {cx: sx(p.days), cy: sy(p.watch), r: 4.5, fill: css(old ? "--s2" : "--s1"), stroke: css("--surface"), "stroke-width": 2, opacity: 0.85,
+      "data-tip": `<b>${esc(p.title)}</b>${p.days}日・ウォッチ${p.watch}・${esc(p.price)} ${esc(p.cur)}${old ? "<br>売れ残り候補（60日以上・ウォッチ1以下）" : ""}`}, svg);
+    if (p.url) { node.style.cursor = "pointer"; node.addEventListener("click", () => open(p.url, "_blank")); }
+  }
+  box.appendChild(svg);
+});
+
+// ---- 1本の帯（全体の内訳）
+function segbar(parts, total) {
+  return `<div class="seg">${parts.filter(p => p.value > 0).map(p => `<div style="flex:${p.value};background:var(${p.c})" data-tip="<b>${esc(p.label)}</b>${esc(yen(p.value))}（${(p.value / total * 100).toFixed(1)}%）"></div>`).join("")}</div>`;
+}
+
+// =========================================================================
+const app = $("#app"), toc = $("#toc");
+function section(id, title, sub) {
+  const s = document.createElement("section"); s.id = id;
+  s.innerHTML = `<h2>${esc(title)}</h2>${sub ? `<p class="sub">${sub}</p>` : ""}`;
+  app.appendChild(s); toc.insertAdjacentHTML("beforeend", `<a href="#${id}">${esc(title)}</a>`);
+  return s;
+}
+function card(parent, title, sub) {
+  const c = document.createElement("div"); c.className = "card";
+  c.innerHTML = (title ? `<h3>${esc(title)}</h3>` : "") + (sub ? `<p class="note" style="margin:0 0 6px">${sub}</p>` : "");
+  const box = document.createElement("div"); box.className = "chart"; c.appendChild(box);
+  parent.appendChild(c); return {card: c, box};
+}
+const grid = (parent, k) => { const g = document.createElement("div"); g.className = "grid" + (k ? " k" : ""); parent.appendChild(g); return g; };
+const empty = (parent, html) => parent.insertAdjacentHTML("beforeend", `<div class="empty">${html}</div>`);
+
+function draw() {
+  app.innerHTML = ""; toc.innerHTML = ""; Q = [];
+  const K = D.kpi;
+  $("#meta").innerHTML = `作成 ${esc(D.generated)}・為替 1ドル＝${D.fx}円（config.toml）で円にしています・販売 ${esc(K.first)}〜${esc(K.last)}`;
+
+  // ---- 概要
+  const s0 = section("kpi", "概要", "利益は推定: 販売金額 − eBay手数料（config.toml の率）− 円転ロス − 国際送料・関税・発送代行（明細があれば実額、無ければ一律 $" + D.deduction_usd + "）− 仕入金額。消費税還付は含めません");
+  if (!D.has_ledger) empty(s0, "古物台帳（data/ledger.csv）がありません。<code>python3 tools/update_all.py</code> で取り込めます。");
+  const g0 = grid(s0, true);
+  const tiles = [
+    ["販売件数", cnt(K.count), ""],
+    ["売上（円換算）", yen(K.sales), "販売金額 $ × 為替"],
+    ["推定利益", yen(K.profit), K.no_cost ? `仕入金額が空の ${K.no_cost}件は仕入0円で計算` : ""],
+    ["利益率", pct(K.margin), `判断基準は ${D.min_margin}% 以上`],
+    ["在庫（未販売）", cnt(K.stock), "仕入額 " + yen(K.stock_cost)],
+    ["送料が実額の件数", `${K.ship_actual} / ${K.count}件`, D.has_costs ? `発送明細と No. が一致 ${K.matched}件` : "発送明細なし → 全件 一律$" + D.deduction_usd],
+  ];
+  g0.innerHTML = tiles.map(([l, v, h]) => `<div class="card tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="hint">${esc(h)}</div></div>`).join("");
+
+  // ---- 1. 出品中の状態
+  const s1 = section("cond", "出品中の状態の割合", D.listings_date ? `eBay の出品中一覧（${esc(D.listings_date)} 取得・${D.listings_unique}件。UK・豪州に複製した出品は1件として数える）。状態は出品タイトルの MINT・Exc+ などの表記から` : "");
+  if (!D.conditions) empty(s1, "eBay の出品中一覧がありません。Mac で <code>python3 tools/ebay_api.py listings</code> を実行すると作れます（update_all.py でも自動で取得します）。");
+  else {
+    const g1 = grid(s1);
+    const condColor = l => ({"未使用": "--q1", "TOP MINT": "--q2", "MINT": "--q3", "Near MINT": "--q4", "Exc+5": "--q5", "Exc+4": "--q6", "Exc+3": "--q7", "Exc+2以下": "--q8", "ジャンク": "--s2", "表記なし": "--neutral"})[l];
+    const a = card(g1, "状態の割合", "濃い青ほど良い状態");
+    donut(a.box, {items: D.conditions, colors: D.conditions.map(c => condColor(c.label))});
+    a.card.insertAdjacentHTML("beforeend", table([{h: "状態", f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "割合", n: 1, f: r => pct(r.count / D.listings_unique * 100)}, {h: "平均ウォッチ", n: 1, f: r => r.avg_watch}, {h: "平均出品日数", n: 1, f: r => r.avg_days + "日"}], D.conditions));
+    const b = card(g1, "状態別の平均ウォッチ数", "ウォッチが多い状態＝関心を集めやすい");
+    hbars(b.box, {labels: D.conditions.map(c => c.label), values: D.conditions.map(c => c.avg_watch), fmt: v => v.toFixed(1), colorFn: (v, i) => condColor(D.conditions[i].label),
+      tipFn: i => `<b>${esc(D.conditions[i].label)}</b>平均ウォッチ ${D.conditions[i].avg_watch}・平均 ${D.conditions[i].avg_days}日・${D.conditions[i].count}件`});
+  }
+
+  // ---- 2. 月別
+  const s2 = section("monthly", "月別の売上・利益・件数", "古物台帳の販売日ごと。棒にマウスを乗せると数字が出ます");
+  if (D.monthly.length) {
+    const g2 = grid(s2), M = D.monthly, lab = M.map(m => m.month.slice(2).replace("-", "/"));
+    const tipM = i => `<b>${esc(M[i].month)}</b>売上 ${yen(M[i].sales)}<br>推定利益 ${yen(M[i].profit)}<br>${M[i].count}件・利益率 ${pct(M[i].margin)}`;
+    columns(card(g2, "売上（円）").box, {labels: lab, values: M.map(m => m.sales), fmt: yen, tipFn: tipM});
+    columns(card(g2, "推定利益（円）").box, {labels: lab, values: M.map(m => m.profit), fmt: yen, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipM});
+    columns(card(g2, "販売件数").box, {labels: lab, values: M.map(m => m.count), fmt: cnt, axisFmt: v => v, tipFn: tipM});
+    const mc = card(g2, "利益率（%）", `基準 ${D.min_margin}% を下回る月は赤い棒`);
+    columns(mc.box, {labels: lab, values: M.map(m => m.margin ?? 0), fmt: pct, axisFmt: v => v + "%", colorFn: v => v < D.min_margin ? "--critical" : "--s1", tipFn: tipM});
+    mc.card.insertAdjacentHTML("beforeend", table([{h: "月", f: r => r.month}, {h: "件数", n: 1, f: r => r.count}, {h: "売上", n: 1, f: r => yen(r.sales)}, {h: "推定利益", n: 1, f: r => yen(r.profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], M));
+  }
+
+  // ---- 12. 今月の累計
+  const C = D.cumulative;
+  const s12 = section("pace", `今月（${C.month}）の累計と目標ペース`, C.target_sales || C.target_profit ? "目標ペース＝目標を月の日数で割って日ごとに積み上げた線" : "目標は data/targets.toml に書くと線が出ます（例は下）");
+  const g12 = grid(s12), days = Array.from({length: C.days}, (_, i) => i + 1);
+  for (const [key, name, target, lastKey] of [["sales", "売上の累計（円）", C.target_sales, "last_sales"], ["profit", "推定利益の累計（円）", C.target_profit, "last_profit"]]) {
+    const series = [{name: "今月", values: C[key], c: "--s1"}, {name: "先月", values: C[lastKey], c: "--s2", dim: 1}];
+    if (target) series.push({name: "目標ペース", values: days.map(d => Math.round(target * d / C.days)), c: "--muted", dash: 1});
+    const cc = card(g12, name);
+    lines(cc.box, {labels: days, series, fmt: yen, xLabel: i => (i + 1) + "日"});
+    cc.card.insertAdjacentHTML("beforeend", legend(series.map(s => ({t: s.name, c: s.c, line: 1}))));
+    if (target) {
+      const now = C[key][C.today - 1] || 0, rest = Math.max(0, target - now), left = C.days - C.today;
+      cc.card.insertAdjacentHTML("beforeend", `<p class="note">目標 ${yen(target)} まであと ${yen(rest)}${left > 0 ? `（残り${left}日・1日あたり ${yen(rest / left)}）` : ""}</p>`);
+    }
+  }
+  if (!C.target_sales && !C.target_profit) empty(s12, "目標の線を出すには Mac で次をコピペ（金額は自分の目標に直す）:<br><code>printf '[month]\\nsales_jpy = 500000\\nprofit_jpy = 100000\\n' > ~/aurora/data/targets.toml</code>");
+
+  // ---- 6. 利益率の分布
+  const s6 = section("margin", "利益率の分布", `判断基準: 利益 ${yen(D.min_profit)} 以上 かつ 利益率 ${D.min_margin}% 以上`);
+  if (K.count) {
+    const g6 = grid(s6), mc = D.margin_class;
+    const c6 = card(g6, "基準を満たした割合");
+    const parts = [{label: "基準以上", value: mc.ok, c: "--good"}, {label: "利益は出たが基準未満", value: mc.low, c: "--warning"}, {label: "赤字", value: mc.loss, c: "--critical"}];
+    c6.box.innerHTML = segbar(parts, K.count) +
+      `<div class="legend" style="margin-top:10px">${parts.map(p => `<span class="status"><i style="background:var(${p.c})"></i>${p.label === "赤字" ? "✕" : p.label === "基準以上" ? "✓" : "!"} ${esc(p.label)} <b>${p.value}件（${(p.value / K.count * 100).toFixed(0)}%）</b></span>`).join("")}</div>`;
+    c6.box.querySelectorAll(".seg div").forEach((d, i) => { const p = parts.filter(p => p.value > 0)[i]; d.setAttribute("data-tip", `<b>${esc(p.label)}</b>${p.value}件（${(p.value / K.count * 100).toFixed(1)}%）`); });
+    const c6b = card(g6, "利益率ごとの件数");
+    columns(c6b.box, {labels: D.margin_bins.map(b => b.label), values: D.margin_bins.map(b => b.count), fmt: cnt, axisFmt: v => v, labelEvery: 1,
+      colorFn: (v, i) => i === 0 ? "--critical" : i <= 2 ? "--warning" : "--s1"});
+    if (D.worst.length) s6.insertAdjacentHTML("beforeend", `<div class="card" style="margin-top:16px"><h3>基準を下回った販売（利益の低い順・最大10件）</h3>` +
+      `<div class="tbl-wrap"><table><tr><th>販売日</th><th>品目</th><th class="n">販売金額</th><th class="n">推定利益</th><th class="n">利益率</th></tr>` +
+      D.worst.map(w => `<tr><td>${esc(w.sold)}</td><td>${esc(w.title)}</td><td class="n">$${w.price_usd}</td><td class="n">${yen(w.profit)}</td><td class="n">${pct(w.margin)}</td></tr>`).join("") + `</table></div></div>`);
+  }
+
+  // ---- 7. 価格帯
+  const s7 = section("price", "価格帯別（いくらの商品が儲かるか）", "販売金額（$）の帯ごと");
+  if (K.count) {
+    const g7 = grid(s7), P = D.price_band, lab = P.map(p => p.label);
+    const tipP = i => `<b>${esc(P[i].label)}</b>${P[i].count}件・推定利益 ${yen(P[i].profit)}<br>1件あたり ${yen(P[i].avg_profit)}・利益率 ${pct(P[i].margin)}`;
+    columns(card(g7, "件数").box, {labels: lab, values: P.map(p => p.count), fmt: cnt, axisFmt: v => v, labelEvery: 1, tipFn: tipP});
+    columns(card(g7, "1件あたりの推定利益（円）").box, {labels: lab, values: P.map(p => p.avg_profit), fmt: yen, labelEvery: 1, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipP});
+    const c7 = card(g7, "利益率（%）");
+    columns(c7.box, {labels: lab, values: P.map(p => p.margin ?? 0), fmt: pct, axisFmt: v => v + "%", labelEvery: 1, colorFn: v => v < D.min_margin ? "--critical" : "--s1", tipFn: tipP});
+    c7.card.insertAdjacentHTML("beforeend", table([{h: "価格帯", f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "推定利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], P));
+  }
+
+  // ---- 3. メーカー・種類
+  const s3 = section("brand", "メーカー別・種類別", "メーカーと種類（レンズ／カメラ）は品目名から自動で判定");
+  if (K.count) {
+    const g3 = grid(s3);
+    for (const [arr, name] of [[D.brand, "メーカー"], [D.kind, "種類"]]) {
+      const tipB = i => `<b>${esc(arr[i].label)}</b>${arr[i].count}件・推定利益 ${yen(arr[i].profit)}<br>1件あたり ${yen(arr[i].avg_profit)}・利益率 ${pct(arr[i].margin)}`;
+      hbars(card(g3, `${name}別の販売件数`).box, {labels: arr.map(b => b.label), values: arr.map(b => b.count), fmt: v => v + "件", tipFn: tipB});
+      const c = card(g3, `${name}別の推定利益（合計）`);
+      hbars(c.box, {labels: arr.map(b => b.label), values: arr.map(b => b.profit), fmt: man, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipB});
+      c.card.insertAdjacentHTML("beforeend", table([{h: name, f: r => r.label}, {h: "件数", n: 1, f: r => r.count}, {h: "推定利益", n: 1, f: r => yen(r.profit)}, {h: "1件あたり", n: 1, f: r => yen(r.avg_profit)}, {h: "利益率", n: 1, f: r => pct(r.margin)}], arr));
+    }
+  }
+
+  // ---- 8. 機種ランキング
+  const s8 = section("models", "機種ランキング", "同じ機種は品目名から自動でまとめています");
+  if (K.count) {
+    const g8 = grid(s8);
+    for (const [arr, name, key, fmt] of [[D.top_profit, "推定利益の合計 Top10", "profit", man], [D.top_count, "販売回数 Top10", "count", v => v + "回"]]) {
+      hbars(card(g8, name).box, {labels: arr.map(b => b.label), values: arr.map(b => b[key]), fmt, color: key === "profit" ? "--s3" : "--s1",
+        tipFn: i => `<b>${esc(arr[i].label)}</b>${arr[i].count}回・推定利益 ${yen(arr[i].profit)}<br>1件あたり ${yen(arr[i].avg_profit)}・利益率 ${pct(arr[i].margin)}`});
+    }
+  }
+
+  // ---- 10. 費用の内訳
+  const s10 = section("cost", "売上の行き先（費用の内訳）", "売上（円換算）の合計が、どの費用に消えて、いくら残ったか");
+  if (K.count) {
+    const c10 = card(s10, ""), colors = {cost: "--s1", fees: "--s2", ship: "--s3", duty: "--s4", aucrevo: "--s5", loss: "--s7", profit: "--s6"};
+    const parts = D.breakdown.map(b => ({...b, c: colors[b.key]}));
+    const total = parts.reduce((a, p) => a + Math.max(0, p.value), 0);
+    c10.box.innerHTML = segbar(parts, total) + legend(parts.filter(p => p.value > 0).map(p => ({t: `${p.label} ${(p.value / total * 100).toFixed(0)}%`, c: p.c}))) +
+      (parts.find(p => p.key === "profit").value < 0 ? `<p class="note">利益の合計がマイナスのため帯に含めていません</p>` : "") +
+      table([{h: "項目", f: r => r.label}, {h: "金額", n: 1, f: r => yen(r.value)}, {h: "売上に対して", n: 1, f: r => pct(r.value / K.sales * 100)}], parts);
+    c10.card.insertAdjacentHTML("beforeend", `<p class="note">国際送料: 発送明細と一致した ${K.ship_actual}件は実額、残りは一律 $${D.deduction_usd}。関税・発送代行は明細と一致した分だけ。</p>`);
+  }
+
+  // ---- 5. 販売国・販売日数
+  const s5 = section("country", "販売国・販売までの日数", "販売までの日数＝購入日から販売日まで");
+  const g5 = grid(s5);
+  if (D.country && D.country.length && !(D.country.length === 1 && D.country[0].label === "（不明）")) {
+    const cc = card(g5, "販売国", `発送明細（CPaSS）の国。明細と一致しない販売は（不明）`);
+    hbars(cc.box, {labels: D.country.map(c => c.label), values: D.country.map(c => c.count), fmt: v => v + "件",
+      colorFn: (v, i) => D.country[i].label === "（不明）" ? "--neutral" : "--s1",
+      tipFn: i => `<b>${esc(D.country[i].label)}</b>${D.country[i].count}件（${(D.country[i].count / K.count * 100).toFixed(0)}%）・推定利益 ${yen(D.country[i].profit)}`});
+  } else empty(g5, "販売国: 古物台帳に国の列が無く、発送明細（data/ledger_costs.csv）とも No. が一致しませんでした。明細の管理番号と台帳の No. の関係を Claude に教えてください。");
+  if (D.days_to_sell) {
+    columns(card(g5, "販売までの日数", `中央値 ${D.days_to_sell.median ?? "—"}日（${D.days_to_sell.n}件）`).box, {labels: D.days_to_sell.bins.map(b => b.label), values: D.days_to_sell.bins.map(b => b.count), fmt: cnt, axisFmt: v => v, labelEvery: 1});
+    if (D.stock_days && D.stock_days.n) columns(card(g5, "在庫（未販売）の購入からの日数", `${D.stock_days.n}件。右に行くほど長く売れていない`).box, {labels: D.stock_days.bins.map(b => b.label), values: D.stock_days.bins.map(b => b.count), fmt: cnt, axisFmt: v => v, labelEvery: 1, colorFn: (v, i) => i >= 4 ? "--s2" : "--s1"});
+  } else empty(g5, "販売までの日数: data/ledger.csv に<b>購入日の列が無い</b>ため出せません。<code>python3 tools/ledger_sync.py</code> で古物台帳を取り込み直してください。");
+
+  // ---- 11. 曜日
+  const s11 = section("weekday", "曜日別の販売件数", "販売日（台帳の日付）の曜日");
+  if (K.count) columns(card(grid(s11), "").box, {labels: D.weekday.map(w => w.label), values: D.weekday.map(w => w.count), fmt: cnt, axisFmt: v => v, labelEvery: 1});
+
+  // ---- 4. 仕入先
+  const s4 = section("supplier", "仕入先（アカウント）別", "古物台帳のアカウント名ごと。上位10件＋その他");
+  if (D.supplier) {
+    const g4 = grid(s4), S = D.supplier;
+    const tipS = i => `<b>${esc(S[i].label)}</b>${S[i].count}件・1件あたり ${yen(S[i].avg_profit)}・利益率 ${pct(S[i].margin)}`;
+    hbars(card(g4, "件数").box, {labels: S.map(s => s.label), values: S.map(s => s.count), fmt: v => v + "件", tipFn: tipS});
+    hbars(card(g4, "1件あたりの推定利益").box, {labels: S.map(s => s.label), values: S.map(s => s.avg_profit), fmt: man, colorFn: v => v < 0 ? "--critical" : "--s3", tipFn: tipS});
+  } else empty(s4, "data/ledger.csv に<b>アカウント名の列が無い</b>ため出せません。<code>python3 tools/ledger_sync.py</code> で古物台帳を取り込み直してください。");
+
+  // ---- 9. 出品中の在庫
+  const s9 = section("stock", "出品中の在庫", "60日以上・ウォッチ1以下（オレンジの点）は値下げ・タイトル見直しの候補。点をクリックで eBay の出品を開く");
+  if (D.listing_points) {
+    const g9 = grid(s9);
+    scatter(card(g9, `出品日数 × ウォッチ数（${D.listings_unique}件）`).box, {points: D.listing_points});
+    const st = card(g9, "サイト別の出品数", `複製を含む全 ${D.listings_total}件`);
+    hbars(st.box, {labels: D.sites.map(s => s.label), values: D.sites.map(s => s.count), fmt: v => v + "件"});
+    const old = D.listing_points.filter(p => p.days >= 60 && p.watch <= 1).sort((a, b) => b.days - a.days);
+    st.card.insertAdjacentHTML("beforeend", `<p class="note" style="margin-top:12px">売れ残り候補 ${old.length}件</p>` + (old.length ? table([{h: "日数", n: 1, f: r => r.days}, {h: "ウォッチ", n: 1, f: r => r.watch}, {h: "価格", n: 1, f: r => `${r.price} ${r.cur}`}, {h: "タイトル", html: 1, f: r => r.url ? `<a href="${esc(r.url)}" target="_blank">${esc(r.title)}</a>` : esc(r.title)}], old) : ""));
+  } else empty(s9, "eBay の出品中一覧がありません（<code>python3 tools/ebay_api.py listings</code>）。");
+
+  // ---- 使った列
+  const sc = section("columns", "使ったデータ");
+  sc.insertAdjacentHTML("beforeend", `<div class="card"><div class="tbl-wrap"><table><tr><th>古物台帳の項目</th><th>見つかった列</th></tr>` +
+    D.columns.map(c => `<tr><td>${esc(c.label)}</td><td>${c.found ? esc(c.found) : c.key === "country" && D.has_costs ? "— 無し（発送明細の国を使用）" : "<span class='status'>— 無し</span>"}</td></tr>`).join("") +
+    `</table></div><p class="note">発送明細（data/ledger_costs.csv）: ${D.has_costs ? `${K.costs_total}件・台帳の No. と一致 ${K.matched}件` : "無し"}　／　eBay 出品一覧: ${D.listings_date || "無し"}</p></div>`);
+  Q.forEach(f => f());
+}
+draw();
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(draw, 150); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+</script>
+</body>
+</html>

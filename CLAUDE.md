@@ -40,6 +40,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `build_store.py` | 店舗アプリ用: `store/core.js`（拡張機能の判定のコピー）と `data/store_data.json`（相場＋おすすめ機種。iCloud Drive にもコピー）を作る |
 | `build_knowledge.py` | data/ から `knowledge/相場/`・`knowledge/機種/` を自動生成 |
 | `build_knowledge_page.py`・`knowledge_page_template.html` | knowledge_share.md → Artifacts の読むだけのナレッジページ（ニューロン付き） |
+| `build_dashboard.py`・`dashboard_template.html` | 古物台帳・発送明細・eBay 出品中一覧 → 数字のグラフ `reports/dashboard.html`（月別売上・利益率・状態の割合など。update_all.py が毎回作る） |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
 | `test_*.py` | テスト（Python と拡張機能・店舗アプリの判定一致も確認） |
@@ -52,6 +53,7 @@ python3 tools/build_reference_prices.py      # 古物台帳・頒布会 → data
 python3 tools/build_extension.py             # 拡張機能を作り直す → chrome://extensions で ↻
 python3 tools/build_store.py                 # 店舗アプリのデータ → iCloud Drive › aurora › store_data.json
 python3 tools/build_knowledge.py             # 相場ノート・機種ノートを更新
+python3 tools/build_dashboard.py             # 数字のグラフ → reports/dashboard.html を開く
 python3 -m unittest discover -s tools        # テスト
 ```
 
