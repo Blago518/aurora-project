@@ -119,7 +119,7 @@ class TestDashboard(unittest.TestCase):
         e = self.cfg["ebay"]
         fees = 200 * (e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]) / 100 + e["per_order_fee_usd"]
         net = (200 - fees) * 150 * (1 - self.cfg["fx"]["conversion_loss_pct"] / 100)
-        self.assertAlmostEqual(p["profit"], net - self.cfg["shipping"]["deduction_usd"] * 150 - 10000, places=6)
+        self.assertAlmostEqual(p["profit"], net - bd.listed_deduction(self.cfg) * 150 - 10000, places=6)
         bd_total = sum(v for k, v in p.items() if k in ("cost", "fees", "ship", "duty", "aucrevo", "loss", "profit"))
         self.assertAlmostEqual(bd_total, p["sale"], places=6)
 
