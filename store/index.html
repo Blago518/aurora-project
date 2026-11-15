@@ -141,7 +141,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <h2 id="bidTitle">入札候補</h2>
     <div class="chips" id="bidChips">
       <button class="chip" data-f="good" aria-pressed="true">◎○</button>
-      <button class="chip" data-f="tent" aria-pressed="false">仮◎○（sold確認前）</button>
+      <button class="chip" data-f="tent" aria-pressed="false">確認してから</button>
     </div>
     <div id="bidList" class="mt"><div class="empty">設定タブでデータを読み込んでください</div></div>
     <p class="s">緑の金額＝ヤフオクの入札欄にそのまま入れる上限額（ストアは税抜の入札額）。この額までなら利益3,000円以上かつ利益率10%以上（★安心枠は2,000円・5%）。
@@ -231,7 +231,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.15.6";
+  var APP_VERSION = "2026.11.15.7";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -669,17 +669,18 @@ function renderBids() {
     return;
   }
   const live = B.items.filter((i) => !i.end || Date.parse(i.end) > Date.now());
-  const good = live.filter((i) => !i.tent), tent = live.filter((i) => i.tent);
+  const chk = (i) => (i.check != null ? i.check : i.tent);  // 確認してから＝仮◎○＋根拠が頒布会リスト・鑑定表
+  const good = live.filter((i) => !chk(i)), tent = live.filter(chk);
   for (const c of $("bidChips").children) {
     c.setAttribute("aria-pressed", String(c.dataset.f === bidFilter));
-    c.textContent = c.dataset.f === "good" ? `◎○ ${good.length}件` : `仮◎○ ${tent.length}件（sold確認前）`;
+    c.textContent = c.dataset.f === "good" ? `入札候補 ${good.length}件` : `確認してから ${tent.length}件`;
   }
   const list = bidFilter === "tent" ? tent : good;
   $("bidTitle").textContent = `入札候補（${B.built} 作成）`;
   $("bidList").innerHTML = list.length ? list.map((i) => {
     const [left, soon] = leftOf(i.end);
     const cls = i.mark === "◎" ? "g" : "o";
-    const tags = (i.trusted ? '<span class="tag trust">★安心枠</span>' : "") + (i.tent ? '<span class="tag tent">仮・sold未確認</span>' : "") +
+    const tags = (i.trusted ? '<span class="tag trust">★安心枠</span>' : "") + (i.tent ? '<span class="tag tent">仮・sold未確認</span>' : i.check ? '<span class="tag tent">根拠が頒布会・鑑定表 → sold で確認</span>' : "") +
       i.flags.map((f) => `<span class="tag">${esc(f)}</span>`).join("") +
       (i.desc ? `<span class="tag ${i.desc.includes("記載なし") ? "ok" : ""}">${esc(i.desc.includes("記載なし") ? "✓ 説明文に難の記載なし" : i.desc)}</span>` : "");
     return `<div class="bid${i.tent ? " tent" : ""}"><div class="top"><div class="mk ${cls}">${esc(i.mark)}<small class="${soon ? "hot" : ""}">${esc(left)}</small></div>
@@ -690,7 +691,7 @@ function renderBids() {
       <div class="s">想定 ${nusd(i.usd)}（送料別）・根拠: ${esc(i.basis)}</div>
       <div class="links"><a class="mini main" href="${esc(i.url)}" target="_blank" rel="noopener">ヤフオク</a><a class="mini" href="${esc(i.sold)}" target="_blank" rel="noopener">sold</a><a class="mini" href="${esc(i.now)}" target="_blank" rel="noopener">now</a><button class="mini" data-copy="${esc(i.id)}">URLコピー</button></div>
       </div></div></div>`;
-  }).join("") : `<div class="empty">${bidFilter === "tent" ? "仮◎○はありません" : "いま入札できる◎○はありません。仮◎○も見てください"}</div>`;
+  }).join("") : `<div class="empty">${bidFilter === "tent" ? "確認してから入札する候補はありません" : "いま確認なしで入札できる候補はありません。「確認してから」も見てください"}</div>`;
 }
 $("bidChips").onclick = (e) => { const f = e.target.dataset.f; if (!f) return; bidFilter = f; lsSet(LS_BIDF, f); renderBids(); };
 // コピー（iPhone の Safari で clipboard API が使えないときは選択してコピー）

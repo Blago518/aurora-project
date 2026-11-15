@@ -188,7 +188,7 @@ def bid_list() -> int | None:
         return None
     import csv
     rows = list(csv.DictReader(new[-1].read_text(encoding="utf-8-sig").splitlines()))
-    good = [r for r in rows if r.get("判定") in ("◎", "○")]
+    good = [r for r in rows if r.get("判定") in ("◎", "○") and r.get("根拠の強さ", "確認不要") != "確認してから"]
     html = new[-1].with_suffix(".html")
     print(f"\n📋 入札リスト: ◎○ {len(good)}件（全{len(rows)}件を鑑定）→ {html.relative_to(ROOT)}")
     print("   入札は「上限入札額」をヤフオクの入札欄に入れて放置でOK（自動入札。負けても損はしない）")

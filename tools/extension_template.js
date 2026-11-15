@@ -688,7 +688,10 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     // 付属品だけ（カタログ・フード・キャップ・説明書など）・アダプター等は仕入れの対象外 → 表示しない（件数だけ）
     const isAcc = (i) => i.flags.some((f) => f === "付属品のみ?" || f === "アダプター等");
     const accN = items.filter(isAcc).length;
-    const good = items.filter((i) => (i.mark === "◎" || i.mark === "○") && !isAcc(i)).sort((a, b) => (a.end < b.end ? -1 : 1));
+    // 確認不要＝根拠が 自分の販売実績・Chatwork実績・自分で登録した相場（tier 0〜1）。頒布会リスト・鑑定表（推定）は確認してから
+    const sure = (i) => !!(i.refs && i.refs.length && i.refs[0].tier <= 1);
+    const allGood = items.filter((i) => (i.mark === "◎" || i.mark === "○") && !isAcc(i)).sort((a, b) => (a.end < b.end ? -1 : 1));
+    const good = allGood.filter(sure), weak = allGood.filter((i) => !sure(i));
     const check = items.filter((i) => i.mark === "要確認" && i.calc && !isAcc(i));
     const bad = items.filter((i) => i.mark === "×" && !isAcc(i));
     const priced = items.filter((i) => i.calc).length;
@@ -759,12 +762,14 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
     };
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="送料を含まない商品代（net）。金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場（送料別）</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th title="今の価格のまま落札できたときの利益">利益（今の価格で落札）</th></tr>`;
 
-    root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ ◎○ ${good.length}件${accN ? ` ・ 付属品など ${accN}件は除外` : ""}${waits.length ? ` ・ 仮◎○ ${waits.length}件` : ""}</span>
+    root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ 入札候補 ${good.length}件${weak.length + waits.length ? ` ・ 確認してから ${weak.length + waits.length}件` : ""}${accN ? ` ・ 付属品など ${accN}件は除外` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">続きを鑑定（残り${state.total - items.length}件）</button>` : ""}
 ${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ eBayの$は送料別（計算では送料$${SHIP()}込みに戻して手数料を計算） ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
-<h4 style="margin:10px 0 4px">入札候補（終了が近い順）</h4>
-${good.length || waits.length ? `<table>${head}${trustRows(good)}${good.filter((i) => !i.trusted).length ? `<tr><td colspan="6" class="tsep chal">チャレンジ枠（その他の出品者） ${good.filter((i) => !i.trusted).length}件 ― 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上</td></tr>` : ""}${good.filter((i) => !i.trusted).map(row).join("")}${waits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値と中央値×${DATA.cfg.activeFactor}の安い方で仮に計算。<b>sold を見て、売れた価格が入っている額以上なら［登録］</b>（低ければ直して［登録］）→ ◎○に上がり、同じ機種の今後の出品にも効きます</td></tr>${waits.map(waitRow).join("")}` : ""}</table>` : `<div class="s">このページには基準を満たす出品がありません。</div>`}
+<h4 style="margin:10px 0 4px">入札候補（終了が近い順）― 上限額をそのまま入札欄へ</h4>
+${good.length ? `<table>${head}${trustRows(good)}${good.filter((i) => !i.trusted).length ? `<tr><td colspan="6" class="tsep chal">チャレンジ枠（その他の出品者） ${good.filter((i) => !i.trusted).length}件 ― 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上</td></tr>` : ""}${good.filter((i) => !i.trusted).map(row).join("")}</table>` : `<div class="s">このページには、確認なしで入札できる出品はありません（下の「確認してから入札」を見てください）。</div>`}
+${weak.length || waits.length ? `<h4 style="margin:14px 0 4px">確認してから入札 ${weak.length + waits.length}件 ― sold を見て、売れた商品代が相場以上なら［直す$］［登録］→ 上の入札候補に上がります</h4>
+<table>${head}${weak.length ? `<tr><td colspan="6" class="tsep">根拠が頒布会リスト（出品価格）・鑑定表（推定）の ◎○ ${weak.length}件 ― 売れた価格ではないので sold で確認</td></tr>${weak.map(row).join("")}` : ""}${waits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値と中央値×${DATA.cfg.activeFactor}の安い方で仮に計算</td></tr>${waits.map(waitRow).join("")}` : ""}</table>` : ""}
 ${canBrowse() && !waits.length ? `<div class="s">${Object.keys(state.browse).length ? "仮◎○はありません" : "eBay出品中の価格を調べています…（仮◎○）"}</div>` : ""}
 <details><summary>要確認（相場はあるがセット品・光学難・説明文の難などの可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
