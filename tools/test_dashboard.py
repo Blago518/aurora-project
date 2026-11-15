@@ -174,9 +174,8 @@ class TestDashboard(unittest.TestCase):
                      ebay=bd.read_ebay_sales(self.tmp / "e2.csv"), monthly_costs={"2026-10": 20000.0})
         self.assertEqual(d["ebay_not_in_ledger"], [{"label": "Z9", "usd": 100.0, "in_ledger": False}])
         oct_ = d["ship_check"][0]
-        est = round(self.cfg["shipping"]["deduction_usd"] * 2 * 150)  # 一律の送料×2件×150円
-        self.assertEqual((oct_["month"], oct_["est"], oct_["actual"]), ("2026-10", est, 20000))
-        self.assertEqual(oct_["adjusted"], oct_["profit"] - (20000 - est))
+        self.assertEqual((oct_["month"], oct_["est"], oct_["actual"]), ("2026-10", 9000, 20000))  # $30×2件×150円
+        self.assertEqual(oct_["adjusted"], oct_["profit"] - 11000)
         (self.tmp / "mc.csv").write_text('月,CPaSS,関税,オークレボ\n2026/10,"166,585","95,162","39,930"\n', encoding="utf-8")
         self.assertEqual(bd.read_monthly_costs(self.tmp / "mc.csv"), {"2026-10": 301677.0})
 
