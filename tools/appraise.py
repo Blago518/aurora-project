@@ -112,6 +112,7 @@ class Item:
     seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
+    desc_checked: bool = False  # 説明文を読んだか（check_descriptions）
     tentative: dict = field(default_factory=dict)   # 仮◎○（相場が無いが eBay 出品中の価格なら利益が出る。tentative.py）
 
 
@@ -1183,6 +1184,7 @@ def check_descriptions(items: list[Item], delay: float, cfg: dict | None = None,
                 if cfg and it.expected_price_usd is not None:
                     it.calc = calculate(it, cfg, fx)
         it.desc_hits = desc_hits(text, cond)
+        it.desc_checked = True
         n += 1
         time.sleep(delay)
     return n
@@ -1323,6 +1325,8 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "損益分岐入札額": c.get("breakeven_bid_jpy"),
                 "上限までの余裕": c.get("headroom_jpy"),
                 "注意": " / ".join(it.flags),
+                "説明文": ("説明文に " + "・".join(h["word"] for h in it.desc_hits)) if it.desc_hits
+                else "説明文に光学難・故障の記載なし" if it.desc_checked else "",
                 "メモ": (it.memo + " " + it.fetch_note).strip(),
             }
         )
