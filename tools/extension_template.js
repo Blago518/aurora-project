@@ -338,8 +338,7 @@
     state.bidInfo[i.id] = { auction_id: i.id, title: i.title, max_bid: c.maxBid, pay_max: Math.round(c.maxBid * tm), usd,
       profit_at_max: at.profit, end: i.end, trusted: i.trusted ? 1 : 0, tentative: tentative ? 1 : 0, store_tax: i.tax ? 1 : 0, ship: i.ship ?? "" };
     const done = bidOf(i.id);
-    return `<div><button data-a="snipe" data-id="${esc(i.id)}" title="オークファンの入札予約を開いて、この上限額で予約する（終了直前に入札）">予約</button>` +
-      `<button data-a="bid" data-id="${esc(i.id)}" class="${done ? "bidon" : ""}" title="上限額で入札（予約）したら押す。オークファンの予約一覧を開けば自動で記録されます">${done ? "✓入札済み" : "入札した"}</button></div>`;
+    return `<div><button data-a="bid" data-id="${esc(i.id)}" class="${done ? "bidon" : ""}" title="上限額で入札（予約）したら押す。オークファンの予約一覧を開けば自動で記録されます">${done ? "✓入札済み" : "入札した"}</button></div>`;
   }
 
   function setTrusted(id, name, on) {
@@ -862,15 +861,6 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       else urls.forEach((u) => window.open(u, "_blank", "noopener"));
       btn.textContent = "開きました";
       setTimeout(() => (btn.textContent = "全て開く"), 2000);
-    }
-    if (a === "snipe") {
-      const info = state.bidInfo[btn.dataset.id];
-      if (info && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
-        chrome.runtime.sendMessage({ type: "aucfanReserve", item: { url: `https://auctions.yahoo.co.jp/jp/auction/${info.auction_id}`,
-          max: info.max_bid, tax: info.store_tax, title: info.title } }, () => void chrome.runtime.lastError);
-        if (!bidOf(info.auction_id)) toggleBid(info);  // 予約したものとして記録（取り消すときは［✓入札済み］）
-        render();
-      }
     }
     if (a === "bid") {
       const info = state.bidInfo[btn.dataset.id];
