@@ -52,8 +52,9 @@ SHEET = "古物台帳"
 sys.path.insert(0, str(HERE))
 import keychain  # noqa: E402
 
-APPS_SCRIPT = """// aurora: 古物台帳を CSV で返す（Mac の tools/ledger_sync.py が読む）。合言葉が一致したときだけ返す
+APPS_SCRIPT = """// aurora: 古物台帳を CSV で返す（読むだけ。スプレッドシートは変更しない）（Mac の tools/ledger_sync.py が読む）。合言葉が一致したときだけ返す
 const KEY = '__KEY__';
+const BOOK = '__BOOK__';  // 古物台帳のスプレッドシート（この Apps Script は古物台帳とは別のプロジェクト。古物台帳の中のスクリプトには触らない）
 const SHEETS = [__SHEETS__];  // 返してよいシート（最初のものが既定）
 const DROP = /^(Buyer|Ship to)/;  // 購入者の名前・住所の列は返さない
 function doGet(e) {
@@ -61,7 +62,8 @@ function doGet(e) {
     return ContentService.createTextOutput('forbidden');
   }
   const name = SHEETS.indexOf(e.parameter.sheet) >= 0 ? e.parameter.sheet : SHEETS[0];
-  const sh = SpreadsheetApp.getActive().getSheetByName(name);
+  const sh = (BOOK ? SpreadsheetApp.openById(BOOK) : SpreadsheetApp.getActive()).getSheetByName(name);
+  if (!sh) return ContentService.createTextOutput('NO_SHEET:' + name);  // そのシートが無い（Mac 側は飛ばすだけ）
   let rows = sh.getDataRange().getDisplayValues();
   const head = rows.slice(0, 10).find(r => r.some(v => DROP.test(v)));
   if (head) {
@@ -74,9 +76,28 @@ function doGet(e) {
 """
 
 
-def script_text(key: str) -> str:
+def script_text(key: str, book: str = "") -> str:
     names = ", ".join(f"'{n}'" for n in [SHEET, *EXTRA_SHEETS])
-    return APPS_SCRIPT.replace("__KEY__", key).replace("__SHEETS__", names)
+    return APPS_SCRIPT.replace("__KEY__", key).replace("__BOOK__", book).replace("__SHEETS__", names)
+
+
+def book_id(text: str) -> str:
+    """スプレッドシートの URL（…/spreadsheets/d/<ID>/edit…）から ID を取り出す. ID だけでもよい."""
+    import re
+    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]{20,})", text) or re.fullmatch(r"\s*([A-Za-z0-9_-]{20,})\s*", text)
+    return m.group(1) if m else ""
+
+
+GUIDE = """
+ 1. https://script.google.com/home を開く →［新しいプロジェクト］
+    （古物台帳のスプレッドシートの「拡張機能 → Apps Script」は使いません。今あるスクリプトには一切触りません）
+ 2. 左上の「無題のプロジェクト」を「aurora 古物台帳」に変える
+ 3. 新しいプロジェクトに最初から入っている3行（function myFunction() {…}）だけを消して、貼り付け（⌘V）→ 保存（⌘S）
+ 4. 右上「デプロイ」→「新しいデプロイ」→ 歯車 →「ウェブアプリ」
+      次のユーザーとして実行: 自分　／　アクセスできるユーザー: 全員
+    →「デプロイ」（初回は「アクセスを承認」→ 自分のアカウント → 詳細 → 安全ではないページに移動 → 許可）
+ 5. 最後に出る「ウェブアプリ」の URL（https://script.google.com/macros/s/…/exec）をコピー
+"""
 
 
 def fetch(url: str, key: str, sheet: str | None = None) -> str:
@@ -141,7 +162,12 @@ def sync_extra(url: str, key: str, dry_run: bool = False) -> dict[str, int | Non
     result: dict[str, int | None] = {}
     for sheet, (fname, columns) in EXTRA_SHEETS.items():
         try:
-            rows = pick_columns(fetch(url, key, sheet), columns)
+            text = fetch(url, key, sheet)
+            if text.startswith("NO_SHEET:"):  # 取り込み元のスプレッドシートにそのシートが無い → 前のデータを残して飛ばす
+                print(f"{sheet}シート: 取り込み元に無いので飛ばしました（前のデータはそのまま）", file=sys.stderr)
+                result[sheet] = None
+                continue
+            rows = pick_columns(text, columns)
         except (urllib.error.URLError, OSError) as e:
             print(f"{sheet}シート: 読み込めませんでした（{e}）", file=sys.stderr)
             result[sheet] = None
@@ -170,14 +196,18 @@ def cmd_script() -> None:
     if not key or not keychain.get(SERVICE, "url"):
         print("まだ設定されていません。先に python3 tools/ledger_sync.py setup を実行してください。")
         sys.exit(1)
-    script = script_text(key)
+    book = keychain.get(SERVICE, "book") or ""
+    script = script_text(key, book)
     copied = keychain.copy_to_clipboard(script)
     head = "新しいスクリプトをクリップボードにコピーしました。" if copied else "下のスクリプトをコピーしてください:\n" + script
+    where = ("https://script.google.com/home →「aurora 古物台帳」のプロジェクトを開く" if book
+             else "古物台帳のスプレッドシート →「拡張機能」→「Apps Script」（前に aurora のスクリプトを貼った所）")
     print(f"""
 {head}
 
- 1. 古物台帳のスプレッドシートを開く → 上のメニュー「拡張機能」→「Apps Script」
- 2. 中の文字を全部選んで（⌘A）、貼り付け（⌘V）→ 保存（⌘S）
+ 1. {where}
+ 2. aurora のスクリプト（先頭が「// aurora:」の部分）だけを選んで、貼り付けて置き換え（⌘V）→ 保存（⌘S）
+    （ほかのスクリプトは消さない）
  3. 右上「デプロイ」→「デプロイを管理」→ 鉛筆マーク（編集）
     → バージョン:「新バージョン」→「デプロイ」（URL は変わりません）
  4. 終わったら Enter
@@ -187,25 +217,23 @@ def cmd_script() -> None:
 
 
 def cmd_setup() -> None:
+    print("\n古物台帳の自動取り込みを設定します（初回だけ・約5分）。")
+    book = ""
+    while not book:
+        book = book_id(input("① 取り込む古物台帳のスプレッドシートの URL（ブラウザのアドレス欄）を貼り付けて Enter: "))
+        if not book:
+            print("   スプレッドシートの URL（https://docs.google.com/spreadsheets/d/…）を貼ってください。")
+    keychain.set(SERVICE, "book", book)  # キーチェーンだけに保存（リポジトリには書かない）
     key = keychain.get(SERVICE, "key") or secrets.token_urlsafe(24)
     keychain.set(SERVICE, "key", key)
-    script = script_text(key)
+    script = script_text(key, book)
     copied = keychain.copy_to_clipboard(script)
-    head = "スクリプトをクリップボードにコピーしました。" if copied else "下のスクリプトをコピーしてください:\n" + script
-    print(f"""
-古物台帳の自動取り込みを設定します（初回だけ・約5分）。
-{head}
-
- 1. 古物台帳のスプレッドシートを開く → 上のメニュー「拡張機能」→「Apps Script」
- 2. 最初から入っている文字を全部消して、貼り付け（⌘V）→ 保存（⌘S）
- 3. 右上「デプロイ」→「新しいデプロイ」→ 歯車 →「ウェブアプリ」
-      次のユーザーとして実行: 自分　／　アクセスできるユーザー: 全員
-    →「デプロイ」（初回は「アクセスを承認」→ 自分のアカウント → 詳細 → 安全ではないページに移動 → 許可）
- 4. 表示された「ウェブアプリ」の URL（https://script.google.com/macros/s/…/exec）をコピー
-""")
-    url = input("その URL を貼り付けて Enter: ").strip()
+    head = "② スクリプトをクリップボードにコピーしました。" if copied else "② 下のスクリプトをコピーしてください:\n" + script
+    print(f"\n{head}\n{GUIDE}")
+    url = input("③ その URL（script.google.com で始まる）を貼り付けて Enter: ").strip()
     if not url.startswith("https://script.google.com/"):
-        print("URL が違うようです（https://script.google.com/macros/s/…/exec）。もう一度 setup を実行してください。")
+        print("URL が違うようです。スプレッドシートの URL ではなく、デプロイ後に出る「ウェブアプリ」の URL"
+              "（https://script.google.com/macros/s/…/exec）です。もう一度 setup を実行してください。")
         sys.exit(1)
     keychain.set(SERVICE, "url", url)
     print("保存しました。試しに読み込みます…")
