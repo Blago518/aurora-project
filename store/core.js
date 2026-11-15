@@ -135,6 +135,8 @@ function makeCore(DATA) {
       if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
       if (variantsConflict(qt, rt)) continue;
+      // 実績側の英字の語（メーカー・レンズ銘など）が1つも無ければ別物（YASHICA 35mm 2.8 に ALPA 35mm 2.8 が当たっていた）
+      if (![...rt].some((t) => !/\d/.test(t) && !COLORS.has(t) && qt.has(t))) continue;
       const digits = new Set([...rt].filter((t) => /\d/.test(t)));
       if (!sub(digits, qt)) continue;
       if (!digits.size) {

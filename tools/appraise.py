@@ -112,6 +112,7 @@ class Item:
     seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
+    desc_checked: bool = False  # 説明文を読んだか（check_descriptions）
     tentative: dict = field(default_factory=dict)   # 仮◎○（相場が無いが eBay 出品中の価格なら利益が出る。tentative.py）
 
 
@@ -800,6 +801,10 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         # 型違い（Contax の MMJ と AEG など）は相場が違う
         if variants_conflict(qt, rt):
             continue
+        # 実績側の英字の語（メーカー・レンズ銘など）が1つも無ければ別物
+        # 例: 「YASHICA 35mm 1:2.8」に「ALPA 35mm 2.8」が数字だけで当たっていた
+        if not (qt & {t for t in rt if not re.search(r"\d", t) and t not in COLOR_WORDS}):
+            continue
         # 型番・焦点距離・F値など数字を含む語は、実績側のものが全部一致すること
         digits = {t for t in rt if re.search(r"\d", t)}
         if not digits <= qt:
@@ -1179,6 +1184,7 @@ def check_descriptions(items: list[Item], delay: float, cfg: dict | None = None,
                 if cfg and it.expected_price_usd is not None:
                     it.calc = calculate(it, cfg, fx)
         it.desc_hits = desc_hits(text, cond)
+        it.desc_checked = True
         n += 1
         time.sleep(delay)
     return n
@@ -1319,6 +1325,8 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "損益分岐入札額": c.get("breakeven_bid_jpy"),
                 "上限までの余裕": c.get("headroom_jpy"),
                 "注意": " / ".join(it.flags),
+                "説明文": ("説明文に " + "・".join(h["word"] for h in it.desc_hits)) if it.desc_hits
+                else "説明文に光学難・故障の記載なし" if it.desc_checked else "",
                 "メモ": (it.memo + " " + it.fetch_note).strip(),
             }
         )

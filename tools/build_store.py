@@ -13,11 +13,13 @@ iCloud Drive がある Mac では、store_data.json を iCloud Drive の「auror
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import shutil
 import statistics
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import appraise as ba
@@ -155,6 +157,64 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# 入札候補（毎朝の入札リスト reports/bid_report_*.csv → スマホの「入札」タブ）
+# ---------------------------------------------------------------------------
+
+BID_MAX_AGE_H = 48  # これより古い入札リストは届けない（終わった出品ばかりになるため）
+SKIP_FLAGS = ("付属品のみ?", "アダプター等")
+
+
+def _num(v):
+    try:
+        f = float(str(v).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f.is_integer() else f
+
+
+def bid_candidates(reports: Path | None = None, now: datetime | None = None) -> dict | None:
+    """最新の入札リストから ◎○ と 仮◎○ を取り出す. 無い・古いときは None."""
+    reports = reports or ROOT / "reports"
+    files = sorted(reports.glob("bid_report_*.csv"), key=lambda p: p.stat().st_mtime) if reports.exists() else []
+    if not files:
+        return None
+    f = files[-1]
+    made = datetime.fromtimestamp(f.stat().st_mtime)
+    if ((now or datetime.now()) - made).total_seconds() > BID_MAX_AGE_H * 3600:
+        return None
+    items = []
+    for r in csv.DictReader(f.read_text(encoding="utf-8-sig").splitlines()):
+        flags = [x for x in (r.get("注意") or "").split(" / ") if x]
+        if any(x in SKIP_FLAGS for x in flags):
+            continue
+        good = r.get("判定") in ("◎", "○")
+        tent = not good and r.get("仮判定") in ("◎", "○")
+        if not (good or tent):
+            continue
+        url = r.get("ヤフオクURL") or ""
+        m = re.search(r"/auction/([^/?#]+)", url)
+        items.append({
+            "id": m.group(1) if m else url, "url": url, "title": r.get("タイトル", ""),
+            "mark": r["判定"] if good else r["仮判定"], "tent": tent, "trusted": r.get("枠") == "安心",
+            "price": _num(r.get("現在価格")), "bids": _num(r.get("入札数")), "end": r.get("終了", ""),
+            "ship": _num(r.get("国内送料")), "shipBasis": r.get("国内送料の根拠", ""),
+            "usd": _num(r.get("仮の想定USD") if tent else r.get("想定販売価格USD")),
+            "basis": r.get("仮の根拠") if tent else r.get("価格の根拠", ""),
+            "maxBid": _num(r.get("仮の上限入札額") if tent else r.get("上限入札額")),
+            "profit": _num(r.get("仮の利益(現在価格)") if tent else r.get("利益(現在価格)")),
+            "margin": None if tent else _num(r.get("利益率%")),
+            "breakeven": None if tent else _num(r.get("損益分岐入札額")),
+            "taxNote": r.get("入札額の税", ""),
+            "sold": r.get("仮のsoldURL") if tent else r.get("eBay販売済みURL", ""),
+            "now": r.get("仮の出品中URL") if tent else r.get("eBay出品中URL", ""),
+            "flags": [x for x in flags if x not in ("動作品", "美品")],
+            "desc": r.get("説明文", ""),
+        })
+    items.sort(key=lambda x: (x["tent"], x["end"] or "9"))
+    return {"built": f"{made:%Y-%m-%d %H:%M}", "items": items}
+
+
 def build(cfg: dict, fx: float) -> dict:
     data = bx.build_data(cfg, fx)
     rows = []
@@ -163,6 +223,7 @@ def build(cfg: dict, fx: float) -> dict:
         if p.exists():
             rows += ba.read_sales(p)
     data["recs"] = recommendations(rows, cfg, fx)
+    data["bids"] = bid_candidates()
     data["kind"] = "aurora-store"
     return data
 
@@ -183,7 +244,8 @@ def main(argv=None) -> int:
     data = build(cfg, fx)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"出力: {args.out}（相場 {len(data['refs'])}件・おすすめ候補 {len(data['recs'])}機種・"
+    nb = len(data["bids"]["items"]) if data.get("bids") else 0
+    print(f"出力: {args.out}（相場 {len(data['refs'])}件・おすすめ候補 {len(data['recs'])}機種・入札候補 {nb}件・"
           f"為替 {fx:.2f}円・{args.out.stat().st_size // 1024}KB）", file=sys.stderr)
     if not args.no_icloud and ICLOUD.parent.exists():
         ICLOUD.mkdir(exist_ok=True)

@@ -8,10 +8,11 @@
      CPaSS・オークレボの明細                                               → data/statements/（import_downloads.py）
    置き換える前の古いファイルは data/backup/ に残す。
 2. Chatwork の販売報告を公式 API で取り込む（chatwork_sync.py。未設定なら飛ばす）
-3. 作り直す: reference_prices.csv → 拡張機能（extension/）→ スマホ用データ（store_data.json・iCloud・暗号化して自動配信）→ ナレッジ
-   → eBay の出品中一覧・注文・取引明細（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
+3. 作り直す: reference_prices.csv → 拡張機能（extension/）
    拡張機能で［直す］［登録］した相場（ダウンロード/aurora_price_memo.csv）もここで取り込まれる。
 4. 入札リスト: data/search_urls.txt の検索をまとめて鑑定 → reports/bid_report_*.html を開く（◎○の件数を通知）
+   → スマホ用データ（store_data.json・iCloud・暗号化して自動配信。入札候補もスマホの「入札」タブに届く）→ ナレッジ
+   → eBay の出品中一覧・注文・取引明細（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
 5. 入札の結果: 拡張機能の［入札した］の記録を取り込み、終わった出品の最終価格から落札率などを集計 → reports/bid_results.md
 
 使い方（aurora フォルダで）:
@@ -134,10 +135,10 @@ def main(argv=None) -> int:
     if (DATA / "ledger.csv").exists() or list(DATA.glob("hanpukai_*.xlsx")):
         ok &= run("build_reference_prices.py")
     ok &= run("build_extension.py")
-    ok &= run("build_store.py")
+    bids = None if args.no_bids else bid_list()
+    ok &= run("build_store.py")  # 入札リストの後に（入札候補もスマホに届ける）
     ok &= run("build_knowledge.py")
     dashboard()
-    bids = None if args.no_bids else bid_list()
     results = None
     try:
         import bid_results  # 入札の結果（落札率・利益が出る落札の率）

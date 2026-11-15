@@ -264,6 +264,43 @@ class ConditionAdjust(unittest.TestCase):
         self.assertEqual(json.loads(out), self._python())
 
 
+class BidCandidates(unittest.TestCase):
+    """毎朝の入札リスト（bid_report_*.csv）→ スマホの「入札」タブ."""
+
+    def _write(self, d: Path) -> None:
+        import csv as _csv
+        rows = [
+            {"判定": "◎", "枠": "安心", "タイトル": "Nikon FM2", "ヤフオクURL": "https://auctions.yahoo.co.jp/jp/auction/a1",
+             "現在価格": "10000", "入札数": "2", "終了": "2026-11-17T21:00:00+09:00", "国内送料": "910", "想定販売価格USD": "260.0",
+             "上限入札額": "18000", "利益(現在価格)": "9000", "利益率%": "25.1", "注意": "動作品", "説明文": "説明文に光学難・故障の記載なし"},
+            {"判定": "×", "仮判定": "○", "タイトル": "Sigma 90mm", "ヤフオクURL": "https://auctions.yahoo.co.jp/jp/auction/a2",
+             "現在価格": "2300", "仮の上限入札額": "18000", "仮の想定USD": "208", "仮のsoldURL": "S", "終了": "2026-11-16T10:00:00+09:00"},
+            {"判定": "◎", "タイトル": "フード", "ヤフオクURL": "https://auctions.yahoo.co.jp/jp/auction/a3", "注意": "付属品のみ?"},
+            {"判定": "×", "タイトル": "x", "ヤフオクURL": "https://auctions.yahoo.co.jp/jp/auction/a4"},
+        ]
+        keys = sorted({k for r in rows for k in r})
+        with (d / "bid_report_20261115_0703.csv").open("w", encoding="utf-8-sig", newline="") as f:
+            w = _csv.DictWriter(f, keys)
+            w.writeheader()
+            w.writerows(rows)
+
+    def test_pick(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._write(Path(d))
+            b = bs.bid_candidates(Path(d))
+        self.assertEqual([(i["id"], i["mark"], i["tent"]) for i in b["items"]], [("a1", "◎", False), ("a2", "○", True)])
+        a1, a2 = b["items"]
+        self.assertEqual((a1["maxBid"], a1["ship"], a1["trusted"], a1["flags"]), (18000, 910, True, []))
+        self.assertEqual((a2["maxBid"], a2["usd"], a2["sold"]), (18000, 208, "S"))
+
+    def test_old_list_not_sent(self):
+        from datetime import datetime, timedelta
+        with tempfile.TemporaryDirectory() as d:
+            self._write(Path(d))
+            self.assertIsNone(bs.bid_candidates(Path(d), now=datetime.now() + timedelta(days=3)))
+            self.assertIsNone(bs.bid_candidates(Path(d) / "none"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -67,6 +67,19 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .shop .d{font-size:13px;margin:4px 0 6px 32px}.shop .links{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:6px;margin-left:32px}
 .leg{font-size:12px;color:var(--sub);margin-left:32px;padding:4px 0}
 .empty{color:var(--sub);font-size:14px;text-align:center;padding:16px 0}
+.bid{padding:12px 0;border-bottom:1px solid var(--line)}.bid:last-child{border:0}
+.bid .top{display:flex;gap:10px;align-items:flex-start}.bid .mk{font-size:26px;font-weight:900;line-height:1;min-width:34px;text-align:center}
+.bid .mk small{display:block;font-size:10px;font-weight:700;color:var(--sub);margin-top:4px}
+.bid .tt{flex:1;min-width:0}.bid .tt a{color:var(--ink);font-weight:700;text-decoration:none;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bid .max{display:flex;align-items:baseline;gap:8px;margin:8px 0 2px}.bid .max strong{font-size:22px;color:var(--good)}
+.bid .tent .max strong,.bid.tent .max strong{color:var(--warn)}
+.bid .links{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
+.bid .links .mini{white-space:nowrap;display:flex;align-items:center;justify-content:center;font-size:13px}
+.tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin:2px 4px 0 0;background:#fdecea;color:var(--bad)}
+.tag.trust{background:#e6f4ee;color:var(--good)}.tag.tent{background:var(--warnbg);color:var(--warn)}.tag.ok{background:#e6f4ee;color:var(--good)}
+.hot,.bid .mk small.hot{color:var(--bad);font-weight:800}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 16px);background:var(--navy);color:#fff;border-radius:12px;padding:12px 14px;
+font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9}#toast.show{opacity:1}
 code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-break:break-all}
 </style>
 </head>
@@ -74,6 +87,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <header>
   <div class="row"><h1>店舗リサーチ</h1><span class="st" id="dataSt">データ未読込</span></div>
   <nav role="tablist">
+    <button role="tab" data-tab="bid" aria-selected="false">入札</button>
     <button role="tab" data-tab="look" aria-selected="true">調べる</button>
     <button role="tab" data-tab="rec" aria-selected="false">おすすめ</button>
     <button role="tab" data-tab="shop" aria-selected="false">お店</button>
@@ -118,6 +132,21 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   <div class="card">
     <h2>最近調べた商品</h2>
     <div id="hist"></div>
+  </div>
+</section>
+
+<!-- ===================================================== 入札（毎朝の入札候補） -->
+<section id="bid" hidden>
+  <div class="card">
+    <h2 id="bidTitle">入札候補</h2>
+    <div class="chips" id="bidChips">
+      <button class="chip" data-f="good" aria-pressed="true">◎○</button>
+      <button class="chip" data-f="tent" aria-pressed="false">仮◎○（sold確認前）</button>
+    </div>
+    <div id="bidList" class="mt"><div class="empty">設定タブでデータを読み込んでください</div></div>
+    <p class="s">緑の金額＝ヤフオクの入札欄にそのまま入れる上限額（ストアは税抜の入札額）。この額までなら利益3,000円以上かつ利益率10%以上（★安心枠は2,000円・5%）。
+    仮◎○は相場が未登録で、eBay出品中の価格から仮に計算した額です。sold を見て、売れた価格がこの想定以上か確かめてから入札してください（相場の登録は Mac の拡張機能で）。
+    Mac が毎朝つくる入札リストを、アプリを開いたときに読み込みます。終わった出品は自動で消えます。</p>
   </div>
 </section>
 
@@ -202,7 +231,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.15.3";
+  var APP_VERSION = "2026.11.15.4";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -235,7 +264,7 @@ function useData(d) {
   const sales = d.refs.filter((r) => r.tier <= 1).length;
   $("dataSt").textContent = `データ ${d.built}`;
   $("dataInfo").innerHTML = `作成 ${esc(d.built)}／相場 ${d.refs.length.toLocaleString()}件（うち販売実績 ${sales.toLocaleString()}件）／おすすめ候補 ${d.recs.length}機種／為替 1ドル=${d.cfg.fx}円`;
-  renderBrands(); renderRecs(); look();
+  renderBrands(); renderRecs(); renderBids(); look();
 }
 $("dataBtn").onclick = () => $("dataFile").click();
 $("dataFile").onchange = async (e) => {
@@ -613,6 +642,65 @@ $("brandChips").onclick = (e) => { const b = e.target.dataset.brand; if (b == nu
 $("kindChips").onclick = (e) => { const k = e.target.dataset.kind; if (!k) return; recSel.kind = k; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
 $("recList").onclick = (e) => { const n = e.target.dataset.look; if (n) setInput(n, ""); };
 
+// ------------------------------------------------------------ 入札（毎朝の入札候補）
+const LS_BIDF = "storeBidFilter", AUCFAN = "https://tools.aucfan.com/v2/snipe/item?trflg=1";
+let bidFilter = lsGet(LS_BIDF, "good");
+function leftOf(end) {
+  const t = Date.parse(end);
+  if (!t) return ["", false];
+  const m = Math.floor((t - Date.now()) / 60000);
+  if (m < 0) return ["終了", false];
+  const d = new Date(t), at = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return [m < 60 ? `あと${m}分` : m < 24 * 60 ? `あと${Math.floor(m / 60)}時間` : at, m < 3 * 60];
+}
+function toast(msg) {
+  let t = $("toast");
+  if (!t) { t = document.createElement("div"); t.id = "toast"; document.body.appendChild(t); }
+  t.textContent = msg; t.className = "show";
+  clearTimeout(t._h); t._h = setTimeout(() => (t.className = ""), 4000);
+}
+function renderBids() {
+  const B = DATA && DATA.bids;
+  if (!B || !Array.isArray(B.items)) {
+    $("bidTitle").textContent = "入札候補";
+    $("bidList").innerHTML = `<div class="empty">${DATA ? "入札リストがまだ届いていません（Mac で python3 tools/update_all.py を実行すると届きます）" : "設定タブでデータを読み込んでください"}</div>`;
+    return;
+  }
+  const live = B.items.filter((i) => !i.end || Date.parse(i.end) > Date.now());
+  const good = live.filter((i) => !i.tent), tent = live.filter((i) => i.tent);
+  for (const c of $("bidChips").children) {
+    c.setAttribute("aria-pressed", String(c.dataset.f === bidFilter));
+    c.textContent = c.dataset.f === "good" ? `◎○ ${good.length}件` : `仮◎○ ${tent.length}件（sold確認前）`;
+  }
+  const list = bidFilter === "tent" ? tent : good;
+  $("bidTitle").textContent = `入札候補（${B.built} 作成）`;
+  $("bidList").innerHTML = list.length ? list.map((i) => {
+    const [left, soon] = leftOf(i.end);
+    const cls = i.mark === "◎" ? "g" : "o";
+    const tags = (i.trusted ? '<span class="tag trust">★安心枠</span>' : "") + (i.tent ? '<span class="tag tent">仮・sold未確認</span>' : "") +
+      i.flags.map((f) => `<span class="tag">${esc(f)}</span>`).join("") +
+      (i.desc ? `<span class="tag ${i.desc.includes("記載なし") ? "ok" : ""}">${esc(i.desc.includes("記載なし") ? "✓ 説明文に難の記載なし" : i.desc)}</span>` : "");
+    return `<div class="bid${i.tent ? " tent" : ""}"><div class="top"><div class="mk ${cls}">${esc(i.mark)}<small class="${soon ? "hot" : ""}">${esc(left)}</small></div>
+      <div class="tt"><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>
+      <div class="s">現在 ${yen(i.price)}・入札${i.bids ?? "-"}・送料 ${i.ship != null ? yen(i.ship) : "不明→1,000円で計算"}</div>${tags}
+      <div class="max"><span class="s">入札する上限額</span><strong>${yen(i.maxBid)}</strong></div>
+      <div class="s">今の価格で落札なら 利益 ${yen(i.profit)}${i.margin != null ? `（${i.margin}%）` : ""}${i.breakeven ? `・損益分岐 ${yen(i.breakeven)}` : ""}${/ストア/.test(i.taxNote) ? "・ストア（支払いは税込）" : ""}</div>
+      <div class="s">想定 ${usd(i.usd)}・根拠: ${esc(i.basis)}</div>
+      <div class="links"><a class="mini main" href="${esc(i.url)}" target="_blank" rel="noopener">ヤフオク</a><a class="mini" href="${esc(i.sold)}" target="_blank" rel="noopener">sold</a><a class="mini" href="${esc(i.now)}" target="_blank" rel="noopener">now</a><button class="mini" data-snipe="${esc(i.id)}">予約</button></div>
+      </div></div></div>`;
+  }).join("") : `<div class="empty">${bidFilter === "tent" ? "仮◎○はありません" : "いま入札できる◎○はありません。仮◎○も見てください"}</div>`;
+}
+$("bidChips").onclick = (e) => { const f = e.target.dataset.f; if (!f) return; bidFilter = f; lsSet(LS_BIDF, f); renderBids(); };
+$("bidList").onclick = async (e) => {
+  const id = e.target.dataset.snipe;
+  if (!id) return;
+  const i = DATA.bids.items.find((x) => x.id === id);
+  if (!i) return;
+  try { await navigator.clipboard.writeText(i.url); } catch (err) {}
+  toast(`出品URLをコピーしました。オークファンで貼り付けて、上限 ${yen(i.maxBid)} で予約してください`);
+  setTimeout(() => window.open(AUCFAN, "_blank", "noopener"), 600);
+};
+
 // ------------------------------------------------------------ お店（店舗仕入れの巡回リスト）
 const LS_AREA = "storeShopArea", LS_DONE = "storeShopDone";
 const AM = "https://maps.apple.com/?";
@@ -646,6 +734,7 @@ $("shopList").onclick = (e) => {
 function showTab(t) {
   for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", String(b.dataset.tab === t));
   for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== t;
+  if (t === "bid" && DATA) renderBids();  // 残り時間・終わった出品を最新に
 }
 for (const b of document.querySelectorAll("nav button")) b.onclick = () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); };
 
