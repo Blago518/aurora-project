@@ -178,5 +178,45 @@ class BrandWordRequired(unittest.TestCase):
         self.assertEqual(out, [ok for _, _, ok in self.CASES])
 
 
+class WrongMatches(unittest.TestCase):
+    """2026-11-15 の誤判定: 三脚の部品に 600mm F4 の相場、55mm F3.5 に 18mm f/3.5、5cm f2 に Nikon F2（ボディ）."""
+    ACC = ["ウィンバリー Wimberley AP-452 ニコン Nikon AF-S NIKKOR 400mm F2.8G ED VR / 600mm F4G ED VR II / ア",
+           "カーク KIRK LP-45 ニコン Nikon NIKKOR AF-S 70-200mm F2.8G ED VR I / II アルカスイス互換 レンズフット / Really"]
+    # （出品タイトル, 鑑定表の行（機種名, パターン）, 当たるべきか）
+    KANTEI = [("★良品★ ニコン NIKON MICRO NIKKOR P AUTO 55mm F3.5 E1893", ("Nikon Ai-S 18mm f/3.5", ["nikon", "3\\.5"]), False),
+              ("【TR51】 Nikon NIKKOR-H 5cm f2 NO755073 カメラレンズ", ("Nikon F2", ["nikon", "f2"]), False),
+              ("ニコン Nikon Ai-S 18mm F3.5 美品", ("Nikon Ai-S 18mm f/3.5", ["nikon", "18mm"]), True)]
+
+    def test_accessory_python(self):
+        for t in self.ACC:
+            self.assertIn("付属品のみ?", ba.detect_flags(t), t)
+
+    def _table(self):
+        import re as _re
+        return [{"title": n, "_price": 100.0, "source": "鑑定表(テスト)", "_patterns": [_re.compile(x, _re.I) for x in pats]}
+                for _, (n, pats), _ in self.KANTEI]
+
+    def test_kantei_python(self):
+        for (t, _, ok), row in zip(self.KANTEI, self._table()):
+            self.assertEqual(bool(ba.match_kantei(t, [row])), ok, t)
+        self.assertEqual(ba.match_sales("Nikon NIKKOR-H 5cm f2", [{"title": "Nikon F2", "_tokens": ba._tokens("Nikon F2")}]), [])
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        res = []
+        for t, (n, pats), _ in self.KANTEI:
+            data = bx.build_data(CFG, 150.0)
+            data["refs"] = []
+            data["kantei"] = [{"title": n, "price": 100.0, "tier": 3, "source": "鑑定表(テスト)", "patterns": pats,
+                               "tokens": sorted(ba._tokens(n))}]
+            res.append(run_js(data, f"console.log(JSON.stringify(m.matchKantei({json.dumps(t, ensure_ascii=False)}).length>0))"))
+        self.assertEqual(res, [ok for *_, ok in self.KANTEI])
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        acc = run_js(data, f"console.log(JSON.stringify({json.dumps(self.ACC, ensure_ascii=False)}.map(t=>m.detectFlags(t).includes('付属品のみ?'))))")
+        self.assertEqual(acc, [True, True])
+
+
 if __name__ == "__main__":
     unittest.main()

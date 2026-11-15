@@ -118,10 +118,12 @@ function makeCore(DATA) {
     return FLAG_RES.filter(([, re]) => re.test(title)).map(([n]) => n);
   }
 
+  // 焦点距離（50mm・5cm）があればレンズ
+  const lensy = (set) => has(set, (t) => t.endsWith("mm") || /^\d+(?:\.\d+)?cm$/.test(t));
   function matchRefs(query, refs) {
     const qt = tokensOf(query);
     if (!qt.size) return [];
-    const qmm = has(qt, (t) => t.endsWith("mm"));
+    const qmm = lensy(qt);
     const qAcc = ACCESSORY_RE.test(query);
     const scored = [];
     for (const r of refs) {
@@ -129,7 +131,7 @@ function makeCore(DATA) {
       if ([...qt].some((t) => THIRD.has(t) && !rt.has(t))) continue;
       const rb = [...rt].filter((t) => BRAND_SET.has(t));
       if (rb.length && !rb.some((t) => qt.has(t))) continue;
-      if (qmm !== has(rt, (t) => t.endsWith("mm"))) continue;
+      if (qmm !== lensy(rt)) continue;
       if (r.acc && !qAcc) continue;
       if (pick(qt, PREMIUM) !== pick(rt, PREMIUM)) continue;
       if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
@@ -156,15 +158,17 @@ function makeCore(DATA) {
   function matchKantei(title) {
     const t = title.normalize("NFKC").toLowerCase();
     const qt = tokensOf(title);
-    const qmm = has(qt, (x) => x.endsWith("mm"));
+    const qmm = lensy(qt);
     for (const r of KANTEI) {
       if (!r.re.every((re) => re && re.test(t))) continue;
       const rt = new Set(r.tokens);
       if ([...qt].some((x) => THIRD.has(x) && !rt.has(x))) continue;
       if (qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) continue;
-      if (qmm !== has(rt, (x) => x.endsWith("mm"))) continue;
+      if (qmm !== lensy(rt)) continue;
       const model = [...rt].filter((x) => /\d/.test(x) && !x.endsWith("mm") && !x.startsWith("f"));
       if (model.length && !model.every((x) => qt.has(x))) continue;
+      // 焦点距離・F値は表の側の値がタイトルに全部あること（「55mm F3.5」に「18mm f/3.5」が当たっていた）
+      if (![...rt].filter((x) => /^(?:[\d.\-]+mm|f[\d.\-]+)$/.test(x)).every((x) => qt.has(x))) continue;
       return [r];
     }
     return [];
