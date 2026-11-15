@@ -1146,6 +1146,12 @@ def read_description(page: str) -> tuple[str, str]:
 
 
 CONFIG_DEFAULT_SHIP = 1000  # 表示用。計算は config.toml の default_domestic_shipping_jpy（main で上書き）
+# eBay の$は送料を除いた商品代（net・送料別）で表示する（2026-11-15 ユーザー指定）。計算は送料込みのまま
+CONFIG_SHIP_USD = 40.0  # 表示用。config.toml の [shipping] deduction_usd（main で上書き）
+
+
+def _net(v) -> float | None:
+    return None if v is None else round(float(v) - CONFIG_SHIP_USD, 2)
 
 
 def item_shipping(page: str) -> int | None:
@@ -1288,8 +1294,8 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "仮の上限入札額": it.tentative.get("max_bid"),
                 "仮の想定USD": it.tentative.get("usd"),
                 "仮の利益(現在価格)": it.tentative.get("profit"),
-                "仮の根拠": (f"{it.tentative['label']} ・ eBay出品中 最安${it.tentative['min']:.0f}・中央値${it.tentative['med']:.0f}"
-                          f"×0.7（{it.tentative['n']}件）の安い方 ${it.tentative['sg']}") if it.tentative else "",
+                "仮の根拠": (f"{it.tentative['label']} ・ eBay出品中（送料別）最安${_net(it.tentative['min']):.0f}・中央値${_net(it.tentative['med']):.0f}"
+                          f"（{it.tentative['n']}件）から案 ${_net(it.tentative['sg']):g}") if it.tentative else "",
                 "仮のsoldURL": (it.tentative.get("links") or {}).get("sold", ""),
                 "仮の出品中URL": (it.tentative.get("links") or {}).get("active", ""),
                 "理由": reason,
@@ -1306,7 +1312,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "過去実績件数": len(it.history_matches) or None,
                 "過去実績URL": " ".join(m.get("ebay_url", "") for m in it.history_matches if m.get("ebay_url")),
                 "過去実績の内訳": " / ".join(
-                    f"{m.get('title', '')} ${m['_price']:g}"
+                    f"{m.get('title', '')} ${_net(m['_price']):g}（送料別）"
                     + (f" 仕入{int(float(m['purchase_jpy'])):,}円" if str(m.get('purchase_jpy') or '').replace('.', '').isdigit() else "")
                     + f" [{m.get('source', '自分の販売実績')}]"
                     for m in it.history_matches[:5]),
@@ -1459,7 +1465,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
   <div class="grid">
     <div><label>現在価格</label><b>{_yen(r['現在価格']) or '-'}</b><small>入札{r['入札数'] if r['入札数'] is not None else '-'}・即決{_yen(r['即決価格']) or '-'}</small></div>
     <div class="hl"><label>入札する上限額（このまま入札）</label><b>{_yen(r['上限入札額']) or '-'}</b><small>{e(r["入札額の税"])} ・ 損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
-    <div><label>想定販売価格</label><b>{_usd(r['想定販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ Net {_usd(r['Net販売価格USD'])}</small></div>
+    <div><label>eBay相場（送料別）</label><b>{_usd(r['Net販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ 送料込み {_usd(r['想定販売価格USD'])}</small></div>
     <div><label>利益（現在価格）</label><b>{_yen(r['利益(現在価格)']) or '-'}</b><small>利益率 {r['利益率%'] if r['利益率%'] is not None else '-'}%</small></div>
     <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料（{e(r["国内送料の根拠"])}）</small></div>
     <div><label>eBay手数料／国際送料</label><b>{_yen(r['eBay手数料']) or '-'}</b><small>送料 {_yen(r['国際送料']) or '-'}</small></div>
@@ -1503,7 +1509,7 @@ eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['inter
 <h2>チャレンジ枠（その他の出品者）{len(cards['チャレンジ'])}件</h2>
 {''.join(cards['チャレンジ']) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
 <h2>仮◎○（相場は未登録・eBay出品中の価格で仮に計算）{len(tent)}件</h2>
-<p class="summary">sold を見て、売れた価格が「仮の想定」以上なら入札してよい候補。ヤフオクの検索ページで拡張機能の［登録］を押すと ◎○ に上がり、同じ機種の今後の出品にも効きます。利益の大きい順。</p>
+<p class="summary">sold を見て、売れた商品代（送料別）が根拠の「案」以上なら入札してよい候補。ヤフオクの検索ページで拡張機能の［登録］を押すと ◎○ に上がり、同じ機種の今後の出品にも効きます。利益の大きい順。</p>
 <table class="tbl"><tr><th>判定</th><th>商品</th><th>現在</th><th>仮の上限（このまま入札）</th><th>仮の利益</th><th>根拠</th><th>eBay</th></tr>{''.join(
     f'<tr><td>仮{e(r["仮判定"])}</td><td>{"★ " if r.get("枠") == "安心" else ""}<a href="{e(r["ヤフオクURL"])}" target="_blank" rel="noopener">{e(r["タイトル"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small></td>'
     f'<td>{_yen(r["現在価格"])}</td><td><b>{_yen(r["仮の上限入札額"])}</b></td><td>{_yen(r["仮の利益(現在価格)"])}</td>'
@@ -1599,6 +1605,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.offline:
         global CONFIG_DEFAULT_SHIP
         CONFIG_DEFAULT_SHIP = cfg["yahoo"]["default_domestic_shipping_jpy"]
+        global CONFIG_SHIP_USD
+        CONFIG_SHIP_USD = float(cfg["shipping"].get("deduction_usd", 0))
         n = check_descriptions(items, args.delay, cfg, fx)
         print(f"説明文チェック: ◎○ {n}件を確認（カビ・クモリ等があれば要確認に）", file=sys.stderr)
         import tentative  # 相場が無い出品を eBay 出品中の価格（公式 Browse API）で仮に判定

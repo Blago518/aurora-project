@@ -231,7 +231,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.15.5";
+  var APP_VERSION = "2026.11.15.6";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -241,6 +241,8 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const yen = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ja-JP") + "円");
 const usd = (v) => (v == null ? "-" : "$" + Number(v).toFixed(v >= 100 ? 0 : 2));
+// eBay の$は送料を除いた商品代（net・送料別）で表示する（相場データ・計算は送料込みのまま。送料は config.toml の deduction_usd）
+const nusd = (v) => (v == null ? "-" : usd(Math.round((Number(v) - ((DATA && DATA.cfg.deductionUsd) || 0)) * 100) / 100));
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
 const LS_KEY = "storeApiKey", LS_HIST = "storeHist", LS_REC = "storeRecSel";
@@ -329,7 +331,7 @@ function storeReason(r) {  // 拡張機能（ヤフオク向け）の言葉を�
 // 過去データの状態（Near MINT $229.99 など）。手で直した相場（相場メモ）は除く
 function conds(refs) {
   return refs.filter((x) => x.tier <= 2).slice(0, 5)
-    .map((x) => `${esc(core.conditionOf(x) || "記載なし")} ${usd(x.price)}${core.isMemo(x) ? "（直した相場）" : ""}`).join("<br>");
+    .map((x) => `${esc(core.conditionOf(x) || "記載なし")} ${nusd(x.price)}${core.isMemo(x) ? "（直した相場）" : ""}`).join("<br>");
 }
 function renderResult(name, price, r) {
   const el = $("result");
@@ -346,7 +348,7 @@ function renderResult(name, price, r) {
     h += `<dl class="kv">
       <dt>この値段以下なら買い（税込）</dt><dd class="g">${yen(c.maxBid)}</dd>
       <dt>損益ゼロになる値段（税込）</dt><dd>${yen(c.breakeven)}</dd>
-      <dt>想定販売価格（eBay）</dt><dd>${usd(r.usd)}${r.flags.includes("ジャンク") ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
+      <dt>想定販売価格（eBay・送料別）</dt><dd>${nusd(r.usd)}${r.flags.includes("ジャンク") ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
       <dt>根拠</dt><dd>${esc(SRC[tier] || "")} ${r.refs.length}件の中央値</dd>
       ${conds(r.refs) ? `<dt>状態</dt><dd>${conds(r.refs)}</dd>` : ""}
       ${core.conditionNote && core.conditionNote(r.refs, name, r.flags) ? `<dt></dt><dd class="s">${esc(core.conditionNote(r.refs, name, r.flags))}</dd>` : ""}
@@ -356,7 +358,7 @@ function renderResult(name, price, r) {
     const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
     if (warn.length) h += `<div class="note">注意: ${esc(warn.join("・"))}</div>`;
     h += `<details><summary>一致した過去データ ${r.refs.length}件</summary>${r.refs.map((x) =>
-      `<div class="ref"><span>${esc(x.title)}</span><span>${esc(core.conditionOf(x) || "")}</span><span>${usd(x.price)}</span><span class="s">${esc((x.source || "").replace(/\(.*$/, ""))}</span></div>`).join("")}</details>`;
+      `<div class="ref"><span>${esc(x.title)}</span><span>${esc(core.conditionOf(x) || "")}</span><span>${nusd(x.price)}<span class="s">送料別</span></span><span class="s">${esc((x.source || "").replace(/\(.*$/, ""))}</span></div>`).join("")}</details>`;
   }
   el.innerHTML = h;
 }
@@ -634,7 +636,7 @@ function renderRecs() {
   $("recList").innerHTML = list.length ? list.map((r, i) => {
     const L = linksWithCat(withEx(r.label), r.kind === "lens" ? "3323" : DIGITAL_RE.test(r.label) ? "31388" : "15230");
     return `<div class="rec"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
-      <div class="buy">税込 <strong>${yen(r.maxBuy)}</strong> 以下なら買い <span class="s">／想定${usd(r.usd)}${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
+      <div class="buy">税込 <strong>${yen(r.maxBuy)}</strong> 以下なら買い <span class="s">／想定${nusd(r.usd)}（送料別）${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
       <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">販売済み</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">出品中</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
   }).join("") : `<div class="empty">この条件の販売実績はまだありません</div>`;
 }
@@ -685,7 +687,7 @@ function renderBids() {
       <div class="s">現在 ${yen(i.price)}・入札${i.bids ?? "-"}・送料 ${i.ship != null ? yen(i.ship) : "不明→1,000円で計算"}</div>${tags}
       <div class="max"><span class="s">入札する上限額</span><strong data-copyamt="${esc(i.id)}" title="タップで金額をコピー">${yen(i.maxBid)}</strong><span class="s">タップでコピー</span></div>
       <div class="s">今の価格で落札なら 利益 ${yen(i.profit)}${i.margin != null ? `（${i.margin}%）` : ""}${i.breakeven ? `・損益分岐 ${yen(i.breakeven)}` : ""}${/ストア/.test(i.taxNote) ? "・ストア（支払いは税込）" : ""}</div>
-      <div class="s">想定 ${usd(i.usd)}・根拠: ${esc(i.basis)}</div>
+      <div class="s">想定 ${nusd(i.usd)}（送料別）・根拠: ${esc(i.basis)}</div>
       <div class="links"><a class="mini main" href="${esc(i.url)}" target="_blank" rel="noopener">ヤフオク</a><a class="mini" href="${esc(i.sold)}" target="_blank" rel="noopener">sold</a><a class="mini" href="${esc(i.now)}" target="_blank" rel="noopener">now</a><button class="mini" data-copy="${esc(i.id)}">URLコピー</button></div>
       </div></div></div>`;
   }).join("") : `<div class="empty">${bidFilter === "tent" ? "仮◎○はありません" : "いま入札できる◎○はありません。仮◎○も見てください"}</div>`;
