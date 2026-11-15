@@ -1287,6 +1287,9 @@ def rows_for_output(items: list[Item]) -> list[dict]:
             {
                 "判定": mark,
                 "枠": "安心" if it.trusted else "チャレンジ",
+                # 確認不要＝根拠が 自分の販売実績・Chatwork実績・自分で登録した相場（または手入力）。頒布会リスト・鑑定表（推定）は確認してから
+                "根拠の強さ": "確認不要" if (it.ebay_price_usd is not None or (it.history_matches and source_tier(it.history_matches[0]) <= 1))
+                else "確認してから" if it.expected_price_usd is not None else "",
                 "国内送料": it.domestic_shipping_jpy,
                 "国内送料の根拠": ("出品ページ" if "送料は出品ページ" in it.fetch_note else "検索結果")
                 if it.domestic_shipping_jpy is not None else f"不明→{_yen(int(CONFIG_DEFAULT_SHIP))}で計算",
@@ -1442,7 +1445,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
                unpriced: list[dict] | None = None) -> None:
     e = html.escape
     j = cfg["judge"]
-    cards: dict[str, list[str]] = {"安心": [], "チャレンジ": [], "要確認": []}
+    cards: dict[str, list[str]] = {"安心": [], "チャレンジ": [], "要確認": [], "確認": []}
     # 付属品だけ（カタログ・フード・説明書など）・アダプター等は仕入れの対象外 → 出さない（件数だけ）
     is_acc = lambda r: any(f in (r.get("注意") or "") for f in ("付属品のみ?", "アダプター等"))  # noqa: E731
     acc_n = sum(1 for r in rows if is_acc(r))
@@ -1457,7 +1460,8 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
         hist = " ".join(
             link(u, f"実績{i+1}") for i, u in enumerate(r["過去実績URL"].split()) if u
         )
-        box = cards["要確認"] if r["判定"] == "要確認" else cards[r.get("枠") or "チャレンジ"]
+        box = (cards["要確認"] if r["判定"] == "要確認" else cards["確認"] if r.get("根拠の強さ") == "確認してから"
+               else cards[r.get("枠") or "チャレンジ"])
         box.append(f"""
 <article class="card {cls}">
   <div class="top"><span class="mark">{e(r['判定'])}</span><h2>{'★ ' if r.get('枠') == '安心' else ''}{e(r['タイトル'] or r['ヤフオクURL'])}</h2></div>
@@ -1508,7 +1512,10 @@ eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['inter
 {''.join(cards['安心']) or '<p class="summary">ありません（ストアのページを開くと、フォロー中なら拡張機能が自動で安心ストアに登録します）。</p>'}
 <h2>チャレンジ枠（その他の出品者）{len(cards['チャレンジ'])}件</h2>
 {''.join(cards['チャレンジ']) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
-<h2>仮◎○（相場は未登録・eBay出品中の価格で仮に計算）{len(tent)}件</h2>
+<h2>確認してから入札: 根拠が頒布会リスト・鑑定表（推定）の ◎○ {len(cards['確認'])}件</h2>
+<p class="summary">売れた価格ではない根拠です。sold を見て、売れた商品代が相場以上なら拡張機能の［直す$］で登録 → 入札候補に上がります。</p>
+{''.join(cards['確認']) or '<p class="summary">ありません。</p>'}
+<h2>確認してから入札: 仮◎○（相場は未登録・eBay出品中の価格で仮に計算）{len(tent)}件</h2>
 <p class="summary">sold を見て、売れた商品代（送料別）が根拠の「案」以上なら入札してよい候補。ヤフオクの検索ページで拡張機能の［登録］を押すと ◎○ に上がり、同じ機種の今後の出品にも効きます。利益の大きい順。</p>
 <table class="tbl"><tr><th>判定</th><th>商品</th><th>現在</th><th>仮の上限（このまま入札）</th><th>仮の利益</th><th>根拠</th><th>eBay</th></tr>{''.join(
     f'<tr><td>仮{e(r["仮判定"])}</td><td>{"★ " if r.get("枠") == "安心" else ""}<a href="{e(r["ヤフオクURL"])}" target="_blank" rel="noopener">{e(r["タイトル"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small></td>'

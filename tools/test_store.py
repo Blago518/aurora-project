@@ -277,6 +277,8 @@ class BidCandidates(unittest.TestCase):
              "現在価格": "2300", "仮の上限入札額": "18000", "仮の想定USD": "208", "仮のsoldURL": "S", "終了": "2026-11-16T10:00:00+09:00"},
             {"判定": "◎", "タイトル": "フード", "ヤフオクURL": "https://auctions.yahoo.co.jp/jp/auction/a3", "注意": "付属品のみ?"},
             {"判定": "×", "タイトル": "x", "ヤフオクURL": "https://auctions.yahoo.co.jp/jp/auction/a4"},
+            {"判定": "○", "根拠の強さ": "確認してから", "タイトル": "Canon FD 50mm", "ヤフオクURL": "https://auctions.yahoo.co.jp/jp/auction/a5",
+             "終了": "2026-11-16T09:00:00+09:00"},
         ]
         keys = sorted({k for r in rows for k in r})
         with (d / "bid_report_20261115_0703.csv").open("w", encoding="utf-8-sig", newline="") as f:
@@ -288,8 +290,9 @@ class BidCandidates(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self._write(Path(d))
             b = bs.bid_candidates(Path(d))
-        self.assertEqual([(i["id"], i["mark"], i["tent"]) for i in b["items"]], [("a1", "◎", False), ("a2", "○", True)])
-        a1, a2 = b["items"]
+        self.assertEqual([(i["id"], i["mark"], i["tent"], i["check"]) for i in b["items"]],
+                         [("a1", "◎", False, False), ("a5", "○", False, True), ("a2", "○", True, True)])
+        a1, _, a2 = b["items"]
         self.assertEqual((a1["maxBid"], a1["ship"], a1["trusted"], a1["flags"]), (18000, 910, True, []))
         self.assertEqual((a2["maxBid"], a2["usd"], a2["sold"]), (18000, 208, "S"))
 

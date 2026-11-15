@@ -192,11 +192,12 @@ def bid_candidates(reports: Path | None = None, now: datetime | None = None) -> 
         tent = not good and r.get("仮判定") in ("◎", "○")
         if not (good or tent):
             continue
+        weak = good and r.get("根拠の強さ") == "確認してから"  # 頒布会リスト・鑑定表が根拠 → 確認してから
         url = r.get("ヤフオクURL") or ""
         m = re.search(r"/auction/([^/?#]+)", url)
         items.append({
             "id": m.group(1) if m else url, "url": url, "title": r.get("タイトル", ""),
-            "mark": r["判定"] if good else r["仮判定"], "tent": tent, "trusted": r.get("枠") == "安心",
+            "mark": r["判定"] if good else r["仮判定"], "tent": tent, "check": tent or weak, "trusted": r.get("枠") == "安心",
             "price": _num(r.get("現在価格")), "bids": _num(r.get("入札数")), "end": r.get("終了", ""),
             "ship": _num(r.get("国内送料")), "shipBasis": r.get("国内送料の根拠", ""),
             "usd": _num(r.get("仮の想定USD") if tent else r.get("想定販売価格USD")),
@@ -211,7 +212,7 @@ def bid_candidates(reports: Path | None = None, now: datetime | None = None) -> 
             "flags": [x for x in flags if x not in ("動作品", "美品")],
             "desc": r.get("説明文", ""),
         })
-    items.sort(key=lambda x: (x["tent"], x["end"] or "9"))
+    items.sort(key=lambda x: (x["check"], x["tent"], x["end"] or "9"))
     return {"built": f"{made:%Y-%m-%d %H:%M}", "items": items}
 
 
