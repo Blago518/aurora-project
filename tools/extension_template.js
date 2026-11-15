@@ -15,7 +15,7 @@
   "use strict";
   const DATA = /*__DATA__*/ null;
   const C = DATA.consts;
-  const LS_MEMO = "yhkMemoV3", LS_MEMO_OLD = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
+  const LS_SEEN = "yhkSeenV1", LS_MEMO = "yhkMemoV3", LS_MEMO_OLD = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
 
   // @core-start（ここから @core-end までは store/core.js にそのままコピーされる。tools/build_store.py）
   // ------------------------------------------------------------------ 文字列処理（appraise.py と同じ規則）
@@ -367,6 +367,14 @@
   const memoVal = (v) => (v && typeof v === "object" ? { usd: Number(v.usd), cond: v.cond || "" } : { usd: Number(v), cond: "" });
   // 2026-11-15: 今までの相場メモは sold の商品代（送料別）で入れていたのに、送料込みとして扱っていた（$40 安く計算）。
   // 1回だけ送料を足して送料込みに直し、Mac（data/price_memo.csv）にも保存し直す。戻り値: 直した件数
+  // 確認済みのチェック（行をグレーにするだけ。消さない）。14日より古い記録は捨てる
+  function seenAll() {
+    const m = load(LS_SEEN, {}), old = Date.now() - 14 * 864e5;
+    for (const k of Object.keys(m)) if (m[k] < old) delete m[k];
+    return m;
+  }
+  const seenOf = (id) => !!load(LS_SEEN, {})[id];
+  const seenBox = (id) => `<label class="seen-box" title="確認したらチェック（グレーになります。もう一度押すと戻ります）"><input type="checkbox" data-seen="${esc(id)}"${seenOf(id) ? " checked" : ""}>確認済み</label>`;
   function migrateMemo() {
     try {
       if (localStorage.getItem(LS_MEMO) != null) return 0;
@@ -490,6 +498,8 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk .bd{padding:10px 12px}#yhk table{width:100%;border-collapse:collapse}
 #yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
 #yhk button.bidon{background:#1f7a5c;color:#fff}
+#yhk tr.seen td{opacity:.38}#yhk tr.seen td.m{opacity:1}#yhk tr.seen td.m>*:not(.seen-box){opacity:.38}
+#yhk label.seen-box{display:block;margin:0 0 4px;cursor:pointer;font-size:10px;color:#9fb3c8;white-space:nowrap}#yhk label.seen-box input{width:16px;height:16px;vertical-align:middle;margin:0 3px 0 0;cursor:pointer}
 @keyframes yhkflash{0%,100%{background:transparent}30%{background:#ffe08a}}#yhk tr.flash td{animation:yhkflash 1.2s ease 2}
 #yhk-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0b1728;color:#fff;padding:10px 16px;border-radius:10px;
 font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show{opacity:1}
@@ -730,7 +740,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const tip = `eBay検索語: ${i.eq || i.query}（価格+送料の高い順）\n根拠: ${r.title || ""} ${nd(r.price)}（送料別） [${r.source || ""}]` +
         (junk ? `\nジャンク評価 ×${Math.round(DATA.cfg.junkFactor * 100)}%` : "") + `\n送料別の商品代 ${nd(i.usd)}（送料$${SHIP()}込みなら $${i.usd}）`;
       const [left, soon] = remain(i.end);
-      return `<tr class="${soon ? "soon" : ""}"><td class="m ${cls}">${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
+      return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
 <div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}</div>${condLine(i)}${descLine(i.id)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a><div class="s">送料別</div>${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
@@ -749,7 +759,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const i = w.i, c = w.c, e = ebay(w.label);
       const [left, soon] = remain(i.end);
       const d = state.desc[i.id];
-      return `<tr class="${soon ? "soon" : ""} tent"><td class="m ${w.mk === "◎" ? "g" : "o"}"><span class="tmark">仮</span>${w.mk}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
+      return `<tr class="${soon ? "soon" : ""} tent${seenOf(i.id) ? " seen" : ""}"><td class="m ${w.mk === "◎" ? "g" : "o"}">${seenBox(i.id)}<span class="tmark">仮</span>${w.mk}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>
 <div class="s">機種: ${esc(w.label)} ・ eBay出品中（送料別）最安${nd(w.b.min || 0)}・中央値${nd(w.b.med)}から、安い方の案 ${nd(w.sg)}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} で仮計算（sold未確認）</div>
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
@@ -847,6 +857,16 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     t.className = "show";
     clearTimeout(t._h); t._h = setTimeout(() => (t.className = ""), 3500);
   }
+
+  document.addEventListener("change", (ev) => {
+    const box = ev.target.closest && ev.target.closest("#yhk input[data-seen]");
+    if (!box) return;
+    const m = seenAll();
+    if (box.checked) m[box.dataset.seen] = Date.now(); else delete m[box.dataset.seen];
+    save(LS_SEEN, m);
+    const tr = box.closest("tr");
+    if (tr) tr.classList.toggle("seen", box.checked);  // 並びは変えない（消さない）
+  });
 
   document.addEventListener("click", async (ev) => {
     const btn = ev.target.closest && ev.target.closest("#yhk button");
