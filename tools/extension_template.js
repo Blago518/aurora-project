@@ -11,9 +11,23 @@
 // @noframes
 // ==/UserScript==
 // このファイルは build_extension.py で自動生成されます。直接編集せず、data/ と config.toml を更新して作り直してください。
-(function () {
+(function (EMBEDDED) {
   "use strict";
-  const DATA = /*__DATA__*/ null;
+  // 相場データ: 拡張機能のフォルダの data.json（Mac が毎朝作り直す）を、ページを開くたびに読む → chrome://extensions の ↻ は不要。
+  // 読めないとき（Safari の Userscripts・テストなど）は、このファイルに埋め込んだ相場を使う
+  const isModule = typeof module !== "undefined" && module.exports;
+  if (!isModule && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
+    try {
+      chrome.runtime.sendMessage({ type: "getData" }, (d) => {
+        void chrome.runtime.lastError;
+        main(d && d.consts && d.refs ? d : EMBEDDED);
+      });
+    } catch (e) { main(EMBEDDED); }
+  } else {
+    main(EMBEDDED);
+  }
+
+  function main(DATA) {
   const C = DATA.consts;
   const LS_SEEN = "yhkSeenV1", LS_MEMO = "yhkMemoV3", LS_MEMO_OLD = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
 
@@ -1013,4 +1027,5 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
   }
 
   start();
-})();
+  }
+})(/*__DATA__*/ null);

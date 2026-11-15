@@ -153,7 +153,7 @@ def main(argv=None) -> int:
     except Exception as e:  # 集計の失敗で更新全体を止めない
         print(f"  入札の結果を集計できませんでした（{e}）")
     print("\n" + ("✅ 完了" if ok else "⚠ 一部でエラーがありました"))
-    print("  Chrome: chrome://extensions で「Aurora 仕入れ鑑定」の ↻（新しい相場を拡張機能に反映）")
+    print("  Chrome: 新しい相場はヤフオクのページを開き直すだけで反映（↻ は拡張機能のプログラムを新しくしたときだけ）")
     if args.notify:
         msg = "相場データを更新しました" if ok else "相場データの更新で一部エラー（reports/update_all.log）"
         wr = results and results.get("win_rate")
