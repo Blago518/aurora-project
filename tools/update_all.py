@@ -111,6 +111,12 @@ def run(script: str, *args: str) -> bool:
 
 
 def main(argv=None) -> int:
+    # 自動実行ではログがファイルなので、見出し（▶ …）がまとめて最後に書かれ、各プログラムのエラー文より後ろに並んでしまう。
+    # 1行ずつ書き出して、ログの順番を実行の順番どおりにする
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser(description="相場データを全部まとめて最新にする")
     ap.add_argument("--downloads", type=Path, default=Path.home() / "Downloads")
     ap.add_argument("--days", type=int, default=90, help="この日数より古いダウンロードは見ない")
