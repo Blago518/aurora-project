@@ -82,6 +82,12 @@ function openTabs(urls, tab) {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+  // 相場データ: フォルダの data.json を毎回読む（Mac が作り直した最新。拡張機能の ↻ は不要）
+  if (msg && msg.type === "getData") {
+    fetch(chrome.runtime.getURL("data.json") + "?t=" + Date.now(), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null)).then((d) => send(d), () => send(null));
+    return true;
+  }
   if (msg && msg.type === "openTabs") {
     openTabs(msg.urls, _sender && _sender.tab).then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
     return true;

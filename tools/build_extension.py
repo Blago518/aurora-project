@@ -136,7 +136,7 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
     (folder / "icons").mkdir(exist_ok=True)
     for png in (HERE / "icons").glob("icon*.png"):
         shutil.copy(png, folder / "icons" / png.name)
-    print(f"Chrome拡張機能: {folder}", file=sys.stderr)
+    print(f"Chrome拡張機能: {folder}（相場の更新は ↻ 不要。拡張機能のプログラムを新しくしたときだけ ↻）", file=sys.stderr)
 
 
 def main(argv=None) -> int:
@@ -157,6 +157,11 @@ def main(argv=None) -> int:
     js = tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     js = js.replace("__VERSION__", datetime.now().strftime("%Y.%m.%d.%H%M"))
     write_chrome_extension(js, args.out, keys)
+    # 相場データだけの data.json: 拡張機能がページを開くたびに読む（作り直しても chrome://extensions の ↻ は不要）。
+    # 書き込み途中を読まないよう、別名で書いてから置き換える
+    tmp = args.out / "data.json.tmp"
+    tmp.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(args.out / "data.json")
     if args.userscript:
         args.userscript.parent.mkdir(parents=True, exist_ok=True)
         args.userscript.write_text(js, encoding="utf-8")
