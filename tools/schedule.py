@@ -2,7 +2,7 @@
 """update_all.py を Mac で自動実行する（毎朝＋Mac にログインしたとき）. Mac 標準の launchd を使う.
 
 使い方（aurora フォルダで）:
-    python3 tools/schedule.py install     # 設定（毎朝 7:03 と ログイン時）
+    python3 tools/schedule.py install     # 設定（毎朝 8:40 と ログイン時）
     python3 tools/schedule.py install --hour 6 --minute 30
     python3 tools/schedule.py status      # 設定されているか・最後の実行結果
     python3 tools/schedule.py uninstall   # やめる
@@ -83,8 +83,8 @@ def status() -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="update_all.py の自動実行（launchd）")
     ap.add_argument("cmd", choices=["install", "uninstall", "status", "run"])
-    ap.add_argument("--hour", type=int, default=7)
-    ap.add_argument("--minute", type=int, default=3)
+    ap.add_argument("--hour", type=int, default=8)
+    ap.add_argument("--minute", type=int, default=40)  # 2026-11-15 ユーザー指定 8:40
     a = ap.parse_args(argv)
     if a.cmd == "install":
         install(a.hour, a.minute)

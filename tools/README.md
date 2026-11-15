@@ -24,7 +24,7 @@ open reports
 | 頒布会リスト（Excel） | なし | ダウンロードフォルダに保存すれば、次の自動更新で取り込み（ファイル名は何でもよい） |
 | 古物台帳（スプレッドシート） | `python3 tools/ledger_sync.py setup`（スクリプトを貼って公開） | 自動で取り込み |
 | スマホのデータ | `python3 tools/store_publish.py setup`（GitHub のトークン）→ 設定コードを iPhone のアプリに貼る | アプリを開くと最新 |
-| 全部の更新 | `python3 tools/schedule.py install` | 毎朝 7:03 と Mac のログイン時に自動。終わると通知 |
+| 全部の更新 | `python3 tools/schedule.py install` | 毎朝 8:40 と Mac のログイン時に自動。終わると通知 |
 
 拡張機能は、更新後に `chrome://extensions` の ↻ を押すと新しい相場になる。
 
