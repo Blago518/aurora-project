@@ -499,7 +499,10 @@ FLAG_RULES = [
                    r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|説明書のみ|\bback\b|"
                    # 「Sonnar T*180mmF2.8用」= そのレンズ用の付属品（「ニコン用」のようなマウントの表記は mm が無いので当たらない）
                    r"\d+\s*mm\s*(?:F\s*/?\s*\d+(?:\.\d+)?)?\s*用|"
-                   r"ポーチ|月号|雑誌|ムック|書籍|写真集|カメラスタイル|\bP-?FILTER\b|magazine|マグニファイ|アイピース|ルーペ|アイカップ|接眼|magnifier|eyepiece"),
+                   r"ポーチ|月号|雑誌|ムック|書籍|写真集|カメラスタイル|\bP-?FILTER\b|magazine|マグニファイ|アイピース|ルーペ|アイカップ|接眼|magnifier|eyepiece|"
+                   # 三脚まわりの部品（例: 「Wimberley AP-452 … 400mm F2.8G / 600mm F4G 用プレート」に 600mm F4 の相場が当たっていた）
+                   r"ウィンバリー|wimberley|\bkirk\b|カーク|really\s*right\s*stuff|sunwayfoto|アルカ\s*スイス|arca[\s\-]*swiss|"
+                   r"レンズフット|レンズプレート|クイックリリース|lens\s*(?:plate|foot)|replacement\s*foot"),
 ]
 
 
@@ -770,6 +773,11 @@ def source_tier(row: dict) -> int:
     return 0
 
 
+def _lensy(tokens: set[str]) -> bool:
+    """焦点距離（50mm・5cm）があればレンズ."""
+    return any(t.endswith("mm") or re.fullmatch(r"\d+(?:\.\d+)?cm", t) for t in tokens)
+
+
 def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[dict]:
     qt = _tokens(query)
     if not qt:
@@ -785,8 +793,8 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         rb = rt & brands
         if rb and not (rb & qt):
             continue
-        # レンズ（mm表記あり）とボディ（なし）を取り違えない
-        if any(t.endswith("mm") for t in qt) != any(t.endswith("mm") for t in rt):
+        # レンズ（mm・cm表記あり）とボディ（なし）を取り違えない（「NIKKOR-H 5cm f2」に「Nikon F2」が当たっていた）
+        if _lensy(qt) != _lensy(rt):
             continue
         # 付属品だけの実績（ストラップ・ケース等）は本体の参考にしない
         if ACCESSORY_RE.search(row.get("title", "")) and not ACCESSORY_RE.search(query):
@@ -882,10 +890,13 @@ def match_kantei(title: str, table: list[dict]) -> list[dict]:
             continue
         if "nonai" in qt and rt & {"ai", "ai-s"}:
             continue
-        if any(x.endswith("mm") for x in qt) != any(x.endswith("mm") for x in rt):
+        if _lensy(qt) != _lensy(rt):
             continue
         model = {x for x in rt if re.search(r"\d", x) and not x.endswith("mm") and not x.startswith("f")}
         if model and not model <= qt:
+            continue
+        # 焦点距離・F値は表の側の値がタイトルに全部あること（「55mm F3.5」に「18mm f/3.5」が当たっていた）
+        if not {x for x in rt if re.fullmatch(r"[\d.\-]+mm|f[\d.\-]+", x)} <= qt:
             continue
         return [dict(row, _score=1.0)]
     return []
