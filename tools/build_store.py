@@ -248,9 +248,12 @@ def main(argv=None) -> int:
     nb = len(data["bids"]["items"]) if data.get("bids") else 0
     print(f"出力: {args.out}（相場 {len(data['refs'])}件・おすすめ候補 {len(data['recs'])}機種・入札候補 {nb}件・"
           f"為替 {fx:.2f}円・{args.out.stat().st_size // 1024}KB）", file=sys.stderr)
-    if not args.no_icloud and ICLOUD.parent.exists():
-        # 自動実行（launchd）からは macOS が iCloud Drive への書き込みを止めることがある。その場合も配信は続ける
+    if not args.no_icloud:
+        # 自動実行（launchd）からは macOS が iCloud Drive を見ること自体を止める（exists() でも PermissionError）。
+        # その場合も配信は続ける
         try:
+            if not ICLOUD.parent.exists():
+                raise FileNotFoundError("iCloud Drive がありません")
             ICLOUD.mkdir(exist_ok=True)
             shutil.copy(args.out, ICLOUD / args.out.name)
             print(f"iCloud Drive にコピー: iCloud Drive › aurora › {args.out.name}", file=sys.stderr)
