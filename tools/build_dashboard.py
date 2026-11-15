@@ -576,6 +576,12 @@ def bin_label(v: float, bins) -> str:
 # 利益（appraise.calculate と同じ手数料率。送料は明細があれば実額、無ければ config の一律差し引き）
 # ---------------------------------------------------------------------------
 
+def listed_deduction(cfg: dict) -> float:
+    """出品中・販売済みの商品の送料の見積もり（USD）. 入札判断の deduction_usd とは別（出品に乗せていた送料の頃の値）."""
+    s = cfg["shipping"]
+    return float(s.get("listed_deduction_usd", s.get("deduction_usd", 30)))
+
+
 def profit_parts(price_usd: float, cost_jpy: float | None, cfg: dict, fx: float, actual: dict | None,
                  net_usd: float | None = None) -> dict:
     """1件の利益の内訳（円）. net_usd（eBay の実際の手取り）があれば手数料・広告費・返金はその実額、無ければ config の率で推定."""
@@ -584,7 +590,7 @@ def profit_parts(price_usd: float, cost_jpy: float | None, cfg: dict, fx: float,
     fees_usd = price_usd * fee_pct / 100 + e["per_order_fee_usd"] if net_usd is None else price_usd - net_usd
     loss = (price_usd - fees_usd) * fx * cfg["fx"]["conversion_loss_pct"] / 100
     ship_actual = actual and actual.get("ship")
-    ship = ship_actual if ship_actual else cfg["shipping"].get("deduction_usd", 30) * fx
+    ship = ship_actual if ship_actual else listed_deduction(cfg) * fx
     duty = (actual or {}).get("duty", 0.0)
     aucrevo = (actual or {}).get("aucrevo", 0.0)
     sale = price_usd * fx
@@ -663,7 +669,7 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
                "api_date": (api or {}).get("date", ""), "fin_date": (api or {}).get("fin_date", ""),
                "cancelled": (api or {}).get("cancelled") or [], "non_usd": (api or {}).get("non_usd", 0),
                "unfixed": (api or {}).get("unfixed") or [], "sku_trusted_from": SKU_TRUSTED_FROM.strftime("%Y/%m/%d"),
-               "deduction_usd": cfg["shipping"].get("deduction_usd", 30)}
+               "deduction_usd": listed_deduction(cfg)}
 
     # 概要
     tp = sum(r["p"]["profit"] for r in sold)
