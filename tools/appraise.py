@@ -508,8 +508,9 @@ FLAG_RULES = [
 COND_RULES = [
     (r"\b(?:almost|nearly|near)\s*unused\b", "TOP MINT"),
     (r"\b(?:top|t)[\s.\-]*mint\b", "TOP MINT"),
+    (r"\balmost[\s.\-]*mint\b", "Almost MINT"),
     (r"\b(?:near|n)[\s.\-]*mint\b|\bnmint\b", "Near MINT"),
-    (r"\b(?:unused|brand\s*new|new\s*in\s*box)\b|未使用|新品", "未使用"),
+    (r"\b(?:unused|brand\s*new|new\s*in\s*box)\b|未使用|新品", "Unused"),
     (r"\bmint\b", "MINT"),
     (r"\bexc(?:ellent)?\s*\+\s*([1-9])\b", "Exc+$1"),
     (r"\bexc(?:ellent)?\s*(\+{1,9})", "Exc$1"),
@@ -517,12 +518,13 @@ COND_RULES = [
     (r"\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り", "ジャンク"),
 ]
 # 状態のランク（大きいほど良い）。ジャンクや分からない状態（頒布会の A・AB など）はランク無し＝補正しない
-COND_RANK = {"未使用": 10, "TOP MINT": 9, "MINT": 8, "Near MINT": 7,
+# 2026-11-15 ユーザー指定: Unused > TOP MINT > MINT > Almost MINT > Near MINT > Exc+5 の順に1ランク（$10）ずつ
+COND_RANK = {"Unused": 11, "未使用": 11, "TOP MINT": 10, "MINT": 9, "Almost MINT": 8, "Near MINT": 7,
              "Exc+5": 6, "Exc+++++": 6, "Exc+4": 5, "Exc++++": 5, "Exc+3": 4, "Exc+++": 4,
              "Exc+2": 3, "Exc++": 3, "Exc+1": 2, "Exc+": 2, "Exc": 1}
 # ヤフオクの商品名（日本語の表記だけ使う。英語の MINT・Exc+++ は出品者の自己申告なので使わない）→ ランク。上から順に見る
 LISTING_COND_RULES = [
-    (r"未使用に近", 9), (r"未使用|新品未開封", 10), (r"新品同様", 9), (r"極上|超美品", 8), (r"美品", 7),
+    (r"未使用に近", 10), (r"未使用|新品未開封", 11), (r"新品同様", 10), (r"極上|超美品", 9), (r"美品", 7),
     (r"良品|動作品|動作確認済|動作良好|完動|実用品|並品|難あり", 6),
 ]
 LISTING_DEFAULT_RANK = 7  # 表記なし＝Near MINT として計算（ユーザーの指定 2026-11-15）

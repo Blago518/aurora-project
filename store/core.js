@@ -269,7 +269,7 @@ function makeCore(DATA) {
     for (const [re, r] of LISTING_COND) if (re.test(t)) return r;
     return C.listingDefaultRank || 7;
   }
-  const RANK_LABEL = { 10: "未使用", 9: "TOP MINT", 8: "MINT", 7: "Near MINT", 6: "Exc+5", 5: "Exc+4", 4: "Exc+3", 3: "Exc+2", 2: "Exc+1", 1: "Exc" };
+  const RANK_LABEL = { 11: "Unused", 10: "TOP MINT", 9: "MINT", 8: "Almost MINT", 7: "Near MINT", 6: "Exc+5", 5: "Exc+4", 4: "Exc+3", 3: "Exc+2", 2: "Exc+1", 1: "Exc" };
   // 補正したときの説明（例: この出品は「美品」→ Near MINT として、状態1ランク＝$10で補正）。補正しなかったら ""
   function conditionNote(refs, title, flags, rank) {
     if (flags.includes("ジャンク") || !Number(DATA.cfg.condStep || 0)) return "";

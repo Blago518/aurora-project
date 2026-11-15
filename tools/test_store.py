@@ -223,15 +223,15 @@ class ConditionAdjust(unittest.TestCase):
     """状態の補正（1ランク $10）: 過去データの状態とこの出品の状態の差で販売価格を動かす。Python と JS で同じ."""
 
     SALES = [("Olympus 35mm F2", "相場メモ(Near MINT)", 139.99),        # Near MINT = 7
-             ("[MINT] Nikon FM2 Black", "Chatwork販売実績(キタムラ)", 250.0),  # MINT = 8
+             ("[MINT] Nikon FM2 Black", "Chatwork販売実績(キタムラ)", 250.0),  # MINT = 9
              ("Nikon FM2 Black Exc+++", "自分の販売実績", 210.0),             # Exc+3 = 4
              ("Canon AE-1 Program", "自分の販売実績", 120.0)]                 # 状態なし＝補正しない
     TITLES = {"オリンパス OM ZUIKO 35mm F2 美品": 139.99,           # 美品=Near MINT → 差0
-              "オリンパス OM ZUIKO 35mm F2 極上": 149.99,           # 極上=MINT → +1
+              "オリンパス OM ZUIKO 35mm F2 極上": 159.99,           # 極上=MINT → +2（間に Almost MINT）
               "オリンパス OM ZUIKO 35mm F2 動作品": 129.99,         # 動作品=Exc+5 → -1
               "オリンパス OM ZUIKO 35mm F2": 139.99,               # 表記なし=Near MINT
               "オリンパス OM ZUIKO 35mm F2 MINT": 139.99,          # 英語の格付けは使わない
-              "ニコン Nikon FM2 ブラック 未使用に近い": 260.0,        # TOP MINT=9: 自分の実績 Exc+3($210)+5ランク（Chatwork より優先）
+              "ニコン Nikon FM2 ブラック 未使用に近い": 270.0,        # TOP MINT=10: 自分の実績 Exc+3($210)+6ランク（Chatwork より優先）
               "ニコン Nikon FM2 ブラック ジャンク": 147.0,           # ジャンクは補正せず $210×0.7
               "キヤノン Canon AE-1 Program 美品": 120.0}
 
