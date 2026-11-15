@@ -286,17 +286,18 @@
   }
   const RANK_LABEL = { 10: "未使用", 9: "TOP MINT", 8: "MINT", 7: "Near MINT", 6: "Exc+5", 5: "Exc+4", 4: "Exc+3", 3: "Exc+2", 2: "Exc+1", 1: "Exc" };
   // 補正したときの説明（例: この出品は「美品」→ Near MINT として、状態1ランク＝$10で補正）。補正しなかったら ""
-  function conditionNote(refs, title, flags) {
+  function conditionNote(refs, title, flags, rank) {
     if (flags.includes("ジャンク") || !Number(DATA.cfg.condStep || 0)) return "";
     if (!refs.some((r) => (C.condRank || {})[conditionOf(r)] != null)) return "";
+    if (rank != null) return `この出品は［直す］で ${RANK_LABEL[rank]} と指定`;
     const t = String(title || "").normalize("NFKC");
     const hit = (C.listingCondRules || []).find(([p]) => new RegExp(p).test(t));
     const word = hit ? t.match(new RegExp(hit[0]))[0] : "表記なし";
     return `この出品は${hit ? "「" + word + "」" : "表記なし"}＝${RANK_LABEL[listingRank(title)]}で補正（1ランク$${DATA.cfg.condStep}）`;
   }
-  function conditionAdjusted(refs, title, flags) {
+  function conditionAdjusted(refs, title, flags, rank) {
     const step = Number(DATA.cfg.condStep || 0);
-    const lr = flags.includes("ジャンク") || !step ? null : listingRank(title);
+    const lr = flags.includes("ジャンク") || !step ? null : rank != null ? rank : listingRank(title);
     return refs.map((r) => {
       const rr = (C.condRank || {})[conditionOf(r)];
       return lr != null && rr != null ? Math.round(Math.max(r.price + step * (lr - rr), 0) * 100) / 100 : r.price;
@@ -374,6 +375,19 @@
     return m;
   }
   const seenOf = (id) => !!load(LS_SEEN, {})[id];
+  // ［直す］で選んだ状態＝この出品の状態（出品ごと。14日で忘れる）。{id: {cond, t}}
+  const LS_LCOND = "yhkListCondV1";
+  function listCondRank(id) {
+    const v = id && load(LS_LCOND, {})[id];
+    const r = v && (C.condRank || {})[v.cond];
+    return r != null ? r : null;
+  }
+  function setListCond(id, cond) {
+    const m = load(LS_LCOND, {}), old = Date.now() - 14 * 864e5;
+    for (const k of Object.keys(m)) if (m[k].t < old) delete m[k];
+    if (cond && (C.condRank || {})[cond] != null) m[id] = { cond, t: Date.now() }; else delete m[id];
+    save(LS_LCOND, m);
+  }
   const seenBox = (id) => `<label class="seen-box" title="確認したらチェック（グレーになります。もう一度押すと戻ります）"><input type="checkbox" data-seen="${esc(id)}"${seenOf(id) ? " checked" : ""}>確認済み</label>`;
   function migrateMemo() {
     try {
@@ -454,7 +468,8 @@
       let m = matchPreferMemo(it.query + " " + it.title, memoPool, otherPool);
       if (!m.length) m = matchKantei(it.title);
       it.refs = m;
-      it.usd = m.length ? Math.round(median(conditionAdjusted(m, it.title, it.flags)) * 100) / 100 : null;
+      it.lrank = listCondRank(it.id);  // ［直す］で指定したこの出品の状態（無ければタイトルから）
+      it.usd = m.length ? Math.round(median(conditionAdjusted(m, it.title, it.flags, it.lrank)) * 100) / 100 : null;
       if (it.usd != null && it.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1)
         it.usd = Math.round(it.usd * DATA.cfg.junkFactor * 100) / 100;
       // 送料: 検索結果に無ければ出品ページの送料（読めていれば）。どちらも無ければ calculate が既定の額（1,000円）で計算
@@ -500,6 +515,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 #yhk button.bidon{background:#1f7a5c;color:#fff}
 #yhk tr.seen td{opacity:.38}#yhk tr.seen td.m{opacity:1}#yhk tr.seen td.m>*:not(.seen-box){opacity:.38}
 #yhk label.seen-box{display:block;margin:0 0 4px;cursor:pointer;font-size:10px;color:#9fb3c8;white-space:nowrap}#yhk label.seen-box input{width:16px;height:16px;vertical-align:middle;margin:0 3px 0 0;cursor:pointer}
+#yhk .pinmove{margin-top:4px;padding:4px 8px;border-radius:6px;background:#fff3cd;color:#6b4e00;font-size:12px;font-weight:700}
 @keyframes yhkflash{0%,100%{background:transparent}30%{background:#ffe08a}}#yhk tr.flash td{animation:yhkflash 1.2s ease 2}
 #yhk-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0b1728;color:#fff;padding:10px 16px;border-radius:10px;
 font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show{opacity:1}
@@ -672,7 +688,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   function condLine(i) {
     const rs = (i.refs || []).filter((r) => r.tier <= 2).slice(0, 5);
     if (!rs.length) return "";
-    const note = conditionNote(i.refs, i.title, i.flags);
+    const note = conditionNote(i.refs, i.title, i.flags, i.lrank);
     return `<div class="s">状態: ${rs.map((r) => `${esc(conditionOf(r) || "記載なし")} ${nd(r.price)}${isMemo(r) ? "（直した）" : ""}`).join(" ・ ")}` +
       `${note ? " → " + esc(note) : ""}</div>`;
   }
@@ -684,6 +700,16 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       }
     }
   }
+
+  // 出品の本来の欄: good（入札候補）/ weak（確認してから・根拠が弱い）/ check（要確認）/ bad（×）/ wait（仮◎○）/ acc（付属品）
+  function naturalSec(i, isAcc, sure) {
+    if (isAcc(i)) return "acc";
+    if (i.mark === "◎" || i.mark === "○") return sure(i) ? "good" : "weak";
+    if (i.mark === "要確認" && i.calc) return "check";
+    if (i.mark === "×") return "bad";
+    return state.waitIds && state.waitIds.has(i.id) ? "wait" : "";
+  }
+  const SEC_LABEL = { good: "入札候補", weak: "確認してから入札", check: "要確認", bad: "× 見送り", wait: "仮◎○", acc: "付属品など（除外）", "": "相場なし" };
 
   function render() {
     let root = document.getElementById("yhk");
@@ -699,10 +725,13 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const accN = items.filter(isAcc).length;
     // 確認不要＝根拠が 自分の販売実績・Chatwork実績・自分で登録した相場（tier 0〜1）。頒布会リスト・鑑定表（推定）は確認してから
     const sure = (i) => !!(i.refs && i.refs.length && i.refs[0].tier <= 1);
-    const allGood = items.filter((i) => (i.mark === "◎" || i.mark === "○") && !isAcc(i)).sort((a, b) => (a.end < b.end ? -1 : 1));
-    const good = allGood.filter(sure), weak = allGood.filter((i) => !sure(i));
-    const check = items.filter((i) => i.mark === "要確認" && i.calc && !isAcc(i));
-    const bad = items.filter((i) => i.mark === "×" && !isAcc(i));
+    const pin = state.pin || (state.pin = {});
+    const secOf = (i) => pin[i.id] || naturalSec(i, isAcc, sure);
+    const byEnd = (a, b) => (a.end < b.end ? -1 : 1);
+    const good = items.filter((i) => secOf(i) === "good").sort(byEnd), weak = items.filter((i) => secOf(i) === "weak").sort(byEnd);
+    const check = items.filter((i) => secOf(i) === "check");
+    const bad = items.filter((i) => secOf(i) === "bad");
+    const pinnedWaits = items.filter((i) => secOf(i) === "wait" && i.calc);  // 仮◎○の行で［登録］した物
     const priced = items.filter((i) => i.calc).length;
     const groups = new Map();
     for (const i of items) {
@@ -730,8 +759,15 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       if (mk === "◎" || mk === "○") waits.push({ i, c, usd, sg, mk, label, b: state.browse[label] });
     }
     waits.sort((a, b) => (a.i.end < b.i.end ? -1 : 1));
+    state.waitIds = new Set(waits.map((w) => w.i.id));
     const more = !state.done && state.total && state.total > items.length;
 
+    // ［直す］した行: 本来の欄が変わっても、ここに残す（ページを開き直すと本来の欄へ）
+    const pinNote = (i) => {
+      if (!pin[i.id]) return "";
+      const nat = naturalSec(i, isAcc, sure);
+      return `<div class="pinmove">［直す］で再計算しました: 判定 ${esc(i.mark)}${i.reason ? "（" + esc(i.reason) + "）" : ""}${nat !== pin[i.id] ? ` ・ 本来の欄は「${SEC_LABEL[nat] || nat}」。ページを開き直すとそちらへ移ります` : ""}</div>`;
+    };
     const row = (i) => {
       const c = i.calc, r = i.refs[0] || {}, e = ebay(i.eq || i.query);
       const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";
@@ -742,12 +778,12 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const [left, soon] = remain(i.end);
       return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}</div>${condLine(i)}${descLine(i.id)}</td>
+<div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}</div>${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a><div class="s">送料別</div>${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
-<td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
+<td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}${i.mark === "◎" || i.mark === "○" ? '<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>' : ""}${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
     // 安心枠（フォロー中のストア）の行
@@ -771,14 +807,14 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
     };
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="送料を含まない商品代（net）。金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場（送料別）</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th title="今の価格のまま落札できたときの利益">利益（今の価格で落札）</th></tr>`;
 
-    root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ 入札候補 ${good.length}件${weak.length + waits.length ? ` ・ 確認してから ${weak.length + waits.length}件` : ""}${accN ? ` ・ 付属品など ${accN}件は除外` : ""}</span>
+    root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ 入札候補 ${good.length}件${weak.length + waits.length + pinnedWaits.length ? ` ・ 確認してから ${weak.length + waits.length + pinnedWaits.length}件` : ""}${accN ? ` ・ 付属品など ${accN}件は除外` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">続きを鑑定（残り${state.total - items.length}件）</button>` : ""}
 ${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ eBayの$は送料別（計算では送料$${SHIP()}込みに戻して手数料を計算） ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）― 上限額をそのまま入札欄へ</h4>
 ${good.length ? `<table>${head}${trustRows(good)}${good.filter((i) => !i.trusted).length ? `<tr><td colspan="6" class="tsep chal">チャレンジ枠（その他の出品者） ${good.filter((i) => !i.trusted).length}件 ― 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上</td></tr>` : ""}${good.filter((i) => !i.trusted).map(row).join("")}</table>` : `<div class="s">このページには、確認なしで入札できる出品はありません（下の「確認してから入札」を見てください）。</div>`}
-${weak.length || waits.length ? `<h4 style="margin:14px 0 4px">確認してから入札 ${weak.length + waits.length}件 ― sold を見て、売れた商品代が相場以上なら［直す$］［登録］→ 上の入札候補に上がります</h4>
-<table>${head}${weak.length ? `<tr><td colspan="6" class="tsep">根拠が頒布会リスト（出品価格）・鑑定表（推定）の ◎○ ${weak.length}件 ― 売れた価格ではないので sold で確認</td></tr>${weak.map(row).join("")}` : ""}${waits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値と中央値×${DATA.cfg.activeFactor}の安い方で仮に計算</td></tr>${waits.map(waitRow).join("")}` : ""}</table>` : ""}
+${weak.length || waits.length || pinnedWaits.length ? `<h4 style="margin:14px 0 4px">確認してから入札 ${weak.length + waits.length + pinnedWaits.length}件 ― sold を見て、売れた商品代が相場以上なら［直す$］［登録］→ 上の入札候補に上がります</h4>
+<table>${head}${weak.length ? `<tr><td colspan="6" class="tsep">根拠が頒布会リスト（出品価格）・鑑定表（推定）の ◎○ ${weak.length}件 ― 売れた価格ではないので sold で確認</td></tr>${weak.map(row).join("")}` : ""}${waits.length || pinnedWaits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length + pinnedWaits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値と中央値×${DATA.cfg.activeFactor}の安い方で仮に計算</td></tr>${pinnedWaits.map(row).join("")}${waits.map(waitRow).join("")}` : ""}</table>` : ""}
 ${canBrowse() && !waits.length ? `<div class="s">${Object.keys(state.browse).length ? "仮◎○はありません" : "eBay出品中の価格を調べています…（仮◎○）"}</div>` : ""}
 <details><summary>要確認（相場はあるがセット品・光学難・説明文の難などの可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
@@ -842,8 +878,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const it = state.items.find((x) => x.id === id);
     const a = root && root.querySelector(`a.t[href*="/auction/${CSS.escape(id)}"]`);
     const row = a && a.closest("tr");
-    const where = !it ? "" : it.mark === "◎" || it.mark === "○" ? `${it.mark}（入札候補${it.trusted ? "・★安心枠" : ""}）`
-      : it.mark === "×" ? "×（見送り: 登録した額では上限額が現在価格に届きません）" : "要確認（付属品・説明文の難などの可能性）";
+    const where = !it ? "" : `判定 ${it.mark}・入札する上限額 ${it.calc && it.calc.maxBid ? it.calc.maxBid.toLocaleString() + "円" : "なし"}（この行はこの場所に残します）`;
     state.flash = { id, until: Date.now() + 3000 };
     if (row) {
       const det = row.closest("details");
@@ -898,9 +933,16 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       if (!vNet) return;
       const v = Math.round((vNet + SHIP()) * 100) / 100;  // 入力は送料別 → 保存は送料込み
       const memo = load(LS_MEMO, {}); memo[k] = { usd: v, cond: sel ? sel.value : "" }; save(LS_MEMO, memo);
-      // 押した行の出品（登録すると判定が変わって別の欄へ移るので、移った先を見せる）
+      // 押した行の出品: 選んだ状態＝この出品の状態（入れた金額がそのままこの行の相場になる）。行は今の欄に残す
       const link = btn.closest("tr") && btn.closest("tr").querySelector('a[href*="/auction/"]');
       const id = link ? (link.getAttribute("href").match(/auction\/([^/?#]+)/) || [])[1] : "";
+      const it0 = id && state.items.find((x) => x.id === id);
+      if (it0) {
+        const sure0 = (i) => !!(i.refs && i.refs.length && i.refs[0].tier <= 1);
+        const isAcc0 = (i) => i.flags.some((f) => f === "付属品のみ?" || f === "アダプター等");
+        (state.pin || (state.pin = {}))[id] = state.pin[id] || naturalSec(it0, isAcc0, sure0);
+        setListCond(id, sel ? sel.value : "");
+      }
       evaluate(state.items, state.fx); render();
       saveMemoFile();
       if (id) showMoved(id);
