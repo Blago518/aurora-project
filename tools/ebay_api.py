@@ -140,7 +140,8 @@ def get_json(url: str, token: str, extra: dict | None = None) -> dict:
                                                "Content-Type": "application/json", **(extra or {})})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())
+            body = r.read()
+            return json.loads(body) if body.strip() else {}  # 該当なしのとき中身が空で返ることがある
     except urllib.error.HTTPError as e:
         raise SystemExit(f"eBay API エラー（HTTP {e.code}）: {url.split('?')[0]}\n{e.read().decode(errors='replace')[:400]}")
 
@@ -204,6 +205,7 @@ def _orig(d: dict | None) -> str:
 
 
 def fetch_orders(days: int) -> list[dict]:
+    days = min(days, 729)  # eBay の注文 API は「2年以内」まで（730日だと時刻の差で範囲外になる）
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     rows, offset = [], 0
     while True:

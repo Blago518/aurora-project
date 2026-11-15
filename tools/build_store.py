@@ -249,9 +249,13 @@ def main(argv=None) -> int:
     print(f"出力: {args.out}（相場 {len(data['refs'])}件・おすすめ候補 {len(data['recs'])}機種・入札候補 {nb}件・"
           f"為替 {fx:.2f}円・{args.out.stat().st_size // 1024}KB）", file=sys.stderr)
     if not args.no_icloud and ICLOUD.parent.exists():
-        ICLOUD.mkdir(exist_ok=True)
-        shutil.copy(args.out, ICLOUD / args.out.name)
-        print(f"iCloud Drive にコピー: iCloud Drive › aurora › {args.out.name}", file=sys.stderr)
+        # 自動実行（launchd）からは macOS が iCloud Drive への書き込みを止めることがある。その場合も配信は続ける
+        try:
+            ICLOUD.mkdir(exist_ok=True)
+            shutil.copy(args.out, ICLOUD / args.out.name)
+            print(f"iCloud Drive にコピー: iCloud Drive › aurora › {args.out.name}", file=sys.stderr)
+        except OSError as e:
+            print(f"iCloud Drive にコピーできませんでした（{e.__class__.__name__}）。スマホへは暗号化配信で届けます", file=sys.stderr)
     if not args.no_publish and args.out == ROOT / "data" / "store_data.json":
         import store_publish  # 暗号化して iPhone へ自動配信（未設定なら何もしない）
         store_publish.publish(args.out)
