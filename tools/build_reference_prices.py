@@ -17,6 +17,7 @@ import argparse
 import csv
 import re
 import sys
+import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -98,10 +99,14 @@ def from_ledger(path: Path) -> list[dict]:
         lines = f.read().splitlines()
     start = next((i for i, ln in enumerate(lines) if "販売日" in ln), 0)
     for row in csv.DictReader(lines[start:]):
-        row = {(k or "").replace("\n", "").strip(): (v or "").strip() for k, v in row.items()}
+        # 見出しは全角・半角をそろえる（Claude更新版は「品目（商品名）」と全角カッコ）
+        row = {unicodedata.normalize("NFKC", k or "").replace("\n", "").strip(): (v or "").strip()
+               for k, v in row.items() if not isinstance(v, list)}
         title = row.get("品目(商品名)") or row.get("品目") or ""
         price = _num(next((v for k, v in row.items() if k.startswith("販売金額")), ""))
-        cost = _num(next((v for k, v in row.items() if k.startswith("仕入金額")), ""))
+        # 仕入額は送料込み: Claude更新版は「仕入合計(円)」、元の台帳は「仕入金額(円) 送料含む」
+        cost = _num(next((v for k, v in row.items() if k.startswith("仕入合計")), "")
+                    or next((v for k, v in row.items() if k.startswith("仕入金額")), ""))
         if not row.get("販売日") or not price or not title:
             continue  # 未販売
         out.append({
