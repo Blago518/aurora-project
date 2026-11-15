@@ -203,12 +203,13 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <p class="s">データは暗号化されて届き、この iPhone の中で合言葉を使って元に戻します。合言葉は外へ送りません。</p>
   </div>
   <div class="card">
-    <h2>② 相場データ（手動）</h2>
-    <div id="dataInfo" class="s">まだ読み込んでいません。</div>
+    <details id="manualBox" open><summary>② 相場データ（手動）― ①の自動更新を設定していれば不要</summary>
+    <div id="dataInfo" class="s mt">まだ読み込んでいません。</div>
     <button class="btn mt" id="dataBtn" type="button">データファイルを選ぶ（store_data.json）</button>
     <input id="dataFile" type="file" accept=".json,application/json" hidden>
     <div class="status" id="dataMsg"></div>
     <p class="s">Mac で <code>python3 tools/build_store.py</code> を実行すると iCloud Drive の「aurora」フォルダに入ります。ボタン → 「ブラウズ」→ iCloud Drive → aurora → store_data.json。データはこの iPhone の中だけに保存され、外へ送られません。</p>
+    </details>
   </div>
   <div class="card">
     <h2>③ 値札読み取り（Claude API）</h2>
@@ -231,7 +232,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.15.7";
+  var APP_VERSION = "2026.11.15.8";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -291,7 +292,8 @@ async function autoUpdate(manual) {
     const fresh = !DATA || d.built !== DATA.built;
     useData(d);
     await idbSet("data", d);
-    $("autoInfo").textContent = `設定済み。最新のデータ（${d.built}作成）を使っています。`;
+    $("autoInfo").textContent = `設定済み。最新のデータ（${d.built}作成）を使っています。Mac が毎朝7時ごろとログイン時に、販売データ・相場・入札候補を更新して届けます（このアプリは開くだけで最新になります）。`;
+    $("manualBox").open = false;
     $("dataSt").textContent = `データ ${d.built}（自動）`;
     if (manual || fresh) { $("autoMsg").className = "status"; $("autoMsg").textContent = fresh ? "最新のデータを読み込みました。" : "すでに最新です。"; }
   } catch (err) {
