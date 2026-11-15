@@ -271,17 +271,18 @@ function makeCore(DATA) {
   }
   const RANK_LABEL = { 10: "未使用", 9: "TOP MINT", 8: "MINT", 7: "Near MINT", 6: "Exc+5", 5: "Exc+4", 4: "Exc+3", 3: "Exc+2", 2: "Exc+1", 1: "Exc" };
   // 補正したときの説明（例: この出品は「美品」→ Near MINT として、状態1ランク＝$10で補正）。補正しなかったら ""
-  function conditionNote(refs, title, flags) {
+  function conditionNote(refs, title, flags, rank) {
     if (flags.includes("ジャンク") || !Number(DATA.cfg.condStep || 0)) return "";
     if (!refs.some((r) => (C.condRank || {})[conditionOf(r)] != null)) return "";
+    if (rank != null) return `この出品は［直す］で ${RANK_LABEL[rank]} と指定`;
     const t = String(title || "").normalize("NFKC");
     const hit = (C.listingCondRules || []).find(([p]) => new RegExp(p).test(t));
     const word = hit ? t.match(new RegExp(hit[0]))[0] : "表記なし";
     return `この出品は${hit ? "「" + word + "」" : "表記なし"}＝${RANK_LABEL[listingRank(title)]}で補正（1ランク$${DATA.cfg.condStep}）`;
   }
-  function conditionAdjusted(refs, title, flags) {
+  function conditionAdjusted(refs, title, flags, rank) {
     const step = Number(DATA.cfg.condStep || 0);
-    const lr = flags.includes("ジャンク") || !step ? null : listingRank(title);
+    const lr = flags.includes("ジャンク") || !step ? null : rank != null ? rank : listingRank(title);
     return refs.map((r) => {
       const rr = (C.condRank || {})[conditionOf(r)];
       return lr != null && rr != null ? Math.round(Math.max(r.price + step * (lr - rr), 0) * 100) / 100 : r.price;
