@@ -15,7 +15,7 @@
   "use strict";
   const DATA = /*__DATA__*/ null;
   const C = DATA.consts;
-  const LS_MEMO = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
+  const LS_MEMO = "yhkMemoV3", LS_MEMO_OLD = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
 
   // @core-start（ここから @core-end までは store/core.js にそのままコピーされる。tools/build_store.py）
   // ------------------------------------------------------------------ 文字列処理（appraise.py と同じ規則）
@@ -366,6 +366,21 @@
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   // 相場メモ: { 機種名: {usd, cond} }（以前の形 { 機種名: usd } も読める）。状態は source の括弧に入れる（相場メモ(MINT)）
   const memoVal = (v) => (v && typeof v === "object" ? { usd: Number(v.usd), cond: v.cond || "" } : { usd: Number(v), cond: "" });
+  // 2026-11-15: 今までの相場メモは sold の商品代（送料別）で入れていたのに、送料込みとして扱っていた（$40 安く計算）。
+  // 1回だけ送料を足して送料込みに直し、Mac（data/price_memo.csv）にも保存し直す。戻り値: 直した件数
+  function migrateMemo() {
+    try {
+      if (localStorage.getItem(LS_MEMO) != null) return 0;
+      const old = JSON.parse(localStorage.getItem(LS_MEMO_OLD) || "null");
+      const out = {};
+      for (const [k, v] of Object.entries(old || {})) {
+        const m = memoVal(v);
+        if (m.usd > 0) out[k] = { usd: Math.round((m.usd + (DATA.cfg.deductionUsd || 0)) * 100) / 100, cond: m.cond };
+      }
+      save(LS_MEMO, out);
+      return Object.keys(out).length;
+    } catch (e) { return 0; }
+  }
   const memoSource = (cond) => (cond ? `相場メモ(${cond})` : "相場メモ");
   function memoRefs() {
     return Object.entries(load(LS_MEMO, {})).map(([title, v]) => {
@@ -927,6 +942,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     state.total = totalFromJson(json);
     state.done = !state.total || state.total <= state.items.length;
     if (!state.items.length) return;
+    if (migrateMemo()) saveMemoFile();  // 直した相場メモを ダウンロード/aurora_price_memo.csv へ（Mac が取り込む）
     autoTrustFollowed();
     evaluate(state.items, state.fx);
     render();
