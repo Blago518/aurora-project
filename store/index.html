@@ -232,7 +232,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.15.8";
+  var APP_VERSION = "2026.11.15.9";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -292,7 +292,7 @@ async function autoUpdate(manual) {
     const fresh = !DATA || d.built !== DATA.built;
     useData(d);
     await idbSet("data", d);
-    $("autoInfo").textContent = `設定済み。最新のデータ（${d.built}作成）を使っています。Mac が毎朝7時ごろとログイン時に、販売データ・相場・入札候補を更新して届けます（このアプリは開くだけで最新になります）。`;
+    $("autoInfo").textContent = `設定済み。最新のデータ（${d.built}作成）を使っています。Mac が毎朝8:40ごろとログイン時に、販売データ・相場・入札候補を更新して届けます（このアプリは開くだけで最新になります）。`;
     $("manualBox").open = false;
     $("dataSt").textContent = `データ ${d.built}（自動）`;
     if (manual || fresh) { $("autoMsg").className = "status"; $("autoMsg").textContent = fresh ? "最新のデータを読み込みました。" : "すでに最新です。"; }
