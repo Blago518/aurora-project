@@ -32,7 +32,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv` |
 | `update_all.py` | **全部まとめて最新にする**: ダウンロードフォルダの古物台帳CSV・頒布会xlsx・明細の取り込み → Chatwork 同期 → 相場データ・拡張機能・スマホ用データ・ナレッジを作り直す |
-| `ledger_sync.py` | 古物台帳をスプレッドシートから直接 `data/ledger.csv` に取り込む（Apps Script の合言葉付き URL。初回 `setup`） |
+| `ledger_sync.py` | 古物台帳をスプレッドシートから直接 `data/ledger.csv` に、管理シートの No.・状態・購入日・販売日を `data/kanri.csv` に取り込む（Apps Script の合言葉付き URL。初回 `setup`、スクリプト更新時 `script`） |
 | `store_publish.py` | スマホ用データを暗号化してシークレット Gist に配信 → iPhone のアプリが開くたびに自動更新（初回 `setup`） |
 | `schedule.py` | `update_all.py` を毎朝＋ログイン時に自動実行（Mac の launchd。`install`・`status`・`uninstall`） |
 | `keychain.py` | トークン・合言葉を Mac のキーチェーンに保存する共通部品 |
@@ -40,6 +40,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `build_store.py` | 店舗アプリ用: `store/core.js`（拡張機能の判定のコピー）と `data/store_data.json`（相場＋おすすめ機種。iCloud Drive にもコピー）を作る |
 | `build_knowledge.py` | data/ から `knowledge/相場/`・`knowledge/機種/` を自動生成 |
 | `build_knowledge_page.py`・`knowledge_page_template.html` | knowledge_share.md → Artifacts の読むだけのナレッジページ（ニューロン付き） |
+| `build_dashboard.py`・`dashboard_template.html` | eBay API の注文・取引明細・出品中一覧＋古物台帳・管理シート・発送明細 → 数字のグラフ `reports/dashboard.html`（月別売上・利益率・状態の割合など。update_all.py が毎回作る）。2026/8/17 以前の注文は SKU が No. と合っていないので `data/sku_fix.csv` の対応表で直す（候補は `--sku-candidates`） |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
 | `test_*.py` | テスト（Python と拡張機能・店舗アプリの判定一致も確認） |
@@ -52,6 +53,7 @@ python3 tools/build_reference_prices.py      # 古物台帳・頒布会 → data
 python3 tools/build_extension.py             # 拡張機能を作り直す → chrome://extensions で ↻
 python3 tools/build_store.py                 # 店舗アプリのデータ → iCloud Drive › aurora › store_data.json
 python3 tools/build_knowledge.py             # 相場ノート・機種ノートを更新
+python3 tools/build_dashboard.py             # 数字のグラフ → reports/dashboard.html を開く
 python3 -m unittest discover -s tools        # テスト
 ```
 

@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+import urllib.parse
 import zipfile
 from pathlib import Path
 from unittest import mock
@@ -80,12 +81,25 @@ class Encryption(unittest.TestCase):
 class LedgerSync(unittest.TestCase):
     CSV = '"管理番号","品目(商品名)","仕入金額","販売日","販売金額($)"\n"1","Nikon F3","10000","2026/11/01","200"\n'
 
+    KANRI = ('"番号","商品名","No.","状態","購入日","販売日","アカウント名(仕入元)","ヤフオクURL"\n'
+             '"1","Nikon F3","A1","MINT/点カビ","2026/07/26","2026/09/01","someone","https://x"\n'
+             '"","","","","",""\n')
+    EBAY = ('"※ 8/18 以降"\n"Transaction creation date","Type","Order number","Net amount","Custom label","Description"\n'
+            '"17-Aug-26","Order","1-2","43.67","D1","--"\n"12-Nov-26","Other fee","1-2","-6.55","--","Promoted Listings"\n')
+    new_script = True
+
     def setUp(self):
-        csv_text = self.CSV
+        csv_text, kanri, case = self.CSV, self.KANRI, self
 
         class H(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                body = (csv_text if "key=k1" in self.path else "forbidden").encode()
+                if "key=k1" not in self.path:
+                    body = "forbidden"
+                elif "sheet=" in self.path and case.new_script:
+                    body = kanri if urllib.parse.quote("管理") in self.path else case.EBAY
+                else:  # 古いスクリプトは sheet= を無視して古物台帳を返す
+                    body = csv_text
+                body = body.encode()
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(body)
@@ -114,6 +128,25 @@ class LedgerSync(unittest.TestCase):
         self.assertTrue(self._sync("k1"))
         self.assertEqual((self.tmp / "ledger.csv").read_text(encoding="utf-8"), self.CSV)
         self.assertFalse(self._sync("k1"))  # 変化なし
+        kanri = (self.tmp / "kanri.csv").read_text(encoding="utf-8")
+        self.assertEqual(kanri.splitlines(), ["No.,状態,購入日,販売日,仕入(円),商品名,アカウント名(仕入元)",
+                                              "A1,MINT/点カビ,2026/07/26,2026/09/01,,Nikon F3,someone"])
+        self.assertNotIn("https://x", kanri)  # URL は保存しない
+        ebay = (self.tmp / "ebay_report.csv").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(ebay), 3)
+        self.assertTrue(ebay[0].startswith("Custom label,Transaction creation date,Type,Order number,Net amount"))
+        self.assertIn("Promoted Listings", ebay[2])
+
+    def test_old_script_skips_kanri(self):
+        self.new_script = False
+        self.assertTrue(self._sync("k1"))
+        self.assertFalse((self.tmp / "kanri.csv").exists())
+
+    def test_script_text(self):
+        t = ls.script_text("abc")
+        self.assertIn("'古物台帳', '管理', 'ebay売上', 'J管理', '出品情報'", t)
+        self.assertIn("Buyer|Ship to", t)
+        self.assertNotIn("__", t)
 
 
 class HanpukaiFiles(unittest.TestCase):

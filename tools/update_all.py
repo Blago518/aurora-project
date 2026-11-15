@@ -12,6 +12,7 @@
    拡張機能で［直す］［登録］した相場（ダウンロード/aurora_price_memo.csv）もここで取り込まれる。
 4. 入札リスト: data/search_urls.txt の検索をまとめて鑑定 → reports/bid_report_*.html を開く（◎○の件数を通知）
    → スマホ用データ（store_data.json・iCloud・暗号化して自動配信。入札候補もスマホの「入札」タブに届く）→ ナレッジ
+   → eBay の出品中一覧・注文・取引明細（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
 5. 入札の結果: 拡張機能の［入札した］の記録を取り込み、終わった出品の最終価格から落札率などを集計 → reports/bid_results.md
 
 使い方（aurora フォルダで）:
@@ -137,6 +138,7 @@ def main(argv=None) -> int:
     bids = None if args.no_bids else bid_list()
     ok &= run("build_store.py")  # 入札リストの後に（入札候補もスマホに届ける）
     ok &= run("build_knowledge.py")
+    dashboard()
     results = None
     try:
         import bid_results  # 入札の結果（落札率・利益が出る落札の率）
@@ -151,6 +153,23 @@ def main(argv=None) -> int:
         wr = results and results.get("win_rate")
         notify(msg + (f"／入札候補 ◎○ {bids}件" if bids is not None else "") + (f"／落札率 {wr}%" if wr is not None else ""))
     return 0 if ok else 1
+
+
+def dashboard() -> None:
+    """eBay の出品中一覧を取り直し（eBay API の設定済みなら）、数字のグラフ（reports/dashboard.html）を作る. 失敗しても更新全体は止めない."""
+    try:
+        import ebay_api
+        has_token = bool(ebay_api.secret_get("refresh_token"))
+    except Exception:
+        has_token = False
+    if has_token:
+        for what, args in (("出品中一覧", ["listings"]), ("注文（2年分）", ["orders", "--days", "730"]),
+                           ("取引明細（2年分）", ["fees", "--days", "730"])):
+            print(f"\n▶ eBay の{what}")
+            subprocess.call([sys.executable, str(HERE / "ebay_api.py"), *args], cwd=ROOT)
+    print("\n▶ 数字のグラフ")
+    if subprocess.call([sys.executable, str(HERE / "build_dashboard.py"), "--no-open"], cwd=ROOT) != 0:
+        print("  ⚠ グラフを作れませんでした（上の表示を Claude に送ってください）")
 
 
 def bid_list() -> int | None:
