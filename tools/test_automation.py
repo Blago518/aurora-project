@@ -143,10 +143,83 @@ class LedgerSync(unittest.TestCase):
         self.assertFalse((self.tmp / "kanri.csv").exists())
 
     def test_script_text(self):
-        t = ls.script_text("abc")
-        self.assertIn("'古物台帳', '管理', 'ebay売上', 'J管理', '出品情報'", t)
+        t = ls.script_text("abc", "BOOKID", "SRCID")
+        self.assertIn("const BOOK = 'BOOKID'", t)
+        self.assertIn("const SRC = 'SRCID'", t)
+        for name in ("管理", "ebay売上", "J管理", "出品情報"):
+            self.assertIn(f'"{name}"', t)
         self.assertIn("Buyer|Ship to", t)
         self.assertNotIn("__", t)
+
+
+class LedgerCopyScript(unittest.TestCase):
+    """Apps Script を仮の Google（SpreadsheetApp など）で動かす: 元の古物台帳には書き込まない・Claude更新版は足す／空欄を埋めるだけ."""
+    MOCK = r"""
+const writes = [];
+function sheet(book, name, rows, formulas) {
+  const s = { rows, formulas: formulas || rows.map((r) => r.map(() => '')) };
+  const guard = () => { if (book === 'SRC') throw new Error('元の古物台帳に書き込もうとした: ' + name); };
+  s.getDataRange = () => ({ getValues: () => s.rows.map((r) => r.slice()), getDisplayValues: () => s.rows.map((r) => r.map(String)),
+                            getFormulas: () => s.formulas.map((r) => r.slice()) });
+  s.getLastRow = () => s.rows.length;
+  s.getRange = (r, c, nr, nc) => ({
+    setValue: (v) => { guard(); writes.push([book, name, r, c, v]); s.rows[r - 1][c - 1] = v; },
+    setValues: (vs) => { guard(); vs.forEach((row, i) => { s.rows[r - 1 + i] = row.slice(); }); writes.push([book, name, 'rows', r, vs.length]); } });
+  s.clearContents = () => { guard(); s.rows = []; };
+  return s;
+}
+const BOOKS = {
+  SRC: { '古物台帳': sheet('SRC', '古物台帳', [
+      ['#', '購入日', '販売日', '品目(商品名)', '数量', 'No.', '仕入金額(円)\n送料含む', '販売金額($)\n送料含む', 'アカウント名', 'ヤフオクURL', '備考'],
+      ['1', '2026/07/26', '2026/9/1', 'Canon FL 50mm', '1', 'A1', '3400', '78.99', 'kur', 'https://auctions.yahoo.co.jp/jp/auction/f1', ''],
+      ['2', '2026/07/26', '2026/11/1', 'Canon FD 50mm', '1', 'A6', '5700', '99.99', 'やふ', 'https://auctions.yahoo.co.jp/jp/auction/p1', ''],
+      ['3', '2026/11/10', '', 'Nikon FM2', '1', 'Z9', '20000', '', 'new', 'https://auctions.yahoo.co.jp/jp/auction/z9', 'メモ']]),
+    '管理': sheet('SRC', '管理', [['見出しの前'], ['No.', '状態', '購入日', '販売日', '仕入(円)', '商品名', 'アカウント名(仕入元)', '口座'],
+                                 ['A1', 'MINT', '2026/07/26', '2026/9/1', '3400', 'Canon FL', 'kur', '秘密']]) },
+  BOOK: { '古物台帳': sheet('BOOK', '古物台帳', [
+      ['管理番号（Custom label）', '購入日', '品目（商品名）', '数量', '仕入先', '仕入元（出品者・店名）', '仕入合計（円）', '販売日', '販売金額（$・送料込・ドル換算）', '利益（円・参考）'],
+      ['A1', '2026/07/26', 'Canon FL 50mm f/1.4（手で直した名前）', '1', 'ヤフオク', 'kur', '3400', '2026/9/1', '78.99', '=X'],
+      ['A6', '2026/07/26', 'Canon FD 50mm', '1', 'ヤフオク', 'やふ', '5700', '', '', '']],
+      [['', '', '', '', '', '', '', '', '', ''], ['', '', '', '', '', '', '', '', '', '=A'], ['', '', '', '', '', '', '', '', '', '=B']]),
+    'メモ': sheet('BOOK', 'メモ', [['触らない']]) } };
+const props = {};
+const SpreadsheetApp = { openById: (id) => ({
+  getSheetByName: (n) => BOOKS[id][n] || null,
+  insertSheet: (n) => { if (id === 'SRC') throw new Error('元にシートを足そうとした'); BOOKS[id][n] = sheet(id, n, []); return BOOKS[id][n]; } }) };
+const ContentService = { MimeType: { CSV: 'csv' }, createTextOutput: (t) => ({ t, setMimeType() { return this; } }) };
+const PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => props[k], setProperty: (k, v) => { props[k] = v; } }) };
+const LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
+"""
+    RUN = r"""
+const csv1 = doGet({ parameter: { key: 'k' } }).t;
+const status = doGet({ parameter: { key: 'k', sheet: '_status' } }).t;
+const kanri = doGet({ parameter: { key: 'k', sheet: '管理' } }).t;
+doGet({ parameter: { key: 'k' } });  // 2回目: 何も増えない
+console.log(JSON.stringify({ book: BOOKS.BOOK['古物台帳'].rows, copy: BOOKS.BOOK['写し_管理'].rows, memo: BOOKS.BOOK['メモ'].rows,
+  status, kanri, csv1, bad: doGet({ parameter: { key: 'x' } }).t, writes }));
+"""
+
+    def test_copy(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        code = self.MOCK + ls.script_text("k", "BOOK", "SRC") + self.RUN
+        r = subprocess.run(["node", "-e", code], capture_output=True, text=True)
+        self.assertEqual(r.stderr, "")
+        out = json.loads(r.stdout)
+        book = out["book"]
+        self.assertEqual(len(book), 4)                                   # Z9 だけ足す（2回目は増えない）
+        self.assertEqual(book[1][2], "Canon FL 50mm f/1.4（手で直した名前）")  # 入っている値は上書きしない
+        self.assertEqual(book[2][7:9], ["2026/11/1", "99.99"])           # 空欄（販売日・販売金額）だけ埋める
+        self.assertEqual(book[2][9], "")                                 # 数式のある空欄は埋めない
+        self.assertEqual(book[3][:9], ["Z9", "2026/11/10", "Nikon FM2", "1", "ヤフオク", "new", "20000", "", ""])
+        self.assertEqual(out["copy"], [["No.", "状態", "購入日", "販売日", "仕入(円)", "商品名", "アカウント名(仕入元)"],
+                                       ["A1", "MINT", "2026/07/26", "2026/9/1", "3400", "Canon FL", "kur"]])  # 使う列だけ（口座は写さない）
+        self.assertEqual(out["memo"], [["触らない"]])
+        self.assertIn("1行を追加・空欄2か所", out["status"])
+        self.assertTrue(out["kanri"].startswith('"No.","状態"'))
+        self.assertIn('"Z9"', out["csv1"])
+        self.assertEqual(out["bad"], "forbidden")
+        self.assertFalse([w for w in out["writes"] if w[0] == "SRC"])    # 元の古物台帳には一度も書かない
 
 
 class HanpukaiFiles(unittest.TestCase):

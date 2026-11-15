@@ -60,10 +60,10 @@ COLUMNS = {
     "sold_date": ["販売日"],
     "title": ["品目(商品名)", "品目", "商品名"],
     "price_usd": ["販売金額($)", "販売金額"],
-    "cost_jpy": ["仕入金額"],
+    "cost_jpy": ["仕入合計", "仕入金額"],  # 送料込みの仕入額を優先（Claude更新版は「仕入合計(円)」）
     "buy_date": ["購入日", "仕入日", "仕入れ日", "仕入年月日", "購入年月日", "取引年月日", "入荷日"],
     "supplier": ["アカウント名", "アカウント名(仕入元)", "仕入先", "仕入れ先", "購入先"],
-    "country": ["販売国", "発送先国", "国"],
+    "country": ["販売国", "発送先国", "購入者の国", "国"],
     "sku": ["管理番号", "管理ID", "SKU", "No."],
 }
 COLUMN_LABEL = {
@@ -155,11 +155,12 @@ def read_ledger(path: Path) -> tuple[list[dict], dict[str, str | None]]:
     lines = path.read_text(encoding="utf-8-sig").splitlines()
     start = next((i for i, ln in enumerate(lines) if "販売日" in ln), 0)
     reader = csv.DictReader(lines[start:])
-    headers = [(h or "").replace("\n", "").strip() for h in (reader.fieldnames or [])]
+    nk = lambda h: unicodedata.normalize("NFKC", h or "").replace("\n", "").strip()  # noqa: E731  全角カッコもそろえる
+    headers = [nk(h) for h in (reader.fieldnames or [])]
     cols = find_columns(headers)
     rows = []
     for raw in reader:
-        r = {(k or "").replace("\n", "").strip(): (v or "").strip() for k, v in raw.items() if not isinstance(v, list)}
+        r = {nk(k): (v or "").strip() for k, v in raw.items() if not isinstance(v, list)}
         g = lambda key: r.get(cols[key] or "", "")  # noqa: E731
         title = g("title")
         if not title:

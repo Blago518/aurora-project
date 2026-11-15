@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""古物台帳（Google スプレッドシート）を自動で data/ledger.csv に取り込む.
+"""古物台帳を 元の古物台帳 → Claude更新版 → Mac（data/ledger.csv）と毎日取り込む.
 
-スプレッドシートに貼った Apps Script（下の APPS_SCRIPT）が、合言葉付きの専用 URL で「古物台帳」シートを CSV で返す。
-?sheet=… を付けると、許可したほかのシートも返す（2026-11-15 追加）。購入者の名前・住所の列（Buyer…・Ship to…）は
+Apps Script（下の APPS_SCRIPT）は script.google.com の独立したプロジェクトに置く（どちらのスプレッドシートの中のスクリプトにも触らない）。
+合言葉付きの専用 URL を Mac が読むと、まず 元の古物台帳（読むだけ）→ Claude更新版 へ写す:
+    古物台帳: Claude更新版に無い No. の行を足し、ある行は空欄だけ埋める（入っている値・数式は上書きしない。行は消さない）
+    管理・ebay売上・J管理・出品情報: Claude更新版の「写し_シート名」に、Mac が使う列だけを毎回写す
+そのあと Claude更新版の古物台帳を CSV で返す。?sheet=… を付けると写しのシートを返す。購入者の名前・住所の列（Buyer…・Ship to…）は
 スクリプトの側で取り除いてから返す。ほかのシートからは EXTRA_SHEETS の列だけを data/ に保存する（グラフ用）:
     管理      → data/kanri.csv        No.・状態・購入日・販売日・仕入・商品名・仕入元（状態と、古物台帳に無い商品の仕入額）
     ebay売上  → data/ebay_report.csv  eBay の取引レポートの日付・種類・注文番号・手取り・手数料・Custom label
@@ -10,7 +13,7 @@
     J管理     → data/junk.csv         ジャンク品のヤフオク再販の仕入・実販売・日付
     出品情報  → data/item_types.csv   管理番号・商品種別
 Mac はその URL を読むだけ。URL と合言葉はキーチェーンに保存し、GitHub やチャットには書かない。
-スプレッドシートの ID もこのファイルには書かない（スクリプトはそのスプレッドシートの中で動く）。
+スプレッドシートの ID もこのファイルには書かない（setup で聞いてキーチェーンに保存し、スクリプトに埋め込む）。
 
 使い方（aurora フォルダで）:
     python3 tools/ledger_sync.py setup   # 初回: スクリプトをクリップボードにコピー → 貼って公開 → URL を入力
@@ -52,33 +55,121 @@ SHEET = "古物台帳"
 sys.path.insert(0, str(HERE))
 import keychain  # noqa: E402
 
-APPS_SCRIPT = """// aurora: 古物台帳を CSV で返す（読むだけ。スプレッドシートは変更しない）（Mac の tools/ledger_sync.py が読む）。合言葉が一致したときだけ返す
+APPS_SCRIPT = r"""// aurora: 元の古物台帳 → Claude更新版 へ毎日写し、Claude更新版を CSV で返す（Mac の tools/ledger_sync.py が読む）
+// ・元の古物台帳は読むだけ（書き込み・削除は一切しない）
+// ・Claude更新版の「古物台帳」: 無い No. の行を下に足す／ある行は空欄だけ埋める（入っている値・数式は上書きしない・行は消さない）
+// ・ほかのシートは Claude更新版に「写し_シート名」を作り、Mac が使う列だけを毎回写す（Claude更新版のほかのシートには触らない）
+// ・合言葉が一致したときだけ動く。購入者の名前・住所の列（Buyer…・Ship to…）は返さない
 const KEY = '__KEY__';
-const BOOK = '__BOOK__';  // 古物台帳のスプレッドシート（この Apps Script は古物台帳とは別のプロジェクト。古物台帳の中のスクリプトには触らない）
-const SHEETS = [__SHEETS__];  // 返してよいシート（最初のものが既定）
-const DROP = /^(Buyer|Ship to)/;  // 購入者の名前・住所の列は返さない
-function doGet(e) {
-  if (!e || !e.parameter || e.parameter.key !== KEY) {
-    return ContentService.createTextOutput('forbidden');
+const BOOK = '__BOOK__';  // Claude更新版（写し先・Mac が読む）
+const SRC = '__SRC__';    // 元の古物台帳（読むだけ）
+const LEDGER = '古物台帳';
+const EXTRA = __EXTRA__;  // シート名 → Mac が使う列
+const PAIRS = [  // Claude更新版の列（見出しの先頭）← 元の古物台帳の列（見出しの先頭）
+  ['管理番号', 'No.'], ['購入日', '購入日'], ['品目', '品目'], ['数量', '数量'], ['仕入元', 'アカウント名'],
+  ['仕入合計', '仕入金額'], ['仕入URL', 'ヤフオクURL'], ['販売日', '販売日'], ['販売金額', '販売金額'], ['備考', '備考']];
+const DROP = /^(Buyer|Ship to)/;
+const nh = (s) => String(s).normalize('NFKC').replace(/\s+/g, '');
+const colOf = (head, p) => head.findIndex((h) => h === p || h.startsWith(p));
+const empty = (v) => v === '' || v === null || v === undefined;
+
+function syncLedger(dstBook, srcBook) {
+  const s = srcBook.getSheetByName(LEDGER), d = dstBook.getSheetByName(LEDGER);
+  if (!s || !d) return '古物台帳シートが見つかりません';
+  const sv = s.getDataRange().getValues(), dr = d.getDataRange(), dv = dr.getValues(), df = dr.getFormulas();
+  const sh = sv[0].map(nh), dh = dv[0].map(nh);
+  const pairs = PAIRS.map(([a, b]) => [colOf(dh, a), colOf(sh, b)]).filter(([a, b]) => a >= 0 && b >= 0);
+  const dKey = colOf(dh, '管理番号'), sKey = colOf(sh, 'No.');
+  if (dKey < 0 || sKey < 0) return 'No. の列が見つかりません';
+  const supp = colOf(dh, '仕入先'), sUrl = colOf(sh, 'ヤフオクURL');
+  const at = {};
+  dv.forEach((r, i) => { const k = String(r[dKey]).trim(); if (i > 0 && k && !(k in at)) at[k] = i; });
+  let filled = 0;
+  const add = [];
+  for (let i = 1; i < sv.length; i++) {
+    const r = sv[i], k = String(r[sKey]).trim();
+    if (!k) continue;
+    if (k in at) {
+      if (at[k] < 0) continue;  // 今回足した行
+      for (const [a, b] of pairs) {
+        if (empty(dv[at[k]][a]) && !df[at[k]][a] && !empty(r[b])) {  // 空欄（数式なし）だけ埋める
+          d.getRange(at[k] + 1, a + 1).setValue(r[b]);
+          filled++;
+        }
+      }
+    } else {
+      const row = new Array(dv[0].length).fill('');
+      for (const [a, b] of pairs) row[a] = r[b];
+      if (supp >= 0 && sUrl >= 0 && /auctions\.yahoo/.test(String(r[sUrl]))) row[supp] = 'ヤフオク';
+      add.push(row);
+      at[k] = -1;
+    }
   }
-  const name = SHEETS.indexOf(e.parameter.sheet) >= 0 ? e.parameter.sheet : SHEETS[0];
-  const sh = (BOOK ? SpreadsheetApp.openById(BOOK) : SpreadsheetApp.getActive()).getSheetByName(name);
-  if (!sh) return ContentService.createTextOutput('NO_SHEET:' + name);  // そのシートが無い（Mac 側は飛ばすだけ）
-  let rows = sh.getDataRange().getDisplayValues();
-  const head = rows.slice(0, 10).find(r => r.some(v => DROP.test(v)));
+  if (add.length) d.getRange(d.getLastRow() + 1, 1, add.length, add[0].length).setValues(add);
+  return `古物台帳: ${add.length}行を追加・空欄${filled}か所を埋めた`;
+}
+
+function copyExtra(dstBook, srcBook) {
+  const out = [];
+  for (const name of Object.keys(EXTRA)) {
+    const s = srcBook.getSheetByName(name);
+    if (!s) { out.push(`${name}: 元に無い`); continue; }
+    const want = EXTRA[name], rows = s.getDataRange().getValues();
+    const hi = rows.slice(0, 10).findIndex((r) => { const h = r.map(nh); return h.includes(nh(want[0])) && h.includes(nh(want[1])); });
+    if (hi < 0) { out.push(`${name}: 見出しが見つからない`); continue; }
+    const head = rows[hi].map(nh), idx = want.map((c) => head.indexOf(nh(c)));
+    const body = rows.slice(hi + 1).map((r) => idx.map((j) => (j >= 0 ? r[j] : ''))).filter((r) => r.some((v) => !empty(v)));
+    const table = [want].concat(body);
+    const t = dstBook.getSheetByName('写し_' + name) || dstBook.insertSheet('写し_' + name);
+    t.clearContents();
+    t.getRange(1, 1, table.length, want.length).setValues(table);
+    out.push(`${name}: ${body.length}行`);
+  }
+  return '写し ' + out.join('・');
+}
+
+function syncAll() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const dst = SpreadsheetApp.openById(BOOK), src = SpreadsheetApp.openById(SRC);
+    return syncLedger(dst, src) + ' ／ ' + copyExtra(dst, src);
+  } catch (err) {
+    return '写せませんでした: ' + err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function csvOf(rows) {
+  const head = rows.slice(0, 10).find((r) => r.some((v) => DROP.test(v)));
   if (head) {
-    const keep = head.map((v, i) => DROP.test(v) ? -1 : i).filter(i => i >= 0);
-    rows = rows.map(r => keep.map(i => r[i]));
+    const keep = head.map((v, i) => (DROP.test(v) ? -1 : i)).filter((i) => i >= 0);
+    rows = rows.map((r) => keep.map((i) => r[i]));
   }
-  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\\n');
-  return ContentService.createTextOutput(csv).setMimeType(ContentService.MimeType.CSV);
+  return rows.map((r) => r.map((v) => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+}
+
+function doGet(e) {
+  if (!e || !e.parameter || e.parameter.key !== KEY) return ContentService.createTextOutput('forbidden');
+  const p = e.parameter.sheet || '';
+  const props = PropertiesService.getScriptProperties();
+  if (p === '_status') return ContentService.createTextOutput(props.getProperty('last') || '');
+  if (!p) props.setProperty('last', new Date().toISOString() + ' ' + syncAll());  // 古物台帳を読むときに、先に元から写す
+  const name = !p ? LEDGER : (p in EXTRA ? '写し_' + p : null);
+  const sh = name && SpreadsheetApp.openById(BOOK).getSheetByName(name);
+  if (!sh) return ContentService.createTextOutput('NO_SHEET:' + p);
+  return ContentService.createTextOutput(csvOf(sh.getDataRange().getDisplayValues())).setMimeType(ContentService.MimeType.CSV);
 }
 """
 
 
-def script_text(key: str, book: str = "") -> str:
-    names = ", ".join(f"'{n}'" for n in [SHEET, *EXTRA_SHEETS])
-    return APPS_SCRIPT.replace("__KEY__", key).replace("__BOOK__", book).replace("__SHEETS__", names)
+def script_text(key: str, book: str, src: str) -> str:
+    """book＝Claude更新版（写し先・Mac が読む）、src＝元の古物台帳（読むだけ）."""
+    import json
+    extra = json.dumps({k: cols for k, (_, cols) in EXTRA_SHEETS.items()}, ensure_ascii=False)
+    return (APPS_SCRIPT.replace("__KEY__", key).replace("__BOOK__", book).replace("__SRC__", src)
+            .replace("__EXTRA__", extra))
 
 
 def book_id(text: str) -> str:
@@ -122,6 +213,12 @@ def sync(dry_run: bool = False) -> bool | None:
         why = "合言葉が違います（setup をやり直す）" if text.strip() == "forbidden" else "古物台帳シートの形ではありません"
         print(f"古物台帳: {why}", file=sys.stderr)
         return None
+    try:
+        st = fetch(url, key, "_status").strip()
+        if st[:2] == "20" and st[4:5] == "-":  # 新しいスクリプトだけが返す（「日時 結果」）
+            print(f"Claude更新版への写し: {st}", file=sys.stderr)
+    except (urllib.error.URLError, OSError):
+        pass
     sync_extra(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
     if old == text:
@@ -196,12 +293,14 @@ def cmd_script() -> None:
     if not key or not keychain.get(SERVICE, "url"):
         print("まだ設定されていません。先に python3 tools/ledger_sync.py setup を実行してください。")
         sys.exit(1)
-    book = keychain.get(SERVICE, "book") or ""
-    script = script_text(key, book)
+    book, src = keychain.get(SERVICE, "book") or "", keychain.get(SERVICE, "src") or ""
+    if not (book and src):
+        print("先に python3 tools/ledger_sync.py setup を実行してください（Claude更新版と元の古物台帳の URL を聞きます）。")
+        sys.exit(1)
+    script = script_text(key, book, src)
     copied = keychain.copy_to_clipboard(script)
     head = "新しいスクリプトをクリップボードにコピーしました。" if copied else "下のスクリプトをコピーしてください:\n" + script
-    where = ("https://script.google.com/home →「aurora 古物台帳」のプロジェクトを開く" if book
-             else "古物台帳のスプレッドシート →「拡張機能」→「Apps Script」（前に aurora のスクリプトを貼った所）")
+    where = "https://script.google.com/home →「aurora 古物台帳」のプロジェクトを開く"
     print(f"""
 {head}
 
@@ -218,19 +317,26 @@ def cmd_script() -> None:
 
 def cmd_setup() -> None:
     print("\n古物台帳の自動取り込みを設定します（初回だけ・約5分）。")
-    book = ""
-    while not book:
-        book = book_id(input("① 取り込む古物台帳のスプレッドシートの URL（ブラウザのアドレス欄）を貼り付けて Enter: "))
-        if not book:
+    def ask(q: str) -> str:
+        while True:
+            v = book_id(input(q))
+            if v:
+                return v
             print("   スプレッドシートの URL（https://docs.google.com/spreadsheets/d/…）を貼ってください。")
+    book = ask("① Claude更新版のスプレッドシートの URL（ブラウザのアドレス欄）を貼り付けて Enter: ")
+    src = ask("② 元の古物台帳のスプレッドシートの URL を貼り付けて Enter（読むだけ。変更しません）: ")
+    if src == book:
+        print("①と②が同じスプレッドシートです。もう一度 setup を実行してください。")
+        sys.exit(1)
     keychain.set(SERVICE, "book", book)  # キーチェーンだけに保存（リポジトリには書かない）
+    keychain.set(SERVICE, "src", src)
     key = keychain.get(SERVICE, "key") or secrets.token_urlsafe(24)
     keychain.set(SERVICE, "key", key)
-    script = script_text(key, book)
+    script = script_text(key, book, src)
     copied = keychain.copy_to_clipboard(script)
-    head = "② スクリプトをクリップボードにコピーしました。" if copied else "② 下のスクリプトをコピーしてください:\n" + script
+    head = "③ スクリプトをクリップボードにコピーしました。" if copied else "③ 下のスクリプトをコピーしてください:\n" + script
     print(f"\n{head}\n{GUIDE}")
-    url = input("③ その URL（script.google.com で始まる）を貼り付けて Enter: ").strip()
+    url = input("④ その URL（script.google.com で始まる）を貼り付けて Enter: ").strip()
     if not url.startswith("https://script.google.com/"):
         print("URL が違うようです。スプレッドシートの URL ではなく、デプロイ後に出る「ウェブアプリ」の URL"
               "（https://script.google.com/macros/s/…/exec）です。もう一度 setup を実行してください。")
