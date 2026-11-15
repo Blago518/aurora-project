@@ -198,6 +198,24 @@ def fetch(url: str, key: str, sheet: str | None = None) -> str:
         return res.read().decode("utf-8-sig")
 
 
+def explain(text: str) -> str:
+    """古物台帳が返らなかったときの理由（Google のエラー画面の文章を短く添える）."""
+    import re
+    t = text.strip()
+    if t == "forbidden":
+        return "合言葉が違います（python3 tools/ledger_sync.py setup をやり直す）"
+    if t.startswith("NO_SHEET"):
+        return "Claude更新版に「古物台帳」シートが見つかりません（setup の①の URL を確認）"
+    msg = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", re.sub(r"(?is)<(script|style).*?</\1>", " ", t))).strip()[:300]
+    if re.search(r"Sign in|ログイン|accounts\.google", t):
+        hint = "デプロイの「アクセスできるユーザー」を「全員」にして、新バージョンでデプロイし直してください"
+    elif re.search(r"[Aa]uthori[sz]ation|承認|権限", t):
+        hint = "Apps Script の画面で関数 doGet を選んで［実行］→ 許可してから、もう一度試してください"
+    else:
+        hint = "下の表示を Claude に送ってください"
+    return f"古物台帳ではないものが返りました。{hint}\n  （返ってきた内容: {msg or '空'}）"
+
+
 def sync(dry_run: bool = False) -> bool | None:
     """取り込んだら True、変化なし False、未設定・失敗は None."""
     url, key = keychain.get(SERVICE, "url"), keychain.get(SERVICE, "key")
@@ -210,8 +228,7 @@ def sync(dry_run: bool = False) -> bool | None:
         print(f"古物台帳: 読み込めませんでした（{e}）", file=sys.stderr)
         return None
     if "販売日" not in text[:5000]:
-        why = "合言葉が違います（setup をやり直す）" if text.strip() == "forbidden" else "古物台帳シートの形ではありません"
-        print(f"古物台帳: {why}", file=sys.stderr)
+        print(f"古物台帳: {explain(text)}", file=sys.stderr)
         return None
     try:
         st = fetch(url, key, "_status").strip()
