@@ -3,6 +3,10 @@
 // 通信先は api.ebay.com だけ。eBay のページのスクレイピングはしない。
 const APP_ID = __APP_ID__;
 const CERT_ID = __CERT_ID__;
+// 2026-11-16 ユーザー決定: 送料無料の出品は出品額 − $30 を商品代（送料別）とみなす。送料別の出品は出品額そのまま。
+// 送料が分からない出品は保守的に送料無料とみなす。相場データと同じく送料（deduction_usd）を足した送料込みの額で返す
+const FREE_SHIP_USD = __FREE_SHIP_USD__;
+const DEDUCTION_USD = __DEDUCTION_USD__;
 const CACHE_MS = 24 * 60 * 60 * 1000; // 同じ機種は1日1回だけ調べる
 // 本体以外（キャップ・フード・ケース・部品取りなど）は除く。検索語に含まれる語は除かない
 const EXCLUDE_WORDS = ["cap", "caps", "hood", "case", "filter", "adapter", "adaptor", "parts", "repair", "junk",
@@ -26,7 +30,7 @@ async function appToken() {
 const median = (a) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 async function browse(q, must = [], not = []) {
-  const key = "browse4:" + [q, ...must, ...not.map((x) => "-" + x)].join(" ").toLowerCase();  // 集計方法を変えたら番号を上げて読み直す
+  const key = "browse5:" + [q, ...must, ...not.map((x) => "-" + x)].join(" ").toLowerCase();  // 集計方法を変えたら番号を上げて読み直す
   const word = (w) => new RegExp("(^|[^A-Za-z])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z])", "i");
   const mustRe = must.map(word), notRe = not.map(word);  // 型（Contax の MMJ など）: その型の出品だけ数え、ほかの型は除く
   const cached = (await chrome.storage.local.get(key))[key];
@@ -56,7 +60,9 @@ async function browse(q, must = [], not = []) {
     if (!specs.every((r) => r.test(it.title || ""))) continue;
     if (!mustRe.every((r) => r.test(it.title || "")) || notRe.some((r) => r.test(it.title || ""))) continue;
     const ships = (it.shippingOptions || []).map((s) => Number(s.shippingCost && s.shippingCost.value)).filter((v) => !isNaN(v));
-    totals.push(Number(it.price.value) + (ships.length ? Math.min(...ships) : 0));
+    const value = Number(it.price.value);
+    const net = ships.length && Math.min(...ships) > 0 ? value : value - FREE_SHIP_USD;
+    totals.push(Math.round((net + DEDUCTION_USD) * 100) / 100);
     if ((it.itemLocation || {}).country === "JP") jp++;
   }
   if (totals.length >= 3) { const m = median(totals); totals = totals.filter((v) => v >= m * 0.3); } // 極端に安い物（部品など）を外す

@@ -4,7 +4,9 @@
   - 米国向け・中古の出品中だけ。キャップ・フード・ケース・部品取りなど本体以外は除く（検索語に含まれる語は除かない）
   - 検索語の焦点距離（28mm）と F値（F2.8）がタイトルに入っている出品だけ
   - 3件以上なら、中央値の3割未満（部品など）は外す
-  - 仮の相場 = 「最安値」と「中央値×係数（config の active_price_factor、0.7）」の安い方。件数が active_min_count 未満なら出さない
+  - 各出品の商品代（送料別）= 送料無料なら出品額 − $30（config の active_free_ship_deduction_usd）、送料別なら出品額そのまま
+    （送料が分からない出品は保守的に送料無料とみなす）。ほかの相場データと同じく、送料 deduction_usd を足した送料込みの額で持つ
+  - 仮の相場 = その最安値（2026-11-16 ユーザー決定）。件数が active_min_count 未満なら出さない
 eBay のページの自動取得（スクレイピング）はしない。結果は data/browse_cache.json に1日保存（同じ機種は1日1回）。
 売れた価格（sold）は確かめていないので「仮」。sold を見て、拡張機能で［登録］すると ◎○ に上がる。
 """
@@ -26,8 +28,11 @@ EXCLUDE_WORDS = ["cap", "caps", "hood", "case", "filter", "adapter", "adaptor", 
                  "manual", "strap", "box only", "teleconverter", "extender", "mutar", "for parts"]
 
 
-def filter_totals(query: str, summaries: list[dict]) -> dict:
+def filter_totals(query: str, summaries: list[dict], cfg: dict | None = None) -> dict:
     """Browse API の itemSummaries から、仮の相場の材料（件数・最安・中央値）を作る."""
+    cfg = cfg or ba.load_config(None)
+    free_ded = float(cfg["judge"].get("active_free_ship_deduction_usd", 30.0))
+    ship_ded = float(cfg["shipping"].get("deduction_usd", 0))
     ql = query.lower()
     words = [w for w in EXCLUDE_WORDS if w not in ql]
     bad = re.compile(r"\b(" + "|".join(w.replace(" ", r"\s+") for w in words) + r")\b", re.I) if words else None
@@ -45,7 +50,9 @@ def filter_totals(query: str, summaries: list[dict]) -> dict:
             continue
         ships = [float(s["shippingCost"]["value"]) for s in it.get("shippingOptions") or []
                  if (s.get("shippingCost") or {}).get("value") not in (None, "")]
-        totals.append(float(price.get("value") or 0) + (min(ships) if ships else 0))
+        value = float(price.get("value") or 0)
+        net = value if ships and min(ships) > 0 else value - free_ded  # 送料無料（または不明）は −$30
+        totals.append(round(net + ship_ded, 2))
     if len(totals) >= 3:
         m = statistics.median(totals)
         totals = [v for v in totals if v >= m * 0.3]
@@ -57,8 +64,7 @@ def suggest_usd(stats: dict, cfg: dict) -> float | None:
     j = cfg["judge"]
     if not stats or not stats.get("med") or stats["n"] < j.get("active_min_count", 5):
         return None
-    by_med = int(stats["med"] * j.get("active_price_factor", 0.7))
-    return min(by_med, int(stats["min"])) if stats.get("min") else by_med
+    return int(stats["min"]) if stats.get("min") else None
 
 
 def _browse(query: str) -> dict:
@@ -67,7 +73,7 @@ def _browse(query: str) -> dict:
                                 "filter": "buyingOptions:{FIXED_PRICE|AUCTION},conditions:{USED}"})
     d = ebay_api.get_json(f"{ebay_api.API}/buy/browse/v1/item_summary/search?{q}", ebay_api.app_token(),
                           {"X-EBAY-C-MARKETPLACE-ID": "EBAY_US", "X-EBAY-C-ENDUSERCTX": "contextualLocation=country%3DUS"})
-    return filter_totals(query, d.get("itemSummaries") or [])
+    return filter_totals(query, d.get("itemSummaries") or [], ba.load_config(None))
 
 
 def model_label(title: str) -> str | None:
@@ -96,9 +102,9 @@ def add_tentative(items: list, cfg: dict, fx: float, max_models: int = 150, brow
     found = 0
     for label in labels:
         c = cache.get(label)
-        if not c or now - c.get("t", 0) > CACHE_SEC:
+        if not c or now - c.get("t", 0) > CACHE_SEC or c.get("v") != 2:  # v2: 送料無料 −$30・最安値（2026-11-16）
             try:
-                c = dict(browse(label), t=now)
+                c = dict(browse(label), t=now, v=2)
             except (Exception, SystemExit) as e:  # キーが無い・通信できない → 仮◎○なしで続ける
                 print(f"仮◎○: eBay 出品中の価格を調べられませんでした（{str(e)[:80]}）", file=sys.stderr)
                 break

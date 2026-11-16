@@ -1005,7 +1005,7 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
         return fixed - bid * k
 
     # 上限入札額: 利益額と利益率の両方の基準を満たす最大値
-    # 安心ストア（フォロー中）は人気で利益率が低いので基準を緩める（config.toml の trusted_*）
+    # 安心ストア（フォロー中）の基準（config.toml の trusted_*。2026-11-16 から全体と同じ値）
     min_profit = j.get("trusted_min_profit_jpy", j["min_profit_jpy"]) if item.trusted else j["min_profit_jpy"]
     min_margin = j.get("trusted_min_margin_pct", j["min_margin_pct"]) if item.trusted else j["min_margin_pct"]
     by_profit = (fixed - min_profit) / k
@@ -1575,7 +1575,7 @@ h2{{font-size:16px;margin:22px 0 6px}}details{{margin:12px 0}}.mini{{font-size:1
 eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['international_fee_pct']}%+広告{cfg['ebay']['ad_rate_pct']}%+${cfg['ebay']['per_order_fee_usd']}<br>
 上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの相場は自動取得しません（規約順守）。soldリンク・Product Researchで確認してください。</p>
 <h2>★ 安心枠（フォロー中のストア）{len(cards['安心'])}件</h2>
-<p class="summary">基準: 利益{j.get('trusted_min_profit_jpy', j['min_profit_jpy']):,}円以上かつ利益率{j.get('trusted_min_margin_pct', j['min_margin_pct'])}%以上（人気で利益率が低いので緩め）。終了が近い順。</p>
+<p class="summary">基準: 利益{j.get('trusted_min_profit_jpy', j['min_profit_jpy']):,}円以上かつ利益率{j.get('trusted_min_margin_pct', j['min_margin_pct'])}%以上（2026-11-16 から全体と同じ基準）。終了が近い順。</p>
 {''.join(cards['安心']) or '<p class="summary">ありません（ストアのページを開くと、フォロー中なら拡張機能が自動で安心ストアに登録します）。</p>'}
 <h2>チャレンジ枠（その他の出品者）{len(cards['チャレンジ'])}件</h2>
 {''.join(cards['チャレンジ']) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}

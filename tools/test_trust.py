@@ -60,7 +60,7 @@ class Description(unittest.TestCase):
 
 
 class TrustedThreshold(unittest.TestCase):
-    """安心ストアは 利益2,000円・利益率5% の基準（Python と JS で同じ上限額）."""
+    """安心ストアも基準は全体と同じ（2026-11-16 全体統一）。Python と JS で同じ上限額."""
 
     def _py(self, trusted):
         it = ba.Item(url="u", title="x", expected_price_usd=150.0, current_price_jpy=10000, domestic_shipping_jpy=800,
@@ -68,7 +68,7 @@ class TrustedThreshold(unittest.TestCase):
         return ba.calculate(it, CFG, 150.0)["max_bid_jpy"]
 
     def test_python(self):
-        self.assertGreater(self._py(True), self._py(False))
+        self.assertEqual(self._py(True), self._py(False))
 
     def test_js_same(self):
         if not shutil.which("node"):
