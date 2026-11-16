@@ -1043,14 +1043,16 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     for (const a of document.querySelectorAll("a[href]")) {
       if (a.closest("#akit")) continue;
       const href = a.href || "";
-      if (!/shop\.kitamura\.jp\/ec\/(?:used|pd|list)?\/?\d|\/ec\/used\/|\/ec\/pd\//.test(href)) continue;
+      if (!/\/ec\/(?:used|pd)\/[^?#]*\d{4,}/.test(href)) continue;  // 商品ページ（番号付き）だけ
       // 商品のまとまり: 価格（○円）を含む一番近い親（大きすぎるものは除く）
       let box = a, card = null;
       for (let k = 0; k < 7 && box.parentElement; k++) {
         box = box.parentElement;
         const t = box.innerText || "";
-        if (t.length > 600) break;
-        if (/[\d,]{3,}\s*円/.test(t)) { card = box; break; }
+        if (t.length > 600 || box.querySelector("#akit")) break;
+        const n = (t.match(KIT_PRICE) || []).length;
+        if (n > 3) break;  // 価格がたくさん＝商品が何個も入ったまとまり
+        if (n) { card = box; break; }
       }
       if (!card) continue;
       const key = href.split("#")[0].split("?")[0];
@@ -1059,6 +1061,31 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       const prices = [...(card.innerText || "").matchAll(KIT_PRICE)].map((m) => Number(m[1].replace(/,/g, ""))).filter((v) => v >= 100);
       if (!name || !prices.length || out.has(key)) continue;
       out.set(key, { url: key, name: name.slice(0, 140), prices: [...new Set(prices)], text: (card.innerText || "").replace(/\s+/g, " ").slice(0, 300) });
+    }
+    if (out.size) return [...out.values()];
+    // 予備: リンクの形が違うページ。「価格:157,200円」の表示から商品のまとまりを探し、その上の行を商品名にする
+    const seen = new Set();
+    for (const el of document.querySelectorAll("body *")) {
+      if (el.closest("#akit") || el.children.length > 3) continue;
+      const own = (el.innerText || "").trim();
+      if (!/^(?:価格|販売価格|税込)?[:：]?\s*[\d,]{3,}\s*円/.test(own) && !/^価格[:：]/.test(own)) continue;
+      let card = el;
+      for (let k = 0; k < 6 && card.parentElement; k++) {
+        card = card.parentElement;
+        const lines = (card.innerText || "").split("\n").map((x) => x.trim()).filter(Boolean);
+        if ((card.innerText || "").length > 600 || card.querySelector("#akit") || ((card.innerText || "").match(KIT_PRICE) || []).length > 3) { card = null; break; }
+        const pi = lines.findIndex((x) => /[\d,]{3,}\s*円/.test(x));
+        const name = lines.slice(0, Math.max(pi, 0)).filter((x) => !/円|^価格|^\S+\([A-Za-z ]+\)$/.test(x)).sort((a, b) => b.length - a.length)[0];
+        if (name && name.length >= 6) {
+          if (seen.has(card)) break;
+          seen.add(card);
+          const a = card.querySelector("a[href]");
+          const prices = [...(card.innerText || "").matchAll(KIT_PRICE)].map((m) => Number(m[1].replace(/,/g, ""))).filter((v) => v >= 100);
+          const url = a ? a.href : location.href;
+          if (prices.length && !out.has(url + name)) out.set(url + name, { url, name: name.slice(0, 140), prices: [...new Set(prices)], text: "" });
+          break;
+        }
+      }
     }
     return [...out.values()];
   }
