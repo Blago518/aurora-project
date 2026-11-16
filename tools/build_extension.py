@@ -49,6 +49,7 @@ def build_data(cfg: dict, fx: float) -> dict:
         "trusted": [{"id": k, "name": v} for k, v in ba.load_trusted().items()],  # 安心ストア（data/trusted_sellers.csv）
         "refs": refs,
         "kantei": kantei,
+        "winStats": _win_stats(),  # 落札見込み（data/bid_log.csv の結果から。bid_results.win_stats）
         "cfg": {
             "fx": round(fx, 2), "convLossPct": cfg["fx"]["conversion_loss_pct"],
             "feePct": e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"],
@@ -79,6 +80,14 @@ def build_data(cfg: dict, fx: float) -> dict:
             "increments": [[0 if math.isinf(lim) else lim, step] for lim, step in ba.YAHOO_INCREMENTS],
         },
     }
+
+
+def _win_stats() -> dict:
+    try:
+        import bid_results
+        return bid_results.load_win_stats()
+    except Exception:  # 記録が無い・読めない → 落札見込みを出さないだけ
+        return {}
 
 
 def ebay_keys() -> tuple[str, str] | None:

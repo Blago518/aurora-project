@@ -87,3 +87,35 @@ class Aucfan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WinOdds(unittest.TestCase):
+    """落札見込み: Python（bid_results.win_odds）と拡張機能（winOdds）が同じ結果になる."""
+    ROWS = ([{"max_bid": "8000", "store_tax": "0", "result": "落札(見込み)"}] * 3
+            + [{"max_bid": "8000", "store_tax": "0", "result": "負け"}]
+            + [{"max_bid": "20000", "store_tax": "1", "result": "負け"}] * 2
+            + [{"max_bid": "25000", "store_tax": "0", "result": "落札(見込み)"}]
+            + [{"max_bid": "50000", "store_tax": "1", "result": ""}])  # 結果待ちは数えない
+    CASES = [(9000, False), (9000, True), (15000, True), (15000, False), (40000, True)]
+
+    def test_python(self):
+        import bid_results as br
+        st = br.win_stats(self.ROWS)
+        self.assertEqual(br.win_odds(st, 9000, False)["label"], "高")   # 個人1万円未満 3/4
+        self.assertEqual(br.win_odds(st, 9000, True)["key"], "1万円未満|*")  # ストアは記録なし → 価格帯だけ
+        self.assertEqual(br.win_odds(st, 15000, True)["label"], "中")   # 1〜3万円 全体 1/3（30%以上60%未満）
+        self.assertIsNone(br.win_odds(st, 40000, True))                # 結果待ちだけ → 出さない
+
+    def test_js_same(self):
+        import json
+        import shutil
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import bid_results as br
+        import build_extension as bx
+        from test_trust import run_js
+        st = br.win_stats(self.ROWS)
+        data = bx.build_data(CFG, 150.0)
+        data.update(refs=[], kantei=[], winStats=st)
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(self.CASES)}.map(([b,s])=>m.winOdds(b,s))))")
+        self.assertEqual(out, [br.win_odds(st, b, s) for b, s in self.CASES])
