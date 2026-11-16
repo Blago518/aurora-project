@@ -471,6 +471,8 @@ VARIANT_NORMALIZE = [
     (r"(?<![A-Za-z])S\s*\.\s*S\s*\.\s*C\b\.?", " SSC "),
     (r"(?<![A-Za-z.])S\s*\.\s*C\b\.?", " SC "),
     (r"\bNew\s*FD\b|\bnFD\b|\bFDn\b|ニュー\s*FD", " NewFD "),
+    (r"アイレベル|\beye\s*-?\s*level\b", " EyeLevel "),   # Nikon F・F2 のファインダー（相場が違う）
+    (r"フォトミック|\bphotomic\b", " Photomic "),
 ]
 VARIANT_GROUPS = [
     {"name": "Contax/Yashica（ツァイス C/Y）", "ctx": ["contax", "yashica"], "strict": True, "neg": True,
@@ -483,6 +485,9 @@ VARIANT_GROUPS = [
      "vars": {"ssc": "(SSC,S.S.C.)", "sc": "(S.C.,SC)", "newfd": '("New FD",nFD)'}},
     {"name": "Minolta（MC/MD）", "ctx": ["minolta", "rokkor"], "strict": False, "neg": True,
      "vars": {"mc": "MC", "md": "MD"}},
+    # 「F2 アイレベル」に「F2 Photomic A」の相場が当たっていた（2026-11-16）。両方に表記があって違うときだけ別物
+    {"name": "Nikon F/F2（アイレベル/フォトミック）", "ctx": ["nikon"], "strict": False, "neg": False,
+     "vars": {"eyelevel": '("Eye Level",Eyelevel)', "photomic": "Photomic"}},
 ]
 
 
