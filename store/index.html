@@ -152,7 +152,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <input id="cShip" inputmode="numeric" placeholder="空欄＝0円（店舗）" autocomplete="off">
   </div>
   <div class="card" id="cResult"><div class="empty">設定タブでデータを読み込んでください</div></div>
-  <p class="s">計算は拡張機能・調べると同じ: 売上＝(商品代＋送料$40)×為替（eBayの手数料は送料込みの額にかかるため）。そこから eBay手数料・円転ロス・送料$40・梱包費・国内送料・仕入れ値（税込）を引いて利益。送料$40は売上に足して経費で引くので相殺され、残るのは送料分の手数料だけ。
+  <p class="s">計算は拡張機能・調べると同じ。売上（商品代）から eBay手数料・円転ロス・梱包費・国内送料・仕入れ値（税込）を引いて利益。送料$40は買い手から受け取ってそのまま発送に使うので±0（手数料だけは送料込みの額にかかる）。
   上限価格は 利益3,000円以上かつ利益率10%以上 を残す税込の仕入れ値。</p>
 </section>
 
@@ -238,7 +238,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.16.7";
+  var APP_VERSION = "2026.11.16.8";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -668,7 +668,8 @@ function calcRender() {
   const pay = raw == null ? null : Math.round(ex ? raw * tm : raw);  // 払う額（税込）
   const it = (price) => ({ price, ship, tax: false, flags: [] });
   const c = core.calculate(it(pay), usd, fx);
-  const rev = Math.round(usd * fx), loss = rev - c.fees - c.net;
+  // 表示: 送料$40は受け取ってそのまま発送に使う（±0）ので、売上は商品代だけで見せる。手数料は送料込みの額にかかる
+  const sales = Math.round(usd * fx) - c.intl, take = c.net - c.intl, loss = sales - c.fees - take;
   let be = null;  // 損益分岐の商品代（この仕入れ値で利益0になる eBay の商品代）
   if (pay != null) {
     let lo = 0, hi = 20000;
@@ -679,20 +680,20 @@ function calcRender() {
   $("cResult").innerHTML = `
     ${pay == null ? "" : `<div class="s">利益（仕入れ値 ${yen(pay)}（税込）${ex ? `＝${yen(raw)}（税抜）×1.1` : ""}）</div>
     <div class="big ${cls}" style="font-size:30px">${yen(c.profit)}</div>
-    <div class="s">利益率 ${c.margin}%（売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? " ・ 基準（利益3,000円・10%）に届かない" : " ・ 基準クリア"}</div>`}
+    <div class="s">利益率 ${c.margin}%（送料込みの売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? " ・ 基準（利益3,000円・10%）に届かない" : " ・ 基準クリア"}</div>`}
     <dl class="kv">
       <dt>上限価格（税込）</dt><dd class="g">${c.maxBid ? yen(c.maxBid) : "買わない"}</dd>
       <dt>（税抜（ストア）なら）</dt><dd>${c.maxBid ? yen(Math.floor(c.maxBid / tm + 1e-6)) : "-"}</dd>
-      <dt>売上（商品代$${item}＋送料$${g.deductionUsd}＝$${usd.toFixed(2)}、×${fx}円）</dt><dd>${yen(rev)}</dd>
-      <dt>eBay手数料（${g.feePct}%＋$${g.perOrderUsd}）</dt><dd>−${yen(c.fees)}</dd>
+      <dt>売上（商品代$${item}×${fx}円）</dt><dd>${yen(sales)}</dd>
+      <dt>eBay手数料（商品代＋送料$${g.deductionUsd}の${g.feePct}%＋$${g.perOrderUsd}）</dt><dd>−${yen(c.fees)}</dd>
       <dt>円転ロス（${g.convLossPct}%）</dt><dd>−${yen(loss)}</dd>
-      <dt>入金（円）</dt><dd>${yen(c.net)}</dd>
-      <dt>送料（$${g.deductionUsd}）</dt><dd>−${yen(c.intl)}</dd>
+      <dt>手取り（円）</dt><dd>${yen(take)}</dd>
       <dt>梱包費</dt><dd>−${yen(g.packing)}</dd>
       <dt>国内送料${num($("cShip").value) == null ? "（空欄→0円）" : ""}</dt><dd>−${yen(c.dom)}</dd>
       ${pay == null ? "" : `<dt>仕入れ値（税込）</dt><dd>−${yen(pay)}</dd>
       <dt>損益分岐の商品代（送料別）</dt><dd>$${be}</dd>`}
-    </dl>`;
+    </dl>
+    <div class="note">送料$${g.deductionUsd}は計算済みです（買い手から受け取り、そのまま発送に使うので±0。余裕ではありません）。送料分の手数料も上の eBay手数料に入っています。</div>`;
 }
 for (const id of ["cItem", "cBid", "cShip"]) $(id).addEventListener("input", calcRender);
 $("cTax").onclick = (e) => { const k = e.target.closest("[data-tax]"); if (!k) return; calcSt.tax = k.dataset.tax; lsSet(LS_CALC, { tax: calcSt.tax }); calcRender(); };
