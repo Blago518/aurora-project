@@ -613,6 +613,16 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     if (!b || !b.med || b.n < DATA.cfg.activeMinCount) return null;
     return b.min ? Math.floor(b.min) : null;
   }
+  // 落札見込み（bid_results.py の win_odds と同じ規則）: 上限額の価格帯 × ストア/個人の過去の勝率。3件未満なら価格帯だけ、それも3件未満なら出さない
+  function winOdds(maxBid, store) {
+    const st = DATA.winStats || {};
+    const band = maxBid < 10000 ? "1万円未満" : maxBid < 30000 ? "1〜3万円" : "3万円以上";
+    for (const k of [`${band}|${store ? "1" : "0"}`, `${band}|*`]) {
+      const [won, n] = st[k] || [0, 0];
+      if (n >= 3) { const rate = won / n; return { label: rate >= 0.6 ? "高" : rate >= 0.3 ? "中" : "低", won, n, key: k }; }
+    }
+    return null;
+  }
   function browseCell(label) {
     const b = state.browse[label];
     if (!b) return '<span class="s">…</span>';
@@ -831,6 +841,11 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const nat = naturalSec(i, isAcc, sure);
       return `<div class="pinmove">［直す］で再計算しました: 判定 ${esc(i.mark)}${i.reason ? "（" + esc(i.reason) + "）" : ""}${nat !== pin[i.id] ? ` ・ 本来の欄は「${SEC_LABEL[nat] || nat}」。ページを開き直すとそちらへ移ります` : ""}</div>`;
     };
+    const oddsLine = (i, c) => {
+      if (!c || !(i.mark === "◎" || i.mark === "○")) return "";
+      const o = winOdds(c.maxBid, i.tax);
+      return o ? `<div class="s" title="${esc(`過去の入札（${o.key.split("|")[0]}・${o.key.endsWith("|1") ? "ストア" : o.key.endsWith("|0") ? "個人" : "ストア＋個人"}）で${o.n}件中${o.won}件落札`)}">落札見込み <b>${o.label}</b>（${o.won}/${o.n}件）</div>` : "";
+    };
     const row = (i) => {
       const c = i.calc, r = i.refs[0] || {}, e = ebay(i.eq || i.query);
       const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";
@@ -846,7 +861,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
-<td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}${i.mark === "◎" || i.mark === "○" ? '<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>' : ""}${atMax(i)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
+<td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}${i.mark === "◎" || i.mark === "○" ? '<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>' : ""}${atMax(i)}${oddsLine(i, c)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
     // 安心枠（フォロー中のストア）の行
@@ -909,7 +924,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee };
+    module.exports = { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
     return;
   }
 

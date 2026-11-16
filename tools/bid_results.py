@@ -194,6 +194,43 @@ def summarize(rows: list[dict], days: int | None = 30) -> dict:
     }
 
 
+# 落札見込み: 過去の入札（結果が出たもの）を「上限額の価格帯 × ストア/個人」でまとめ、勝った割合で 高・中・低。
+# 拡張機能（extension_template.js の winOdds）と同じ規則。3件未満のまとまりは価格帯だけで見て、それも3件未満なら出さない
+def price_band(max_bid: float) -> str:
+    return "1万円未満" if max_bid < 10000 else "1〜3万円" if max_bid < 30000 else "3万円以上"
+
+
+def win_stats(rows: list[dict]) -> dict[str, list[int]]:
+    """{"価格帯|store" / "価格帯|*": [勝ち, 件数]}（結果が出た入札だけ）."""
+    out: dict[str, list[int]] = {}
+    for r in rows:
+        res, mb = r.get("result") or "", _num(r.get("max_bid"))
+        if not res or mb is None:
+            continue
+        won = 1 if res.startswith("落札") else 0
+        band = price_band(mb)
+        for k in (f"{band}|{'1' if str(r.get('store_tax')) == '1' else '0'}", f"{band}|*"):
+            v = out.setdefault(k, [0, 0])
+            v[0] += won
+            v[1] += 1
+    return out
+
+
+def win_odds(stats: dict, max_bid: float, store: bool) -> dict | None:
+    """{"label": 高/中/低, "won": n, "n": n, "key": まとまり} か None（記録が足りない）."""
+    band = price_band(max_bid)
+    for k in (f"{band}|{'1' if store else '0'}", f"{band}|*"):
+        won, n = stats.get(k, [0, 0])
+        if n >= 3:
+            rate = won / n
+            return {"label": "高" if rate >= 0.6 else "中" if rate >= 0.3 else "低", "won": won, "n": n, "key": k}
+    return None
+
+
+def load_win_stats(path: Path | None = None) -> dict:
+    return win_stats(_read(path or LOG))
+
+
 def advice(s: dict) -> list[str]:
     tips = []
     if s["bids"] < 10:
