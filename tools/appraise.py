@@ -1418,7 +1418,10 @@ def model_key(title: str) -> tuple[str, str]:
     toks = title_to_query(title, 20).split()
     brand = toks[0] if toks and toks[0].lower() in {b.lower() for b in BRANDS_EN.values()} else ""
     rest = toks[1:] if brand else toks
-    key_toks = [t for t in rest if re.search(r"\d", t)][:3] or rest[:2]
+    # 世代（II・III）と限定などの型も機種名に残す（拡張機能の modelKey と同じ考え方）
+    gen = lambda t: t.lower() in GENERATIONS or t.lower() in PREMIUM_VARIANTS  # noqa: E731
+    digits = [t for t in rest if re.search(r"\d", t)][:3]
+    key_toks = ([t for t in rest if t in digits or gen(t)] if digits else []) or rest[:2]
     label = " ".join(([brand] if brand else []) + key_toks)
     norm = []
     for t in label.lower().split():
