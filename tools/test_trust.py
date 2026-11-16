@@ -142,7 +142,9 @@ class AccessoryOnly(unittest.TestCase):
              "未使用*保管品【CONTAX】72/86■Planar T*135mmF2/Sonnar T*180mmF2.8用*元箱付き": True,
              "CONTAX Carl Zeiss Sonnar T* 2.8/180mm": False,
              "1円～/TAMRON/SP/500mm/F8/TELE MACRO/55BB/for Nikon/ニコン用/ミラーレンズ": False,
-             "SIGMA 70-300mm F4-5.6 キヤノン用": False}
+             "SIGMA 70-300mm F4-5.6 キヤノン用": False,
+             "G062a【中古美品 元箱のみ】Nikon ニコン NIKKOR Z MC 105mm f2.8 VR S レンズ用元箱 複数在庫あり": True,
+             "Nikon FM2 ボディ 元箱付き 美品": False, "Canon AE-1 箱付き": False}
 
     def test_python(self):
         for t, acc in self.CASES.items():
