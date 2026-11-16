@@ -115,6 +115,11 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
             "js": ["content.js"],
             "run_at": "document_idle",
         }, {
+            # キタムラのネットショップ: 開いているページの商品を判定（content.js の kitStart。通信はしない）
+            "matches": ["https://shop.kitamura.jp/*"],
+            "js": ["content.js"],
+            "run_at": "document_idle",
+        }, {
             # オークファンの入札予約: 予約の手伝いと、予約一覧の読み取り（extension_aucfan.js）
             "matches": ["https://tools.aucfan.com/*"],
             "js": ["aucfan.js"],

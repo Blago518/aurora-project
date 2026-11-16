@@ -559,43 +559,16 @@
   };
   const srcLabel = (r) => (r.source || "").replace(/\(.*$/, "");
 
-  const css = `
-#yhk{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(1100px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
-background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
-#yhk.min{width:auto}#yhk.min .bd{display:none}
-#yhk .hd{position:sticky;top:0;background:#0b1728;color:#fff;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-#yhk .hd b{font-size:14px}#yhk .hd .sp{flex:1}
-#yhk button{border:0;border-radius:8px;padding:6px 10px;background:#e8f2f8;color:#14415a;font-weight:700;cursor:pointer;font-size:12px}
-#yhk .hd button{background:#24496a;color:#fff}
-#yhk .bd{padding:10px 12px}#yhk table{width:100%;border-collapse:collapse}
-#yhk th,#yhk td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}
-#yhk button.bidon{background:#1f7a5c;color:#fff}
-#yhk tr.seen td{opacity:.38}#yhk tr.seen td.m{opacity:1}#yhk tr.seen td.m>*:not(.seen-box){opacity:.38}
-#yhk label.seen-box{display:block;margin:0 0 4px;cursor:pointer;font-size:10px;color:#9fb3c8;white-space:nowrap}#yhk label.seen-box input{width:16px;height:16px;vertical-align:middle;margin:0 3px 0 0;cursor:pointer}
-#yhk .pinmove{margin-top:4px;padding:4px 8px;border-radius:6px;background:#fff3cd;color:#6b4e00;font-size:12px;font-weight:700}
-@keyframes yhkflash{0%,100%{background:transparent}30%{background:#ffe08a}}#yhk tr.flash td{animation:yhkflash 1.2s ease 2}
-#yhk-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0b1728;color:#fff;padding:10px 16px;border-radius:10px;
-font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show{opacity:1}
-#yhk .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal{background:#eef3f8;color:#2d4a63}
-#yhk .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}
-#yhk tr.tent td{background:#fffaf0}#yhk .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}
-#yhk .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button{padding:3px 6px;margin-left:2px}
-#yhk th{font-size:11px;color:#5d7083;font-weight:600}#yhk td:nth-child(2){min-width:240px}#yhk td.n{text-align:right;white-space:nowrap}#yhk input.sug{color:#8a6d1f;font-style:italic}
-#yhk a{color:#0b5d8c;text-decoration:none}#yhk .m{font-size:15px;font-weight:800}
-#yhk .g{color:#1f7a5c}#yhk .o{color:#1b6387}#yhk .x{color:#a4473a}#yhk .s{font-size:11px;color:#6a7c8e}
-#yhk details{margin-top:10px}#yhk summary{cursor:pointer;font-weight:700}
-#yhk input{width:72px;padding:4px;border:1px solid #c6d3de;border-radius:6px}
-#yhk a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}
-#yhk a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}
-#yhk a.now,#yhk a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}
-#yhk .okb{display:inline-block;font-size:10px;font-weight:700;color:#1f6b50;background:#e3f4ec;border-radius:5px;padding:0 5px}
-#yhk .pills{display:flex;gap:4px;justify-content:flex-end}#yhk button.open3{margin-top:3px;font-size:11px;padding:2px 8px}#yhk a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}
-#yhk td.m{white-space:nowrap;width:58px}#yhk tr.soon td{background:#fff6ec}#yhk .hot{color:#c0392b;font-weight:700}
-#yhk .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
+const css = `
+#yhk,#akit{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(1100px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
+background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}#yhk.min,#akit.min{width:auto}#yhk.min .bd,#akit.min .bd{display:none}#yhk .hd,#akit .hd{position:sticky;top:0;background:#0b1728;color:#fff;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}#yhk .hd b,#akit .hd b{font-size:14px}#yhk .hd .sp,#akit .hd .sp{flex:1}#yhk button,#akit button{border:0;border-radius:8px;padding:6px 10px;background:#e8f2f8;color:#14415a;font-weight:700;cursor:pointer;font-size:12px}#yhk .hd button,#akit .hd button{background:#24496a;color:#fff}#yhk .bd,#akit .bd{padding:10px 12px}#yhk table,#akit table{width:100%;border-collapse:collapse}#yhk th,#yhk td,#akit th,#akit td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}#yhk button.bidon,#akit button.bidon{background:#1f7a5c;color:#fff}#yhk tr.seen td,#akit tr.seen td{opacity:.38}#yhk tr.seen td.m,#akit tr.seen td.m{opacity:1}#yhk tr.seen td.m>*:not(.seen-box),#akit tr.seen td.m>*:not(.seen-box){opacity:.38}#yhk label.seen-box,#akit label.seen-box{display:block;margin:0 0 4px;cursor:pointer;font-size:10px;color:#9fb3c8;white-space:nowrap}#yhk label.seen-box input,#akit label.seen-box input{width:16px;height:16px;vertical-align:middle;margin:0 3px 0 0;cursor:pointer}#yhk .pinmove,#akit .pinmove{margin-top:4px;padding:4px 8px;border-radius:6px;background:#fff3cd;color:#6b4e00;font-size:12px;font-weight:700}
+@keyframes yhkflash{0%,100%{background:transparent}30%{background:#ffe08a}}#yhk tr.flash td,#akit tr.flash td{animation:yhkflash 1.2s ease 2}#yhk-toast,#akit-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0b1728;color:#fff;padding:10px 16px;border-radius:10px;
+font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show,#akit-toast.show{opacity:1}#yhk .trustb,#akit .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust,#akit .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal,#akit .tsep.chal{background:#eef3f8;color:#2d4a63}#yhk .tmark,#akit .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}#yhk tr.tent td,#akit tr.tent td{background:#fffaf0}#yhk .tsep,#akit .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}#yhk .fix,#akit .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input,#akit .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select,#akit .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button,#akit .fix button{padding:3px 6px;margin-left:2px}#yhk th,#akit th{font-size:11px;color:#5d7083;font-weight:600}#yhk td:nth-child(2),#akit td:nth-child(2){min-width:240px}#yhk td.n,#akit td.n{text-align:right;white-space:nowrap}#yhk input.sug,#akit input.sug{color:#8a6d1f;font-style:italic}#yhk a,#akit a{color:#0b5d8c;text-decoration:none}#yhk .m,#akit .m{font-size:15px;font-weight:800}#yhk .g,#akit .g{color:#1f7a5c}#yhk .o,#akit .o{color:#1b6387}#yhk .x,#akit .x{color:#a4473a}#yhk .s,#akit .s{font-size:11px;color:#6a7c8e}#yhk details,#akit details{margin-top:10px}#yhk summary,#akit summary{cursor:pointer;font-weight:700}#yhk input,#akit input{width:72px;padding:4px;border:1px solid #c6d3de;border-radius:6px}#yhk a.t,#akit a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}#yhk a.usd,#akit a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}#yhk a.now,#yhk a.pill,#akit a.now,#akit a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}#yhk .okb,#akit .okb{display:inline-block;font-size:10px;font-weight:700;color:#1f6b50;background:#e3f4ec;border-radius:5px;padding:0 5px}#yhk .pills,#akit .pills{display:flex;gap:4px;justify-content:flex-end}#yhk button.open3,#akit button.open3{margin-top:3px;font-size:11px;padding:2px 8px}#yhk a.pill.sold,#akit a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}#yhk td.m,#akit td.m{white-space:nowrap;width:58px}#yhk tr.soon td,#akit tr.soon td{background:#fff6ec}#yhk .hot,#akit .hot{color:#c0392b;font-weight:700}#yhk .flag,#akit .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
 .yhk-badge{display:inline-block;margin:2px 0;padding:2px 7px;border-radius:7px;font:700 12px -apple-system,sans-serif;color:#fff}
 .yhk-badge.g{background:#1f7a5c}.yhk-badge.o{background:#1b6387}.yhk-badge.x{background:#9aa6b2}
-@media (prefers-color-scheme:dark){#yhk tr.soon td{background:#2a2216}#yhk tr.tent td{background:#1f2129}#yhk .tsep{background:#3a2f17;color:#f2d79a}#yhk .tsep.trust{background:#173a28;color:#a8e6c1}#yhk .tsep.chal{background:#1c2c3c;color:#b9d3ea}#yhk{background:#152231;color:#e2eaf2}#yhk th,#yhk td{border-color:#26394b}#yhk a{color:#7cc4ee}
-#yhk button{background:#24384c;color:#d6e6f2}#yhk input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}}`;
+@media (prefers-color-scheme:dark){#yhk tr.soon td,#akit tr.soon td{background:#2a2216}#yhk tr.tent td,#akit tr.tent td{background:#1f2129}#yhk .tsep,#akit .tsep{background:#3a2f17;color:#f2d79a}#yhk .tsep.trust,#akit .tsep.trust{background:#173a28;color:#a8e6c1}#yhk .tsep.chal,#akit .tsep.chal{background:#1c2c3c;color:#b9d3ea}#yhk,#akit{background:#152231;color:#e2eaf2}#yhk th,#yhk td,#akit th,#akit td{border-color:#26394b}#yhk a,#akit a{color:#7cc4ee}#yhk button,#akit button{background:#24384c;color:#d6e6f2}#yhk input,#akit input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}}
+#akit tr.kdim td{opacity:.55}
+`;
 
   let state = { bidInfo: {}, items: [], total: null, fx: Number(load(LS_FX, DATA.cfg.fx)) || DATA.cfg.fx, loading: "", browse: {} };
 
@@ -1061,7 +1034,94 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
   }
 
   // ------------------------------------------------------------------ 起動
+
+  // ------------------------------------------------------------------ キタムラ（shop.kitamura.jp）: 開いているページの商品を判定
+  // キタムラへの通信は増やさない（画面に出ている商品を読むだけ）。値札は税込・国内送料0円で計算（店舗アプリと同じ）
+  const KIT_PRICE = /([\d,]{3,})\s*円/g;
+  function kitItems() {
+    const out = new Map();
+    for (const a of document.querySelectorAll("a[href]")) {
+      if (a.closest("#akit")) continue;
+      const href = a.href || "";
+      if (!/shop\.kitamura\.jp\/ec\/(?:used|pd|list)?\/?\d|\/ec\/used\/|\/ec\/pd\//.test(href)) continue;
+      // 商品のまとまり: 価格（○円）を含む一番近い親（大きすぎるものは除く）
+      let box = a, card = null;
+      for (let k = 0; k < 7 && box.parentElement; k++) {
+        box = box.parentElement;
+        const t = box.innerText || "";
+        if (t.length > 600) break;
+        if (/[\d,]{3,}\s*円/.test(t)) { card = box; break; }
+      }
+      if (!card) continue;
+      const key = href.split("#")[0].split("?")[0];
+      const name = [...card.querySelectorAll("a[href]")].map((x) => (x.innerText || "").replace(/\s+/g, " ").trim())
+        .concat([(card.querySelector("img[alt]") || {}).alt || ""]).sort((x, y) => y.length - x.length)[0] || "";
+      const prices = [...(card.innerText || "").matchAll(KIT_PRICE)].map((m) => Number(m[1].replace(/,/g, ""))).filter((v) => v >= 100);
+      if (!name || !prices.length || out.has(key)) continue;
+      out.set(key, { url: key, name: name.slice(0, 140), prices: [...new Set(prices)], text: (card.innerText || "").replace(/\s+/g, " ").slice(0, 300) });
+    }
+    return [...out.values()];
+  }
+  function kitJudge(x) {
+    const refs = DATA.refs.concat(memoRefs());
+    const flags = detectFlags(x.name), q = titleToQuery(x.name);
+    let m = matchPreferMemo(q + " " + x.name, refs.filter(isMemo), refs.filter((r) => !isMemo(r)));
+    if (!m.length) m = matchKantei(x.name);
+    let usd = m.length ? Math.round(median(conditionAdjusted(m, x.name, flags)) * 100) / 100 : null;
+    if (usd != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) usd = Math.round(usd * DATA.cfg.junkFactor * 100) / 100;
+    const price = Math.min(...x.prices);  // 表示の中の一番安い額（セール・クーポン後）で計算。条件は商品ページで確認
+    const it = { price, ship: 0, tax: false, flags };
+    it.calc = usd != null ? calculate(it, usd, state.fx) : null;
+    const [mark, reason] = judge(it);
+    return Object.assign({}, x, { flags, q, refs: m, usd, price, calc: it.calc, mark, reason,
+      acc: flags.some((f) => f === "付属品のみ?" || f === "アダプター等") });
+  }
+  function kitRender() {
+    const all = kitItems().map(kitJudge);
+    let root = document.getElementById("akit");
+    if (!root) {
+      const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
+      root = document.createElement("div"); root.id = "akit"; document.body.appendChild(root);
+    }
+    const rank = (i) => (i.acc ? 9 : i.mark === "◎" ? 0 : i.mark === "○" ? 1 : i.mark === "要確認" && i.calc ? 2 : i.calc ? 3 : 4);
+    const list = all.sort((a, b) => rank(a) - rank(b) || (b.calc && b.calc.profit || 0) - (a.calc && a.calc.profit || 0));
+    const buy = list.filter((i) => rank(i) <= 1).length, buyWeak = list.filter((i) => rank(i) <= 1 && i.refs[0] && i.refs[0].tier >= 2).length;
+    const tier = (r) => (r == null ? "" : ["自分の販売実績", "Chatwork実績", "頒布会リスト（出品価格）", "鑑定表（推定）"][r] || "");
+    const row = (i) => {
+      const c = i.acc ? null : i.calc, r = i.refs[0] || {}, e = ebay(i.q);
+      const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";
+      const weak = c && r.tier >= 2;  // 根拠が頒布会リスト・鑑定表 → sold で確認してから
+      return `<tr class="${rank(i) >= 3 ? "kdim" : ""}"><td class="m ${cls}">${i.acc ? "除外" : i.calc ? esc(i.mark) : "－"}</td>
+<td><a class="t" href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.name)}</a>${weak && rank(i) <= 1 ? '<span class="flag">sold で確認してから</span>' : ""}${i.flags.filter((f) => !["動作品", "美品"].includes(f)).map((f) => `<span class="flag">${esc(f)}</span>`).join("")}
+<div class="s">${i.acc ? "付属品・アダプターなどのため対象外" : i.calc ? `根拠: ${esc(r.title || "")} [${esc(tier(r.tier))}] ・ ${esc(i.reason || "")}` : "相場データなし（sold で確認）"}</div></td>
+<td class="n">${i.usd != null && !i.acc ? `${nd(i.usd)}<div class="s">送料別</div>` : "-"}<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div></td>
+<td class="n">${yen(i.price)}${i.prices.length > 1 ? `<div class="s">表示: ${i.prices.map((v) => yen(v)).join(" / ")}</div>` : ""}</td>
+<td class="n"><b>${yen(c && c.maxBid)}</b>${c ? '<div class="s">この値段（税込）以下なら買い</div>' : ""}</td>
+<td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
+    };
+    root.innerHTML = `<div class="hd"><b>キタムラ鑑定</b><span>このページの商品 ${list.length}件 ・ 買い候補 ${buy}件${buyWeak ? `（うち sold で確認 ${buyWeak}件）` : ""}</span><span class="sp"></span>
+<button data-k="re">読み直す</button><button data-k="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
+<div class="bd"><div class="s">画面に出ている商品だけを読みます（キタムラへの通信はしません）。値札は税込・国内送料0円で計算。表示に複数の価格があるときは一番安い額で計算しています。クーポンの条件は商品ページで確認してください。基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 為替 ${state.fx}円 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
+${list.length ? `<table><tr><th>判定</th><th>商品（→キタムラ）</th><th>eBay相場（送料別）</th><th>キタムラの価格</th><th>買ってよい上限（税込）</th><th>利益（この価格で買ったら）</th></tr>${list.map(row).join("")}</table>`
+    : `<div class="s" style="margin-top:8px">商品を見つけられませんでした。ページを下までスクロールしてから［読み直す］を押してください。それでも出ないときは、この画面のスクショを Claude に送ってください。</div>`}</div>`;
+  }
+  function kitStart() {
+    state.fx = load(LS_FX, DATA.cfg.fx) || DATA.cfg.fx;
+    let t = null;
+    const later = () => { clearTimeout(t); t = setTimeout(kitRender, 1200); };
+    later();
+    new MutationObserver((ms) => { if (ms.some((m) => !(m.target.closest && m.target.closest("#akit")))) later(); })
+      .observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("click", (ev) => {
+      const b = ev.target.closest && ev.target.closest("#akit button");
+      if (!b) return;
+      if (b.dataset.k === "re") kitRender();
+      if (b.dataset.k === "min") { document.getElementById("akit").classList.toggle("min"); kitRender(); }
+    });
+  }
+
   function start() {
+    if (location.hostname === "shop.kitamura.jp") { kitStart(); return; }  // キタムラのネットショップ
     if (location.pathname.startsWith("/follow/list")) {  // フォロー中の一覧: 出品者をまとめて安心ストアに（一覧は後から描かれるので少し待つ）
       let n = 0;
       for (const ms of [800, 2500, 5000]) setTimeout(() => { n = Math.max(n, trustFollowList()); }, ms);
