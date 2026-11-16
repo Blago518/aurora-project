@@ -5,6 +5,7 @@ Apps Script（下の APPS_SCRIPT）は script.google.com の独立したプロ�
 合言葉付きの専用 URL を Mac が読むと、まず 元の古物台帳（読むだけ）→ Claude更新版 へ写す:
     古物台帳: Claude更新版に無い No. の行を足し、ある行は空欄だけ埋める（入っている値・数式は上書きしない。行は消さない）
     管理・ebay売上・J管理・出品情報: Claude更新版の「写し_シート名」に、Mac が使う列だけを毎回写す
+    意思決定ログ: Claude更新版の「意思決定ログ」シート（Claude がクラウドから書く）を、knowledge/意思決定ログ.md に追記する
 そのあと Claude更新版の古物台帳を CSV で返す。?sheet=… を付けると写しのシートを返す。購入者の名前・住所の列（Buyer…・Ship to…）は
 スクリプトの側で取り除いてから返す。ほかのシートからは EXTRA_SHEETS の列だけを data/ に保存する（グラフ用）:
     管理      → data/kanri.csv        No.・状態・購入日・販売日・仕入・商品名・仕入元（状態と、古物台帳に無い商品の仕入額）
@@ -49,6 +50,9 @@ EXTRA_SHEETS = {
     "出品情報": ("item_types.csv", ["管理番号", "商品種別"]),
 }
 BACKUP = DATA / "backup"
+# Claude更新版の「意思決定ログ」シート（Claude がクラウドから書く。列: 日付・決めたこと）→ knowledge/意思決定ログ.md の末尾に追記
+DECISION_SHEET = "意思決定ログ"
+DECISION_MD = ROOT / "knowledge" / "意思決定ログ.md"
 SERVICE = "aurora-ledger"
 SHEET = "古物台帳"
 
@@ -68,6 +72,7 @@ const EXTRA = __EXTRA__;  // シート名 → Mac が使う列
 const PAIRS = [  // Claude更新版の列（見出しの先頭）← 元の古物台帳の列（見出しの先頭）
   ['管理番号', 'No.'], ['購入日', '購入日'], ['品目', '品目'], ['数量', '数量'], ['仕入元', 'アカウント名'],
   ['仕入合計', '仕入金額'], ['仕入URL', 'ヤフオクURL'], ['販売日', '販売日'], ['販売金額', '販売金額'], ['備考', '備考']];
+const OWN = ['意思決定ログ'];  // Claude更新版にあるシートをそのまま返す（Claude が書く。Mac が knowledge/ に追記する）
 const DROP = /^(Buyer|Ship to)/;
 const nh = (s) => String(s).normalize('NFKC').replace(/\s+/g, '');
 const colOf = (head, p) => head.findIndex((h) => h === p || h.startsWith(p));
@@ -156,7 +161,7 @@ function doGet(e) {
   const props = PropertiesService.getScriptProperties();
   if (p === '_status') return ContentService.createTextOutput(props.getProperty('last') || '');
   if (!p) props.setProperty('last', new Date().toISOString() + ' ' + syncAll());  // 古物台帳を読むときに、先に元から写す
-  const name = !p ? LEDGER : (p in EXTRA ? '写し_' + p : null);
+  const name = !p ? LEDGER : (p in EXTRA ? '写し_' + p : (OWN.includes(p) ? p : null));
   const sh = name && SpreadsheetApp.openById(BOOK).getSheetByName(name);
   if (!sh) return ContentService.createTextOutput('NO_SHEET:' + p);
   return ContentService.createTextOutput(csvOf(sh.getDataRange().getDisplayValues())).setMimeType(ContentService.MimeType.CSV);
@@ -237,6 +242,7 @@ def sync(dry_run: bool = False) -> bool | None:
     except (urllib.error.URLError, OSError):
         pass
     sync_extra(url, key, dry_run)
+    sync_decisions(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
     if old == text:
         print("古物台帳: 変化なし", file=sys.stderr)
@@ -302,6 +308,39 @@ def sync_extra(url: str, key: str, dry_run: bool = False) -> dict[str, int | Non
             w.writerows(rows)
         print(f"{sheet}シート: {len(rows)}行 → data/{fname}", file=sys.stderr)
     return result
+
+
+def append_decisions(text: str, md: Path = DECISION_MD, dry_run: bool = False) -> int:
+    """「意思決定ログ」シートの CSV → まだ md に無い行を「- 日付 決めたこと」で末尾に足す. 足した行数を返す."""
+    rows = pick_columns(text, ["日付", "決めたこと"])
+    if not rows:
+        return 0
+    have = md.read_text(encoding="utf-8") if md.exists() else ""
+    new = []
+    for r in rows:
+        what = " ".join(r.get("決めたこと", "").split())
+        if what and what not in have and what not in "\n".join(new):
+            new.append(f"- {r.get('日付', '').strip()} {what}（Claude が記録）".replace("-  ", "- "))
+    if new and not dry_run:
+        md.parent.mkdir(parents=True, exist_ok=True)
+        with open(md, "a", encoding="utf-8") as f:
+            f.write(("" if not have or have.endswith("\n") else "\n") + "\n".join(new) + "\n")
+    return len(new)
+
+
+def sync_decisions(url: str, key: str, dry_run: bool = False) -> int | None:
+    """Claude更新版の「意思決定ログ」シート → knowledge/意思決定ログ.md（シートやスクリプトが無ければ何もしない）."""
+    try:
+        text = fetch(url, key, DECISION_SHEET)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"意思決定ログ: 読み込めませんでした（{e}）", file=sys.stderr)
+        return None
+    if text.startswith("NO_SHEET:") or "決めたこと" not in text[:2000]:
+        return None  # 古いスクリプト、またはシートがまだ無い
+    n = append_decisions(text, dry_run=dry_run)
+    if n:
+        print(f"意思決定ログ: {n}件を{'追記予定' if dry_run else '追記'} → knowledge/意思決定ログ.md", file=sys.stderr)
+    return n
 
 
 def cmd_script() -> None:

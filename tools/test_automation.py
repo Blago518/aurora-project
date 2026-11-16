@@ -267,3 +267,19 @@ class Schedule(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DecisionLog(unittest.TestCase):
+    """Claude更新版の「意思決定ログ」シート → knowledge/意思決定ログ.md に、まだ無い行だけ追記."""
+
+    def test_append(self):
+        import tempfile
+        from pathlib import Path
+        import ledger_sync as ls
+        csv_text = '"日付","決めたこと"\n"2026-11-16","入札は利益2,500円以上"\n"2026-11-17","sold も送料無料なら−$30"\n'
+        with tempfile.TemporaryDirectory() as d:
+            md = Path(d) / "意思決定ログ.md"
+            md.write_text("# 意思決定ログ\n- 2026-11-16 入札は利益2,500円以上\n", encoding="utf-8")
+            self.assertEqual(ls.append_decisions(csv_text, md), 1)
+            self.assertEqual(ls.append_decisions(csv_text, md), 0)  # 2回目は足さない
+            self.assertIn("- 2026-11-17 sold も送料無料なら−$30（Claude が記録）", md.read_text(encoding="utf-8"))
