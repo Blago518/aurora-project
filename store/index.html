@@ -138,18 +138,18 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <!-- ===================================================== 入札（毎朝の入札候補） -->
 <section id="calc" hidden>
   <div class="card">
-    <h2>eBay利益電卓（店舗仕入れ）</h2>
+    <h2>eBay利益電卓（店舗・ヤフオク）</h2>
     <label for="cItem">eBay商品代 $（送料別）</label>
     <input id="cItem" inputmode="decimal" placeholder="例 140" autocomplete="off">
-    <label>区分（値札の表示）</label>
+    <label>区分</label>
     <div class="chips" id="cTax">
-      <button class="chip" data-tax="in" aria-pressed="true">税込</button>
-      <button class="chip" data-tax="ex" aria-pressed="false">税抜（レジで10%上乗せ）</button>
+      <button class="chip" data-tax="in" aria-pressed="true">税込（個人）</button>
+      <button class="chip" data-tax="ex" aria-pressed="false">税抜（ストア）</button>
     </div>
-    <label for="cBid">仕入れ値（円）</label>
-    <input id="cBid" inputmode="numeric" placeholder="値札の金額（空欄なら上限だけ出します）" autocomplete="off">
-    <label for="cShip">送料（円）</label>
-    <input id="cShip" inputmode="numeric" placeholder="空欄＝0円（店頭で買う）" autocomplete="off">
+    <label for="cBid">仕入れ値（円）<span class="s">　店舗は値札・ヤフオクは落札額</span></label>
+    <input id="cBid" inputmode="numeric" placeholder="空欄なら上限価格だけ出します" autocomplete="off">
+    <label for="cShip">送料（円）<span class="s">　ヤフオクは送料を入力</span></label>
+    <input id="cShip" inputmode="numeric" placeholder="空欄＝0円（店舗）" autocomplete="off">
   </div>
   <div class="card" id="cResult"><div class="empty">設定タブでデータを読み込んでください</div></div>
   <p class="s">計算は拡張機能・調べると同じ: 売上＝(商品代＋買い手が払う送料$40)×為替（eBayの手数料は送料込みの額にかかるため）。そこから eBay手数料・円転ロス・発送費の実費（見積もり$40）・梱包費・送料・支払う額（税込）を引いて利益。送料の受け取りと発送費はほぼ相殺され、残るのは送料分の手数料だけ。
@@ -238,7 +238,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.16.5";
+  var APP_VERSION = "2026.11.16.6";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -677,12 +677,12 @@ function calcRender() {
   }
   const cls = c.profit == null ? "" : c.profit >= 0 ? "g" : "x";
   $("cResult").innerHTML = `
-    ${pay == null ? "" : `<div class="s">利益（仕入れ値 ${yen(pay)}（税込）${ex ? `＝値札 ${yen(raw)}（税抜）×1.1` : ""}）</div>
+    ${pay == null ? "" : `<div class="s">利益（仕入れ値 ${yen(pay)}（税込）${ex ? `＝${yen(raw)}（税抜）×1.1` : ""}）</div>
     <div class="big ${cls}" style="font-size:30px">${yen(c.profit)}</div>
     <div class="s">利益率 ${c.margin}%（売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? " ・ 基準（利益3,000円・10%）に届かない" : " ・ 基準クリア"}</div>`}
     <dl class="kv">
       <dt>上限価格（税込）</dt><dd class="g">${c.maxBid ? yen(c.maxBid) : "買わない"}</dd>
-      <dt>（税抜の値札なら）</dt><dd>${c.maxBid ? yen(Math.floor(c.maxBid / tm + 1e-6)) : "-"}</dd>
+      <dt>（税抜（ストア）なら）</dt><dd>${c.maxBid ? yen(Math.floor(c.maxBid / tm + 1e-6)) : "-"}</dd>
       <dt>売上（商品代$${item}＋買い手の送料$${g.deductionUsd}＝$${usd.toFixed(2)}、×${fx}円）</dt><dd>${yen(rev)}</dd>
       <dt>eBay手数料（${g.feePct}%＋$${g.perOrderUsd}）</dt><dd>−${yen(c.fees)}</dd>
       <dt>円転ロス（${g.convLossPct}%）</dt><dd>−${yen(loss)}</dd>
