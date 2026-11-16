@@ -593,6 +593,7 @@ STOCK_CODE = (r"[A-Z][a-z]\d{3,}", r"[A-Za-z]{2,3}\d{4,}", r"[A-Za-z]-?\d{5,}")
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
     t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
+    t = re.sub(r"[【\[〔<]\s*[A-Za-z]{0,3}-?\d{2,7}[A-Za-z]?\s*[】\]〕>]", " ", t)  # 【L256】[A-123] 等の括弧つき管理番号
     t = re.sub(r"\d+円[~〜～]?", " ", t)  # 「1円～」
     t = re.sub(r"\b[wW]\s*/\s*", " ", t)  # w/case（with）
     t = re.sub(r"(\d)\s*(mm|㎜)\s*([fF]\s*/?\s*\d)", r"\1mm \3", t)  # 75-150mmF4 → 75-150mm F4
