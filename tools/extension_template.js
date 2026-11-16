@@ -244,7 +244,7 @@
     const tm = it.tax ? 1 + g.storeTaxPct / 100 : 1;  // ストアは入札が税抜、支払いは×1.1
     const k = tm * (1 - g.refundRatio);
     const fixed = net - dom - intl - g.packing;
-    // 安心ストア（フォロー中）は基準を緩める（appraise.py の calculate と同じ）
+    // 安心ストア（フォロー中）の基準（appraise.py の calculate と同じ。2026-11-16 から全体と同じ値）
     const minP = it.trusted ? (g.trustedMinProfit ?? g.minProfit) : g.minProfit;
     const minM = it.trusted ? (g.trustedMinMarginPct ?? g.minMarginPct) : g.minMarginPct;
     const maxBid = Math.max(0, roundDown(Math.min((fixed - minP) / k, (fixed - minM / 100 * revJpy) / k)));
@@ -607,11 +607,11 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
 
   // ------------------------------------------------------------------ eBay出品中の相場（公式 Browse API・裏方の background.js 経由）
   const canBrowse = () => DATA.cfg.browse && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id;
-  // 仮の相場（送料込$）: eBay出品中の「最安値」と「中央値×係数」の安い方（保守的に）。件数が少なければ出さない
+  // 仮の相場（送料込$）: eBay出品中の最安値（送料無料の出品は出品額−$30＝background.js で計算済み）。件数が少なければ出さない
+  // 2026-11-16 ユーザー決定（tentative.py の suggest_usd と同じ）
   function suggestUsd(b) {
     if (!b || !b.med || b.n < DATA.cfg.activeMinCount) return null;
-    const byMed = Math.floor(b.med * DATA.cfg.activeFactor);
-    return b.min ? Math.min(byMed, Math.floor(b.min)) : byMed;
+    return b.min ? Math.floor(b.min) : null;
   }
   function browseCell(label) {
     const b = state.browse[label];
@@ -620,7 +620,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     if (!b.n) return '<span class="s">出品なし</span>';
     const sg = suggestUsd(b);
     return `中央値 ${nd(b.med)}<div class="s">最安 ${nd(b.min)}・${b.n}件${b.jp ? `（日本から${b.jp}）` : ""}・送料別</div>` +
-      (sg ? `<div class="s">案 ${nd(sg)}（中央値×${DATA.cfg.activeFactor}）</div>` : `<div class="s">件数が少なく案なし</div>`);
+      (sg ? `<div class="s">案 ${nd(sg)}（最安値）</div>` : `<div class="s">件数が少なく案なし</div>`);
   }
   let browsing = false;
   async function fetchBrowse(labels, after) {
@@ -852,7 +852,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     // 安心枠（フォロー中のストア）の行
     const trustRows = (list) => {
       const t = list.filter((i) => i.trusted);
-      return t.length ? `<tr><td colspan="6" class="tsep trust">★ 安心枠（フォロー中のストア） ${t.length}件 ― 基準 利益${(DATA.cfg.trustedMinProfit ?? DATA.cfg.minProfit).toLocaleString()}円以上・利益率${DATA.cfg.trustedMinMarginPct ?? DATA.cfg.minMarginPct}%以上（緩め）</td></tr>${t.map(row).join("")}` : "";
+      return t.length ? `<tr><td colspan="6" class="tsep trust">★ 安心枠（フォロー中のストア） ${t.length}件 ― 基準 利益${(DATA.cfg.trustedMinProfit ?? DATA.cfg.minProfit).toLocaleString()}円以上・利益率${DATA.cfg.trustedMinMarginPct ?? DATA.cfg.minMarginPct}%以上</td></tr>${t.map(row).join("")}` : "";
     };
     const waitRow = (w) => {
       const i = w.i, c = w.c, e = ebay(w.label);
@@ -860,7 +860,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const d = state.desc[i.id];
       return `<tr class="${soon ? "soon" : ""} tent${seenOf(i.id) ? " seen" : ""}"><td class="m ${w.mk === "◎" ? "g" : "o"}">${seenBox(i.id)}<span class="tmark">仮</span>${w.mk}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>
-<div class="s">機種: ${esc(w.label)} ・ eBay出品中（送料別）最安${nd(w.b.min || 0)}・中央値${nd(w.b.med)}から、安い方の案 ${nd(w.sg)}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} で仮計算（sold未確認）</div>
+<div class="s">機種: ${esc(w.label)} ・ eBay出品中（送料別）最安${nd(w.b.min || 0)}・中央値${nd(w.b.med)}から、最安値の案 ${nd(w.sg)}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} で仮計算（sold未確認）</div>
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
 <td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
@@ -877,12 +877,12 @@ ${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に�
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）― 上限額をそのまま入札欄へ</h4>
 ${good.length ? `<table>${head}${trustRows(good)}${good.filter((i) => !i.trusted).length ? `<tr><td colspan="6" class="tsep chal">チャレンジ枠（その他の出品者） ${good.filter((i) => !i.trusted).length}件 ― 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上</td></tr>` : ""}${good.filter((i) => !i.trusted).map(row).join("")}</table>` : `<div class="s">このページには、確認なしで入札できる出品はありません（下の「確認してから入札」を見てください）。</div>`}
 ${weak.length || waits.length || pinnedWaits.length ? `<h4 style="margin:14px 0 4px">確認してから入札 ${weak.length + waits.length + pinnedWaits.length}件 ― sold を見て、売れた商品代が相場以上なら［直す$］［登録］→ 上の入札候補に上がります</h4>
-<table>${head}${weak.length ? `<tr><td colspan="6" class="tsep">根拠が頒布会リスト（出品価格）・鑑定表（推定）の ◎○ ${weak.length}件 ― 売れた価格ではないので sold で確認</td></tr>${weak.map(row).join("")}` : ""}${waits.length || pinnedWaits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length + pinnedWaits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値と中央値×${DATA.cfg.activeFactor}の安い方で仮に計算</td></tr>${pinnedWaits.map(row).join("")}${waits.map(waitRow).join("")}` : ""}</table>` : ""}
+<table>${head}${weak.length ? `<tr><td colspan="6" class="tsep">根拠が頒布会リスト（出品価格）・鑑定表（推定）の ◎○ ${weak.length}件 ― 売れた価格ではないので sold で確認</td></tr>${weak.map(row).join("")}` : ""}${waits.length || pinnedWaits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length + pinnedWaits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値（送料無料は−$30）で仮に計算</td></tr>${pinnedWaits.map(row).join("")}${waits.map(waitRow).join("")}` : ""}</table>` : ""}
 ${canBrowse() && !waits.length ? `<div class="s">${Object.keys(state.browse).length ? "仮◎○はありません" : "eBay出品中の価格を調べています…（仮◎○）"}</div>` : ""}
 <details><summary>要確認（相場はあるがセット品・光学難・説明文の難などの可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
 <details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
-${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式APIで調べた<b>出品中</b>の価格（米国向け・中古。送料$${SHIP()}を引いた送料別の額で表示）。売れた価格より高めなので、想定$には中央値×${DATA.cfg.activeFactor}を<b>案</b>として入れています。<b>sold を見て確認してから［登録］</b>してください（登録するまで判定には使いません）。</div>` : ""}
+${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式APIで調べた<b>出品中</b>の価格（米国向け・中古。送料$${SHIP()}を引いた送料別の額で表示）。想定$には最安値（送料無料の出品は出品額−$30）を<b>案</b>として入れています。<b>sold を見て確認してから［登録］</b>してください（登録するまで判定には使いません）。</div>` : ""}
 <table><tr><th>機種（→Product Research）</th><th>件数</th><th>ヤフオク現在値</th>${canBrowse() ? "<th>eBay出品中</th>" : ""}<th>想定$（送料別）</th></tr>${unpriced.map((g) => `<tr><td><a href="${ebay(g.label).pr}" target="_blank" rel="noopener" title="Product Research を開く">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
 <td class="n">${g.n}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
 ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.label)}</td>` : ""}
@@ -1131,7 +1131,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     if (usd != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) usd = Math.round(usd * DATA.cfg.junkFactor * 100) / 100;
     const price = Math.min(...x.prices);  // 表示の中の一番安い額（セール・クーポン後）で計算。条件は商品ページで確認
     const it = { price, ship: 0, tax: false, flags };
-    // 相場データが無ければ、ヤフオクの仮◎○と同じく eBay 出品中（公式API）の最安値と中央値×係数の安い方で仮に計算
+    // 相場データが無ければ、ヤフオクの仮◎○と同じく eBay 出品中（公式API）の最安値（送料無料は−$30）で仮に計算
     const [label] = modelKey(x.name);
     let tent = null;
     if (usd == null && /\d/.test(label) && label.split(" ").length >= 2) {

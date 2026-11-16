@@ -27,11 +27,12 @@ class Filter(unittest.TestCase):
             summ("Olympus Zuiko 35mm F2", 160, cur="GBP"),   # ドル以外
             summ("Olympus Zuiko 35mm F/2 black", 25),        # 中央値の3割未満は外す
         ])
-        self.assertEqual(s, {"n": 3, "min": 200.0, "med": 210.0})
+        # 送料別 $20 の出品は商品代 $180 のまま、送料無料は −$30。送料込みで持つので deduction_usd（$40）を足す
+        self.assertEqual(s, {"n": 3, "min": 220.0, "med": 220.0})
 
     def test_suggest(self):
-        self.assertEqual(tv.suggest_usd({"n": 6, "min": 139.99, "med": 220}, CFG), 139)  # 最安 < 中央値×0.7
-        self.assertEqual(tv.suggest_usd({"n": 6, "min": 200, "med": 220}, CFG), 154)     # 中央値×0.7 の方が安い
+        self.assertEqual(tv.suggest_usd({"n": 6, "min": 139.99, "med": 220}, CFG), 139)  # 最安値
+        self.assertEqual(tv.suggest_usd({"n": 6, "min": 200, "med": 220}, CFG), 200)     # 中央値は使わない（2026-11-16）
         self.assertIsNone(tv.suggest_usd({"n": 2, "min": 200, "med": 220}, CFG))         # 件数不足
 
 

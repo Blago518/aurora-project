@@ -214,7 +214,7 @@ function makeCore(DATA) {
     const tm = it.tax ? 1 + g.storeTaxPct / 100 : 1;  // ストアは入札が税抜、支払いは×1.1
     const k = tm * (1 - g.refundRatio);
     const fixed = net - dom - intl - g.packing;
-    // 安心ストア（フォロー中）は基準を緩める（appraise.py の calculate と同じ）
+    // 安心ストア（フォロー中）の基準（appraise.py の calculate と同じ。2026-11-16 から全体と同じ値）
     const minP = it.trusted ? (g.trustedMinProfit ?? g.minProfit) : g.minProfit;
     const minM = it.trusted ? (g.trustedMinMarginPct ?? g.minMarginPct) : g.minMarginPct;
     const maxBid = Math.max(0, roundDown(Math.min((fixed - minP) / k, (fixed - minM / 100 * revJpy) / k)));

@@ -62,7 +62,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "trustedMinMarginPct": j.get("trusted_min_margin_pct", j["min_margin_pct"]),
             "junkFactor": j.get("junk_price_factor", 1.0),
             "condStep": j.get("condition_step_usd", 0),
-            "activeFactor": j.get("active_price_factor", 0.7), "activeMinCount": j.get("active_min_count", 5),
+            "activeMinCount": j.get("active_min_count", 5),
             "browse": False,  # eBay のキーがあれば main() で True にする
             "autoMaxItems": min(cfg.get("extension", {}).get("auto_max_items", 1000), 1000),  # 一度に読むのは1000件まで
             "browseMaxModels": cfg.get("extension", {}).get("browse_max_models", 400),
@@ -91,7 +91,7 @@ def ebay_keys() -> tuple[str, str] | None:
     return (app, cert) if app and cert else None
 
 
-def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None = None) -> None:
+def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None = None, cfg: dict | None = None) -> None:
     """自作のChrome拡張機能（Manifest V3）を作る。ヤフオクのページで動く.
 
     eBay のキーがあれば、出品中の相場を公式 Browse API で調べる background.js も入れる（通信先は api.ebay.com だけ）。
@@ -134,9 +134,12 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
         manifest["host_permissions"] = ["https://api.ebay.com/*"]
     shutil.copy(HERE / "extension_aucfan.js", folder / "aucfan.js")
     tpl = (HERE / "extension_background.js").read_text(encoding="utf-8")
+    cfg = cfg or ba.load_config(None)
     app, cert = keys or (None, None)
     (folder / "background.js").write_text(
-        tpl.replace("__APP_ID__", json.dumps(app)).replace("__CERT_ID__", json.dumps(cert)), encoding="utf-8")
+        tpl.replace("__APP_ID__", json.dumps(app)).replace("__CERT_ID__", json.dumps(cert))
+        .replace("__FREE_SHIP_USD__", json.dumps(float(cfg["judge"].get("active_free_ship_deduction_usd", 30.0))))
+        .replace("__DEDUCTION_USD__", json.dumps(float(cfg["shipping"].get("deduction_usd", 0)))), encoding="utf-8")
     (folder / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     (folder / "content.js").write_text(js, encoding="utf-8")
     (folder / "icons").mkdir(exist_ok=True)
@@ -162,7 +165,7 @@ def main(argv=None) -> int:
     tpl = (HERE / "extension_template.js").read_text(encoding="utf-8")
     js = tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     js = js.replace("__VERSION__", datetime.now().strftime("%Y.%m.%d.%H%M"))
-    write_chrome_extension(js, args.out, keys)
+    write_chrome_extension(js, args.out, keys, cfg)
     # 相場データだけの data.json: 拡張機能がページを開くたびに読む（作り直しても chrome://extensions の ↻ は不要）。
     # 書き込み途中を読まないよう、別名で書いてから置き換える
     tmp = args.out / "data.json.tmp"

@@ -151,7 +151,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   </div>
   <div class="card" id="cResult"><div class="empty">設定タブでデータを読み込んでください</div></div>
   <p class="s">計算は拡張機能・調べると同じ。売上（商品代）から eBay手数料・円転ロス・梱包費・仕入れ値（税込）を引いて利益。送料$40は買い手から受け取ってそのまま発送に使うので±0（手数料だけは送料込みの額にかかる）。
-  上限価格は 利益3,000円以上かつ利益率10%以上 を残す税込の仕入れ値。</p>
+  上限価格は 利益2,500円以上かつ利益率10%以上 を残す税込の仕入れ値。</p>
 </section>
 
 <!-- ===================================================== おすすめ -->
@@ -168,7 +168,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   <div class="card">
     <h2 id="recTitle">おすすめ</h2>
     <div id="recList"><div class="empty">設定タブでデータを読み込んでください</div></div>
-    <p class="s">並び順: 過去の平均利益 × 販売回数（自分の販売実績・Chatwork実績）。緑の金額＝税込でこの値段以下なら、利益3,000円以上かつ利益率10%以上（国内送料0円で計算）。</p>
+    <p class="s">並び順: 過去の平均利益 × 販売回数（自分の販売実績・Chatwork実績）。緑の金額＝税込でこの値段以下なら、利益2,500円以上かつ利益率10%以上（国内送料0円で計算）。</p>
   </div>
 </section>
 
@@ -330,7 +330,7 @@ function lookup(name, price, junkBox) {
 }
 
 function storeReason(r) {  // 拡張機能（ヤフオク向け）の言葉を店頭向けに
-  return r.replace("基準を満たす入札額なし", "この相場では基準（利益3,000円・10%）を満たす仕入値がない")
+  return r.replace("基準を満たす入札額なし", "この相場では基準（利益2,500円・10%）を満たす仕入値がない")
     .replace("現在価格不明", "値札の価格を入れると判定します").replace("上限超過", "買える上限を超えています");
 }
 
@@ -678,7 +678,7 @@ function calcRender() {
   $("cResult").innerHTML = `
     ${pay == null ? "" : `<div class="s">利益（仕入れ値 ${yen(pay)}（税込）${ex ? `＝${yen(raw)}（税抜）×1.1` : ""}）</div>
     <div class="big ${cls}" style="font-size:30px">${yen(c.profit)}</div>
-    <div class="s">利益率 ${c.margin}%（送料込みの売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? " ・ 基準（利益3,000円・10%）に届かない" : " ・ 基準クリア"}</div>`}
+    <div class="s">利益率 ${c.margin}%（送料込みの売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? " ・ 基準（利益2,500円・10%）に届かない" : " ・ 基準クリア"}</div>`}
     <dl class="kv">
       <dt>上限価格（税込）</dt><dd class="g">${c.maxBid ? yen(c.maxBid) : "買わない"}</dd>
       <dt>（税抜（ストア）なら）</dt><dd>${c.maxBid ? yen(Math.floor(c.maxBid / tm + 1e-6)) : "-"}</dd>
