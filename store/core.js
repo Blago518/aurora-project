@@ -12,6 +12,9 @@ function makeCore(DATA) {
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
   const KANTEI = DATA.kantei.map((r) => ({ ...r, re: r.patterns.map((p) => { try { return new RegExp(p, "i"); } catch (e) { return null; } }) }));
 
+  // 出品者の管理番号（Tj036・Ft644461・NA77401・IT120751・OL4709・R09010 など）。appraise.py の STOCK_CODE と同じ
+  const STOCK_CODE = [/^[A-Z][a-z]\d{3,}$/, /^[A-Za-z]{2,3}\d{4,}$/, /^[A-Za-z]-?\d{5,}$/];
+  const isStockCode = (tok) => STOCK_CODE.some((re) => re.test(tok));
   function titleToQuery(title, maxTokens = 7) {
     let t = title.normalize("NFKC");
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
@@ -41,6 +44,7 @@ function makeCore(DATA) {
       if (!low || NOISE.has(low)) continue;
       if (/^\d+$/.test(low) && ((low.length < 2 && maxTokens <= 7) || low.length >= 4)) continue;
       if (/^no\.?\d+$/.test(low)) continue;
+      if (isStockCode(tok)) continue;  // 出品者の管理番号は eBay の検索語に入れない（appraise.py の STOCK_CODE と同じ）
       const line = low.replace(/^[a-z]\./, "");
       if (C.lensLines[line]) brand = brand || C.lensLines[line];
       if (C.brandsEn[low]) {

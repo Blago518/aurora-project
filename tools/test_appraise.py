@@ -256,7 +256,22 @@ class Variants(unittest.TestCase):
     TITLES = ["CONTAX Carl Zeiss Planar T* 50mm F1.4 AE Japan", "コンタックス Distagon 35mm F1.4 MMJ",
               "Contax Sonnar 135mm F2.8 AEG", "Canon FD 50mm F1.4 S.S.C.", "Canon New FD 50mm F1.4",
               "Nikon Ai-s 50mm f1.8", "Hasselblad Planar CF 80mm F2.8", "Minolta MC Rokkor-PF 58mm F1.4",
-              "Contax Planar 50mm F1.4 From JAPAN"]
+              "Contax Planar 50mm F1.4 From JAPAN",
+              # 出品者の管理番号付き（質みなみ・ストア等）。管理番号は検索語に入れない
+              "Tj036 f.64 エフロクジュウヨン カメラバッグ ショルダーバッグ ブラック 中古",
+              "IT120751 リコー デジタルカメラ GR IV R09010 RICOH 美品",
+              "Ft644461 タムロン レンズ ニコン用 Fマウント SP AF Di 90mm 1:2.8",
+              "NA77401 ソニー ビデオカメラ用 充電器 チャージャー AC-VQ800 sony 中古",
+              "フジ FUJI GW690 III 90mm F3.5", "Nikon SB800 スピードライト"]
+
+    def test_stock_code_removed(self):
+        for t in self.TITLES[9:13]:
+            for code in ("Tj036", "IT120751", "R09010", "Ft644461", "NA77401"):
+                self.assertNotIn(code, ba.title_to_query(t))
+                self.assertNotIn(code, ba.model_key(t)[0])
+        self.assertEqual(ba.model_key(self.TITLES[10])[0], "Ricoh GR IV")
+        self.assertIn("GW690", ba.title_to_query(self.TITLES[13]))  # 機種名は残す
+        self.assertIn("SB800", ba.title_to_query(self.TITLES[14]))
 
     def test_conflict(self):
         q = ba._tokens("Contax Planar 50mm F1.4 AEJ")

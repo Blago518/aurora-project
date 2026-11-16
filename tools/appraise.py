@@ -585,6 +585,11 @@ def detect_flags(title: str) -> list[str]:
     return [name for name, pat in FLAG_RULES if re.search(pat, title, re.I)]
 
 
+# 出品者の管理番号（Tj036・Ft644461・NA77401・IT120751・OL4709・R09010 など）。タイトルの先頭や末尾に付くことが多い。
+# 機種名（GW690・SB800・M645・D850 など）は大文字＋数字3桁以下か、文字が多いので当たらない
+STOCK_CODE = (r"[A-Z][a-z]\d{3,}", r"[A-Za-z]{2,3}\d{4,}", r"[A-Za-z]-?\d{5,}")
+
+
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
     t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
@@ -621,6 +626,8 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
             continue  # 「1円」の1や、シリアル番号っぽい長い数字
         if re.fullmatch(r"no\.?\d+", low):
             continue
+        if any(re.fullmatch(p, tok) for p in STOCK_CODE):
+            continue  # 出品者の管理番号は eBay の検索語に入れない（拡張機能の isStockCode と同じ）
         line = re.sub(r"^[a-z]\.", "", low)  # g.zuiko → zuiko
         if line in LENS_LINES:  # レンズ銘からメーカーを補う（語は残す）
             brand = brand or LENS_LINES[line]
