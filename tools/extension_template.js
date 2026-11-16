@@ -817,7 +817,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     }
     waits.sort((a, b) => (a.i.end < b.i.end ? -1 : 1));
     state.waitIds = new Set(waits.map((w) => w.i.id));
-    const more = !state.done && state.total && state.total > items.length;
+    const more = !state.done && state.total && state.total >= (state.next || 1);
 
     // ［直す］した行: 本来の欄が変わっても、ここに残す（ページを開き直すと本来の欄へ）
     const pinNote = (i) => {
@@ -865,7 +865,7 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="送料を含まない商品代（net）。金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場（送料別）</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th title="今の価格のまま落札できたときの利益">利益（今の価格で落札）</th></tr>`;
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ 入札候補 ${good.length}件${weak.length + waits.length + pinnedWaits.length ? ` ・ 確認してから ${weak.length + waits.length + pinnedWaits.length}件` : ""}${accN ? ` ・ 付属品など ${accN}件は除外` : ""}</span>
-<span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all">続きを鑑定（残り${state.total - items.length}件）</button>` : ""}
+<span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all" title="ヤフオクに負担をかけないよう、一度に読むのは1000件まで">続けて鑑定（次の${Math.min(LOAD_STEP, state.total - ((state.next || 1) - 1))}件・残り${state.total - ((state.next || 1) - 1)}件）</button>` : ""}
 ${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ eBayの$は送料別（計算では送料$${SHIP()}込みに戻して手数料を計算） ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）― 上限額をそのまま入札欄へ</h4>
@@ -965,7 +965,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     if (!btn) return;
     const a = btn.dataset.a, root = document.getElementById("yhk");
     if (a === "min") { root.classList.toggle("min"); save(LS_OPEN, !root.classList.contains("min")); render(); }
-    if (a === "all") loadAll(10000);
+    if (a === "all") loadAll(LOAD_STEP);
     if (a === "open3") {  // ヤフオク・sold・now を今のタブの右に、この順で開く
       let urls = [];
       try { urls = JSON.parse(btn.dataset.urls || "[]"); } catch (e) { urls = []; }
@@ -1025,13 +1025,17 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
   });
 
   // ------------------------------------------------------------------ 全ページの読み込み（100件ずつ、約1秒間隔）
-  async function loadAll(limit) {
+  // 続きのページを count 件分だけ読む（一度に読むのは最大1000件。ヤフオクに負担をかけないため。続きはボタンで）
+  const LOAD_STEP = 1000;
+  async function loadAll(count) {
     if (state.loading) return;
     const seen = new Set(state.items.map((i) => i.id));
     const cur = Number(new URL(location.href).searchParams.get("b") || 1);
-    const last = Math.min(state.total || 0, limit);
+    const from = state.next || 1;
+    const last = Math.min(state.total || 0, from + Math.min(count, LOAD_STEP) - 1);
     try {
-      for (let start = 1; start <= last; start += 100) {
+      for (let start = from; start <= last; start += 100) {
+        state.next = start + 100;
         if (start === cur) continue;  // 今開いているページは読み込み済み
         state.loading = `読み込み中… ${Math.min(start + 99, last)}/${last}件`; render();
         const json = await fetchPage(start);
@@ -1043,7 +1047,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     } catch (e) {
       alert("読み込みに失敗しました: " + e.message);
     } finally {
-      state.loading = ""; state.done = state.items.length >= (state.total || 0) || last >= (state.total || 0); render();
+      state.loading = ""; state.done = (state.next || 1) > (state.total || 0); render();
     }
   }
 
@@ -1066,7 +1070,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     evaluate(state.items, state.fx);
     render();
     setTimeout(() => { if (autoTrustFollowed()) { evaluate(state.items, state.fx); render(); } }, 2500);  // ボタンが後から出るページ用
-    if (!state.done) loadAll(DATA.cfg.autoMaxItems);  // 開いたら自動で上限（config.toml）まで全ページを鑑定
+    if (!state.done) loadAll(Math.min(DATA.cfg.autoMaxItems || LOAD_STEP, LOAD_STEP));  // 開いたら自動で上限（config.toml）まで全ページを鑑定
   }
 
   start();
