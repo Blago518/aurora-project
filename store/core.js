@@ -18,6 +18,7 @@ function makeCore(DATA) {
   function titleToQuery(title, maxTokens = 7) {
     let t = title.normalize("NFKC");
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
+    t = t.replace(/[【\[〔<]\s*[A-Za-z]{0,3}-?\d{2,7}[A-Za-z]?\s*[】\]〕>]/g, " ");  // 【L256】[A-123] 等の括弧つき管理番号（appraise.py と同じ）
     t = t.replace(/\d+円[~〜～]?/g, " ");
     t = t.replace(/\b[wW]\s*\/\s*/g, " ");
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");

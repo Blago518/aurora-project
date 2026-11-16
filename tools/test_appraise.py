@@ -262,7 +262,8 @@ class Variants(unittest.TestCase):
               "IT120751 リコー デジタルカメラ GR IV R09010 RICOH 美品",
               "Ft644461 タムロン レンズ ニコン用 Fマウント SP AF Di 90mm 1:2.8",
               "NA77401 ソニー ビデオカメラ用 充電器 チャージャー AC-VQ800 sony 中古",
-              "フジ FUJI GW690 III 90mm F3.5", "Nikon SB800 スピードライト"]
+              "フジ FUJI GW690 III 90mm F3.5", "Nikon SB800 スピードライト",
+              "1円~【L256】CANON／キヤノン Canon EF100mm F2.8マクロ レンズのみ マクロレンズ 一眼カメラ用レンズ デジタルカメラ"]
 
     def test_stock_code_removed(self):
         for t in self.TITLES[9:13]:
@@ -272,6 +273,8 @@ class Variants(unittest.TestCase):
         self.assertEqual(ba.model_key(self.TITLES[10])[0], "Ricoh GR IV")
         self.assertIn("GW690", ba.title_to_query(self.TITLES[13]))  # 機種名は残す
         self.assertIn("SB800", ba.title_to_query(self.TITLES[14]))
+        self.assertNotIn("L256", ba.title_to_query(self.TITLES[15]))  # 【L256】のような括弧つきの管理番号
+        self.assertNotIn("L256", ba.model_key(self.TITLES[15])[0])
 
     def test_conflict(self):
         q = ba._tokens("Contax Planar 50mm F1.4 AEJ")
