@@ -23,6 +23,7 @@ import csv
 import getpass
 import json
 import platform
+import re
 import statistics
 import subprocess
 import sys
@@ -418,13 +419,18 @@ def cmd_fees(args) -> None:
 
 
 def browse_search(query: str, limit: int = 50) -> list[dict]:
-    """出品中の商品を公式 Browse API で検索（米国サイト、価格+送料の安い順）."""
-    q = urllib.parse.urlencode({"q": query, "limit": limit, "sort": "price",
+    """出品中の商品を公式 Browse API で検索（米国サイト、カメラ・レンズのカテゴリのみ）."""
+    # カテゴリは1つしか指定できない（eBay の制限）。625＝カメラ・写真全体。付属品単体は下の junk で除く
+    q = urllib.parse.urlencode({"q": query, "limit": limit, "category_ids": "625",
                                 "filter": "buyingOptions:{FIXED_PRICE|AUCTION}"})
     d = get_json(f"{API}/buy/browse/v1/item_summary/search?{q}", app_token(),
                  {"X-EBAY-C-MARKETPLACE-ID": "EBAY_US"})
     out = []
+    # 「Hood for 〜」「Cap for 〜」のような付属品単体と説明書だけ除く（「w/ Hood」の本体は残す）
+    junk = re.compile(r"\b(hood|cap|filter|ring|strap|case|grip|parts?)\s+(for|fits)\b|\bmanual\b|\binstructions?\b", re.I)
     for it in d.get("itemSummaries", []):
+        if junk.search(it.get("title", "")):
+            continue
         ship = min((_money(s.get("shippingCost")) for s in it.get("shippingOptions", []) if s.get("shippingCost")),
                    default=0.0)
         out.append({"title": it.get("title", ""), "price_usd": _money(it.get("price")), "shipping_usd": ship,
@@ -442,7 +448,7 @@ def cmd_browse(args) -> None:
     jp = [i for i in items if i["country"] == "JP"]
     print(f"「{args.query}」出品中 {len(items)}件（うち日本から {len(jp)}件）"
           f" 最安 ${min(totals):,.2f} ・ 中央値 ${statistics.median(totals):,.2f}（送料込み）")
-    for i in items[:15]:
+    for i in sorted(items, key=lambda x: x["total_usd"])[:15]:
         print(f"  ${i['total_usd']:>8.2f}  {i['country']:>2}  {i['condition'][:14]:<14} {i['title'][:60]}")
     print("※ 売れた価格（sold）は公式APIでは取れません。sold ボタン・Product Research で確認してください。")
 
