@@ -502,7 +502,9 @@ FLAG_RULES = [
                    r"ポーチ|月号|雑誌|ムック|書籍|写真集|カメラスタイル|\bP-?FILTER\b|magazine|マグニファイ|アイピース|ルーペ|アイカップ|接眼|magnifier|eyepiece|"
                    # 三脚まわりの部品（例: 「Wimberley AP-452 … 400mm F2.8G / 600mm F4G 用プレート」に 600mm F4 の相場が当たっていた）
                    r"ウィンバリー|wimberley|\bkirk\b|カーク|really\s*right\s*stuff|sunwayfoto|アルカ\s*スイス|arca[\s\-]*swiss|"
-                   r"レンズフット|レンズプレート|クイックリリース|lens\s*(?:plate|foot)|replacement\s*foot"),
+                   r"レンズフット|レンズプレート|クイックリリース|lens\s*(?:plate|foot)|replacement\s*foot|"
+                   # 箱だけ（「【元箱のみ】… レンズ用元箱」が入札候補に出ていた）。「元箱付き」は除かない
+                   r"(?:元|外|空|化粧)?箱のみ|空箱|用(?:の)?(?:元|外|化粧)箱|\bbox\s*only\b|\bempty\s*box\b"),
 ]
 
 
