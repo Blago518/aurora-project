@@ -590,7 +590,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       (sg ? `<div class="s">案 ${nd(sg)}（中央値×${DATA.cfg.activeFactor}）</div>` : `<div class="s">件数が少なく案なし</div>`);
   }
   let browsing = false;
-  async function fetchBrowse(labels) {
+  async function fetchBrowse(labels, after) {
     if (!canBrowse() || browsing) return;
     browsing = true;
     let fresh = 0;
@@ -614,7 +614,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       }
     } finally {
       browsing = false;
-      if (fresh) render();  // sold確認待ちの一覧を作り直す
+      if (fresh) (after || render)();  // sold確認待ちの一覧を作り直す
     }
   }
 
@@ -1098,9 +1098,19 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     if (usd != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) usd = Math.round(usd * DATA.cfg.junkFactor * 100) / 100;
     const price = Math.min(...x.prices);  // 表示の中の一番安い額（セール・クーポン後）で計算。条件は商品ページで確認
     const it = { price, ship: 0, tax: false, flags };
+    // 相場データが無ければ、ヤフオクの仮◎○と同じく eBay 出品中（公式API）の最安値と中央値×係数の安い方で仮に計算
+    const [label] = modelKey(x.name);
+    let tent = null;
+    if (usd == null && /\d/.test(label) && label.split(" ").length >= 2) {
+      const b = state.browse[label], sg = suggestUsd(b);
+      if (sg) {
+        usd = flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? Math.round(sg * DATA.cfg.junkFactor) : sg;
+        tent = { label, b, sg };
+      }
+    }
     it.calc = usd != null ? calculate(it, usd, state.fx) : null;
     const [mark, reason] = judge(it);
-    return Object.assign({}, x, { flags, q, refs: m, usd, price, calc: it.calc, mark, reason,
+    return Object.assign({}, x, { flags, q, refs: m, usd, price, calc: it.calc, mark, reason, label, tent,
       acc: flags.some((f) => f === "付属品のみ?" || f === "アダプター等") });
   }
   function kitRender() {
@@ -1112,20 +1122,26 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     }
     const rank = (i) => (i.acc ? 9 : i.mark === "◎" ? 0 : i.mark === "○" ? 1 : i.mark === "要確認" && i.calc ? 2 : i.calc ? 3 : 4);
     const list = all.sort((a, b) => rank(a) - rank(b) || (b.calc && b.calc.profit || 0) - (a.calc && a.calc.profit || 0));
-    const buy = list.filter((i) => rank(i) <= 1).length, buyWeak = list.filter((i) => rank(i) <= 1 && i.refs[0] && i.refs[0].tier >= 2).length;
+    const buy = list.filter((i) => rank(i) <= 1).length, buyWeak = list.filter((i) => rank(i) <= 1 && (i.tent || (i.refs[0] && i.refs[0].tier >= 2))).length;
     const tier = (r) => (r == null ? "" : ["自分の販売実績", "Chatwork実績", "頒布会リスト（出品価格）", "鑑定表（推定）"][r] || "");
     const row = (i) => {
       const c = i.acc ? null : i.calc, r = i.refs[0] || {}, e = ebay(i.q);
       const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";
-      const weak = c && r.tier >= 2;  // 根拠が頒布会リスト・鑑定表 → sold で確認してから
-      return `<tr class="${rank(i) >= 3 ? "kdim" : ""}"><td class="m ${cls}">${i.acc ? "除外" : i.calc ? esc(i.mark) : "－"}</td>
+      const weak = c && (i.tent || r.tier >= 2);  // 根拠が仮・頒布会リスト・鑑定表 → sold で確認してから
+      return `<tr class="${rank(i) >= 3 ? "kdim" : ""}"><td class="m ${cls}">${i.acc ? "除外" : i.calc ? `${i.tent ? '<span class="tmark">仮</span>' : ""}${esc(i.mark)}` : "－"}</td>
 <td><a class="t" href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.name)}</a>${weak && rank(i) <= 1 ? '<span class="flag">sold で確認してから</span>' : ""}${i.flags.filter((f) => !["動作品", "美品"].includes(f)).map((f) => `<span class="flag">${esc(f)}</span>`).join("")}
-<div class="s">${i.acc ? "付属品・アダプターなどのため対象外" : i.calc ? `根拠: ${esc(r.title || "")} [${esc(tier(r.tier))}] ・ ${esc(i.reason || "")}` : "相場データなし（sold で確認）"}</div></td>
+<div class="s">${i.acc ? "付属品・アダプターなどのため対象外"
+      : i.tent ? `仮: 相場データなし → eBay出品中（送料別）最安${nd(i.tent.b.min || 0)}・中央値${nd(i.tent.b.med)}から案 ${nd(i.tent.sg)} で計算（sold未確認） ・ ${esc(i.reason || "")}`
+      : i.calc ? `根拠: ${esc(r.title || "")} [${esc(tier(r.tier))}] ・ ${esc(i.reason || "")}`
+      : canBrowse() && /\d/.test(i.label) && i.label.split(" ").length >= 2 && !state.browse[i.label] ? "相場データなし → eBay出品中の価格を調べています…"
+      : "相場データなし（sold で確認。eBay出品中も件数が少ないか、機種名が読み取れません）"}</div></td>
 <td class="n">${i.usd != null && !i.acc ? `${nd(i.usd)}<div class="s">送料別</div>` : "-"}<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div></td>
 <td class="n">${yen(i.price)}${i.prices.length > 1 ? `<div class="s">表示: ${i.prices.map((v) => yen(v)).join(" / ")}</div>` : ""}</td>
 <td class="n"><b>${yen(c && c.maxBid)}</b>${c ? '<div class="s">この値段（税込）以下なら買い</div>' : ""}</td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
+    const need = [...new Set(list.filter((i) => !i.acc && !i.refs.length && !i.tent && /\d/.test(i.label) && i.label.split(" ").length >= 2 && !state.browse[i.label]).map((i) => i.label))];
+    if (need.length && canBrowse()) setTimeout(() => fetchBrowse(need.slice(0, 40), kitRender), 0);
     root.innerHTML = `<div class="hd"><b>キタムラ鑑定</b><span>このページの商品 ${list.length}件 ・ 買い候補 ${buy}件${buyWeak ? `（うち sold で確認 ${buyWeak}件）` : ""}</span><span class="sp"></span>
 <button data-k="re">読み直す</button><button data-k="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">画面に出ている商品だけを読みます（キタムラへの通信はしません）。値札は税込・国内送料0円で計算。表示に複数の価格があるときは一番安い額で計算しています。クーポンの条件は商品ページで確認してください。基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 為替 ${state.fx}円 ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
