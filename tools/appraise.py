@@ -585,15 +585,41 @@ def detect_flags(title: str) -> list[str]:
     return [name for name, pat in FLAG_RULES if re.search(pat, title, re.I)]
 
 
-# ストアの管理番号（機種名ではない）。機種名（D7100・RX100・SR505・A6000・K1000 など）を消さない形だけ:
-#   英字1〜3＋数字6桁以上（B610263・A1346226）／英字2〜3＋数字4桁以上（AB0066・IC0195・OL4709）／
-#   英字＋0で始まる数字（G062a）／数字＋英字−数字（7761E-3）／英字−数字3桁以上（C-2436）
-STORE_CODE_RE = re.compile(r"[a-z]{1,3}\d{6,}[a-z]?|[a-z]{2,3}\d{4,}|[a-z]{1,3}0\d{2,}[a-z]?|\d{3,}[a-z]{1,2}-\d{1,3}|[a-z]{1,2}-\d{3,}")
+# ---- 出品者の管理番号（Tj036・Ft644461・NA77401・IT120751・【L256】・OL4709 など）を検索語から外す
+# 型番（M645・D850・GW690・SB800・SX-70 など）と形が似ているので、形だけでは決めない:
+#   1. 相場データ（売れた実績の eBay タイトル・鑑定表）に出てくる語は型番 → 絶対に外さない
+#   2. 型番にはまず無い形（Tj036 のような大文字＋小文字＋数字、英字1〜3文字＋数字5桁以上）→ 外す
+#   3. 型番にもある形（【L256】のような括弧の中だけの英数字、OL4709 のような英字2〜3文字＋数字4桁）
+#      → メーカー名より前にあるときだけ外す（管理番号はタイトルの頭、型番はメーカー名の後ろに書かれる）
+# 拡張機能の isStockCode と同じ規則（tools/test_appraise.py で一致を確認）
+STOCK_CODE_STRONG = (r"[A-Z][a-z]\d{3,}", r"[A-Za-z]{1,3}-?\d{5,}")
+STOCK_CODE_WEAK = (r"[A-Za-z]{2,3}\d{4}",)
+BRACKET_CODE_RE = r"[【\[〔<]\s*([A-Za-z]{0,3}-?\d{2,7}[A-Za-z]?)\s*[】\]〕>]"
+KNOWN_MODEL_TOKENS: set[str] = set()
+
+
+def set_known_models(titles) -> None:
+    """相場データのタイトルに出てくる英数字の語（型番）を覚える。ここにある語は管理番号として外さない."""
+    KNOWN_MODEL_TOKENS.clear()
+    for t in titles:
+        for tok in re.findall(r"[A-Za-z0-9][A-Za-z0-9\-]*", unicodedata.normalize("NFKC", str(t or ""))):
+            low = tok.lower().replace("-", "")
+            if re.search(r"\d", low) and re.search(r"[a-z]", low):
+                KNOWN_MODEL_TOKENS.add(low)
+
+
+def is_stock_code(tok: str, before_brand: bool, bracketed: bool) -> bool:
+    if tok.lower().replace("-", "") in KNOWN_MODEL_TOKENS:
+        return False
+    if any(re.fullmatch(p, tok) for p in STOCK_CODE_STRONG):
+        return True
+    return before_brand and (bracketed or any(re.fullmatch(p, tok) for p in STOCK_CODE_WEAK))
 
 
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
     t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
+    t = re.sub(BRACKET_CODE_RE, lambda m: " \x01" + m.group(1) + " ", t)  # 【L256】→ 管理番号の候補の印（\x01）を付ける
     t = re.sub(r"\d+円[~〜～]?", " ", t)  # 「1円～」
     t = re.sub(r"\b[wW]\s*/\s*", " ", t)  # w/case（with）
     t = re.sub(r"(\d)\s*(mm|㎜)\s*([fF]\s*/?\s*\d)", r"\1mm \3", t)  # 75-150mmF4 → 75-150mm F4
@@ -614,11 +640,17 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
         if ja in t:
             brand = brand or en
             all_brands.append(en)
-            t = t.replace(ja, " ")
+            t = t.replace(ja, " \x02 ")  # \x02 = メーカー名があった位置（管理番号の判定に使う）
     for ja, en in WORDS_JA:
         t = t.replace(ja, f" {en} ")
     tokens: list[str] = []
-    for tok in re.findall(r"[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*", t):
+    found = list(re.finditer(r"[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*", t))
+    brand_at = [t.find("\x02")] if "\x02" in t else []
+    brand_at += [m.start() for m in found if m.group().lower().strip(".-") in BRANDS_EN][:1]
+    # メーカー名が無いタイトルは「先頭の語」だけを頭とみなす（Polaroid 【SX-70】 の SX-70 を外さない）
+    first_brand = min(brand_at) if brand_at else (found[0].end() if found else 0)
+    for m in found:
+        tok = m.group()
         low = tok.lower().strip(".-")
         if not low or low in NOISE_TOKENS:
             continue
@@ -627,8 +659,8 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
             continue  # 「1円」の1や、シリアル番号っぽい長い数字
         if re.fullmatch(r"no\.?\d+", low):
             continue
-        if STORE_CODE_RE.fullmatch(low):  # ストアの管理番号（B610263・AB0066・G062a・7761E-3 など）
-            continue
+        if is_stock_code(tok, m.start() < first_brand, m.start() > 0 and t[m.start() - 1] == "\x01"):
+            continue  # 出品者の管理番号は eBay の検索語に入れない
         line = re.sub(r"^[a-z]\.", "", low)  # g.zuiko → zuiko
         if line in LENS_LINES:  # レンズ銘からメーカーを補う（語は残す）
             brand = brand or LENS_LINES[line]
@@ -1274,6 +1306,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
             delay: float, kantei: list[dict] | None = None) -> None:
     memo = [s for s in sales if is_memo(s)]
     others = [s for s in sales if not is_memo(s)]
+    set_known_models([s.get("title") for s in sales] + [k.get("title") for k in (kantei or [])])
     for i, item in enumerate(items, 1):
         if not item.prefilled:
             print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)

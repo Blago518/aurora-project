@@ -256,7 +256,41 @@ class Variants(unittest.TestCase):
     TITLES = ["CONTAX Carl Zeiss Planar T* 50mm F1.4 AE Japan", "コンタックス Distagon 35mm F1.4 MMJ",
               "Contax Sonnar 135mm F2.8 AEG", "Canon FD 50mm F1.4 S.S.C.", "Canon New FD 50mm F1.4",
               "Nikon Ai-s 50mm f1.8", "Hasselblad Planar CF 80mm F2.8", "Minolta MC Rokkor-PF 58mm F1.4",
-              "Contax Planar 50mm F1.4 From JAPAN"]
+              "Contax Planar 50mm F1.4 From JAPAN",
+              # 出品者の管理番号付き（質みなみ・ストア等）。管理番号は検索語に入れない
+              "Tj036 f.64 エフロクジュウヨン カメラバッグ ショルダーバッグ ブラック 中古",
+              "IT120751 リコー デジタルカメラ GR IV R09010 RICOH 美品",
+              "Ft644461 タムロン レンズ ニコン用 Fマウント SP AF Di 90mm 1:2.8",
+              "NA77401 ソニー ビデオカメラ用 充電器 チャージャー AC-VQ800 sony 中古",
+              "フジ FUJI GW690 III 90mm F3.5", "Nikon SB800 スピードライト",
+              "Polaroid 【SX-70】 ランドカメラ", "マミヤ Mamiya 【M645】 1000S ボディ",
+              "1円~【L256】CANON／キヤノン Canon EF100mm F2.8マクロ レンズのみ マクロレンズ 一眼カメラ用レンズ デジタルカメラ"]
+
+    def test_stock_code_keeps_model_numbers(self):
+        """型番と同じ形でも、メーカー名の後ろ・相場データにある語は外さない."""
+        ba.set_known_models([])
+        self.assertIn("M645", ba.title_to_query("マミヤ Mamiya 【M645】 1000S ボディ"))  # メーカー名の後ろ
+        self.assertIn("D850", ba.title_to_query("Nikon [D850] ボディ"))
+        self.assertNotIn("M645", ba.title_to_query("【M645】マミヤ 1000S"))  # 頭にあり、相場データに無い → 管理番号扱い
+        self.assertIn("SX-70", ba.title_to_query("Polaroid 【SX-70】 ランドカメラ"))  # メーカー名が無くても頭でなければ残す
+        self.assertNotIn("L256", ba.title_to_query("【L256】 EF100mm F2.8 マクロ"))  # メーカー名が無く頭にある
+        ba.set_known_models(["Mamiya M645 1000S 80mm F2.8"])
+        self.assertIn("M645", ba.title_to_query("【M645】マミヤ 1000S"))  # 相場データにある型番は外さない
+        self.assertIn("OL4709", ba.title_to_query("Olympus OL4709"))  # 4桁はメーカー名より前のときだけ外す
+        ba.set_known_models([])
+        self.assertNotIn("OL4709", ba.title_to_query("OL4709 オリンパス OM-1"))
+
+    def test_stock_code_removed(self):
+        ba.set_known_models([])
+        for t in self.TITLES[9:13]:
+            for code in ("Tj036", "IT120751", "R09010", "Ft644461", "NA77401"):
+                self.assertNotIn(code, ba.title_to_query(t))
+                self.assertNotIn(code, ba.model_key(t)[0])
+        self.assertEqual(ba.model_key(self.TITLES[10])[0], "Ricoh GR IV")
+        self.assertIn("GW690", ba.title_to_query(self.TITLES[13]))  # 機種名は残す
+        self.assertIn("SB800", ba.title_to_query(self.TITLES[14]))
+        self.assertNotIn("L256", ba.title_to_query(self.TITLES[17]))  # 【L256】のような括弧つきの管理番号
+        self.assertNotIn("L256", ba.model_key(self.TITLES[17])[0])
 
     def test_conflict(self):
         q = ba._tokens("Contax Planar 50mm F1.4 AEJ")
@@ -279,8 +313,9 @@ class Variants(unittest.TestCase):
         import build_extension as bu
         if not shutil.which("node"):
             self.skipTest("node がありません")
-        py = [ba.ebay_search_query(ba.title_to_query(t), t) for t in self.TITLES]
         data = bu.build_data(CFG, 150.0)
+        ba.set_known_models([r["title"] for r in data["refs"] + data["kantei"]])  # 拡張機能と同じ相場データで比べる
+        py = [ba.ebay_search_query(ba.title_to_query(t), t) for t in self.TITLES]
         tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as d:
             js = Path(d) / "u.js"

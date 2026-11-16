@@ -73,7 +73,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS),
             "premium": sorted(ba.PREMIUM_VARIANTS), "accessoryRe": ba.ACCESSORY_RE.pattern,
             "flagRules": [[n, p] for n, p in ba.FLAG_RULES],
-            "storeCodeRe": ba.STORE_CODE_RE.pattern, "condRules": [[p, o] for p, o in ba.COND_RULES], "condRank": ba.COND_RANK,
+            "condRules": [[p, o] for p, o in ba.COND_RULES], "condRank": ba.COND_RANK,
             "listingCondRules": [[p, r] for p, r in ba.LISTING_COND_RULES], "listingDefaultRank": ba.LISTING_DEFAULT_RANK,
             "variantNormalize": [[p, r] for p, r in ba.VARIANT_NORMALIZE], "variantGroups": ba.VARIANT_GROUPS,
             "increments": [[0 if math.isinf(lim) else lim, step] for lim, step in ba.YAHOO_INCREMENTS],
