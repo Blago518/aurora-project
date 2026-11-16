@@ -44,7 +44,7 @@ EXTRA_SHEETS = {
     "ebay売上": ("ebay_report.csv", ["Custom label", "Transaction creation date", "Type", "Order number", "Net amount",
                                   "Payout currency", "Quantity", "Item subtotal", "Shipping and handling",
                                   "Final Value Fee - fixed", "Final Value Fee - variable", "International fee",
-                                  "Gross transaction amount", "Transaction currency", "Description"]),
+                                  "Gross transaction amount", "Transaction currency", "Exchange rate", "Description"]),
     "J管理": ("junk.csv", ["No.", "仕入(円)", "実販売(円)", "売上−仕入(円)", "購入日", "販売日", "保管", "ヤフオク出品"]),
     "出品情報": ("item_types.csv", ["管理番号", "商品種別"]),
 }
