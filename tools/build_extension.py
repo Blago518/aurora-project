@@ -110,7 +110,8 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
         "action": {"default_title": "Aurora 仕入れ鑑定", "default_icon": {str(n): f"icons/icon{n}.png" for n in (16, 32)}},
         "content_scripts": [{
             "matches": ["https://auctions.yahoo.co.jp/search/*", "https://auctions.yahoo.co.jp/seller/*",
-                        "https://auctions.yahoo.co.jp/category/*"],
+                        "https://auctions.yahoo.co.jp/category/*",
+                        "https://auctions.yahoo.co.jp/follow/*"],  # フォロー中の一覧 → 安心ストアにまとめて登録
             "js": ["content.js"],
             "run_at": "document_idle",
         }, {

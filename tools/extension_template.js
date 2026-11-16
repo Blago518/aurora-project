@@ -6,6 +6,7 @@
 // @match        https://auctions.yahoo.co.jp/search/*
 // @match        https://auctions.yahoo.co.jp/seller/*
 // @match        https://auctions.yahoo.co.jp/category/*
+// @match        https://auctions.yahoo.co.jp/follow/*
 // @run-at       document-idle
 // @grant        none
 // @noframes
@@ -362,6 +363,43 @@
 
   function setTrusted(id, name, on) {
     const t = load(LS_TRUST, {}); t[id] = { name, on }; save(LS_TRUST, t);
+    saveTrustedFile();
+  }
+  // ヤフオクの「フォロー中」の一覧（/follow/list）: 並んでいる出品者（/seller/<id> へのリンク）をまとめて安心ストアに。
+  // 自分で外したストアは戻さない。登録した名前は画面右上に出す（違うものが入っていたらストアのページで外せる）
+  function trustFollowList() {
+    const t = load(LS_TRUST, {}), have = trustedIds(), found = new Map();
+    for (const a of document.querySelectorAll('a[href*="/seller/"]')) {
+      if (a.closest("#yhk, #yhk-follow")) continue;
+      const m = (a.getAttribute("href") || "").match(/\/seller\/([A-Za-z0-9_\-]+)/);
+      if (!m) continue;
+      const name = (a.textContent || "").replace(/\s+/g, " ").trim() || (a.querySelector("img") || {}).alt || "";
+      if (!found.has(m[1]) || (!found.get(m[1]) && name)) found.set(m[1], name.slice(0, 60));
+    }
+    const added = state.followAdded || (state.followAdded = new Map());  // このページで新しく登録した分（何回見直しても数え直さない）
+    let n = 0, fresh = false;
+    for (const [id, name] of found) {
+      if (t[id] && t[id].on === false) continue;  // 自分で外したストア
+      n++;
+      if (!have.has(id)) { added.set(id, name || id); fresh = true; }
+      t[id] = { name: name || (t[id] && t[id].name) || "", on: true };
+    }
+    if (!n) return 0;
+    save(LS_TRUST, t);
+    if (fresh) saveTrustedFile();
+    let b = document.getElementById("yhk-follow");
+    if (!b) {
+      b = document.createElement("div"); b.id = "yhk-follow";
+      b.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;max-width:420px;max-height:60vh;overflow:auto;padding:14px 16px;" +
+        "border-radius:12px;background:#1f5c3a;color:#fff;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;box-shadow:0 8px 30px #0005";
+      document.body.appendChild(b);
+    }
+    b.innerHTML = `<b>Aurora</b>: このページの出品者 ${n}件を★安心ストアにしました（新しく ${added.size}件・全部で ${trustedIds().size}件）。` +
+      `次のページがあれば開いてください。` +
+      (added.size ? `<div style="font-size:12px;margin-top:6px;opacity:.9">新しく登録: ${[...added.values()].map(esc).join("・")}</div>` : "");
+    return n;
+  }
+  function saveTrustedFile() {
     const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
     const csv = "user_id,name,on\n" + [...trustedList()].map(([i, n]) => `${q(i)},${q(n)},1`).join("\n");
     if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id)  // Mac の data/trusted_sellers.csv へ（update_all.py が取り込む）
@@ -1011,6 +1049,11 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // ------------------------------------------------------------------ 起動
   function start() {
+    if (location.pathname.startsWith("/follow/list")) {  // フォロー中の一覧: 出品者をまとめて安心ストアに（一覧は後から描かれるので少し待つ）
+      let n = 0;
+      for (const ms of [800, 2500, 5000]) setTimeout(() => { n = Math.max(n, trustFollowList()); }, ms);
+      return;
+    }
     const el = document.getElementById("__NEXT_DATA__");
     if (!el) return;
     const json = JSON.parse(el.textContent);
