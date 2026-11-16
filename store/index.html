@@ -148,11 +148,9 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     </div>
     <label for="cBid">仕入れ値（円）<span class="s">　店舗は値札・ヤフオクは落札額</span></label>
     <input id="cBid" inputmode="numeric" placeholder="空欄なら上限価格だけ出します" autocomplete="off">
-    <label for="cShip">国内送料（円）<span class="s">　ヤフオクは送料を入力</span></label>
-    <input id="cShip" inputmode="numeric" placeholder="空欄＝0円（店舗）" autocomplete="off">
   </div>
   <div class="card" id="cResult"><div class="empty">設定タブでデータを読み込んでください</div></div>
-  <p class="s">計算は拡張機能・調べると同じ。売上（商品代）から eBay手数料・円転ロス・梱包費・国内送料・仕入れ値（税込）を引いて利益。送料$40は買い手から受け取ってそのまま発送に使うので±0（手数料だけは送料込みの額にかかる）。
+  <p class="s">計算は拡張機能・調べると同じ。売上（商品代）から eBay手数料・円転ロス・梱包費・仕入れ値（税込）を引いて利益。送料$40は買い手から受け取ってそのまま発送に使うので±0（手数料だけは送料込みの額にかかる）。
   上限価格は 利益3,000円以上かつ利益率10%以上 を残す税込の仕入れ値。</p>
 </section>
 
@@ -238,7 +236,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.16.8";
+  var APP_VERSION = "2026.11.16.9";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -662,7 +660,7 @@ function calcRender() {
   for (const c of $("cTax").children) c.setAttribute("aria-pressed", String(c.dataset.tax === calcSt.tax));
   if (!DATA) return;
   const g = DATA.cfg, fx = g.fx, item = num($("cItem").value), raw = num($("cBid").value);
-  const ship = num($("cShip").value) ?? 0, tm = 1 + g.storeTaxPct / 100, ex = calcSt.tax === "ex";
+  const ship = 0, tm = 1 + g.storeTaxPct / 100, ex = calcSt.tax === "ex";  // 国内送料は見ない（ユーザー指定 2026-11-16）
   if (item == null) { $("cResult").innerHTML = '<div class="empty">eBay商品代（送料別の$）を入れてください</div>'; return; }
   const usd = item + g.deductionUsd;
   const pay = raw == null ? null : Math.round(ex ? raw * tm : raw);  // 払う額（税込）
@@ -689,13 +687,12 @@ function calcRender() {
       <dt>円転ロス（${g.convLossPct}%）</dt><dd>−${yen(loss)}</dd>
       <dt>手取り（円）</dt><dd>${yen(take)}</dd>
       <dt>梱包費</dt><dd>−${yen(g.packing)}</dd>
-      <dt>国内送料${num($("cShip").value) == null ? "（空欄→0円）" : ""}</dt><dd>−${yen(c.dom)}</dd>
       ${pay == null ? "" : `<dt>仕入れ値（税込）</dt><dd>−${yen(pay)}</dd>
       <dt>損益分岐の商品代（送料別）</dt><dd>$${be}</dd>`}
     </dl>
     <div class="note">送料$${g.deductionUsd}は計算済みです（買い手から受け取り、そのまま発送に使うので±0。余裕ではありません）。送料分の手数料も上の eBay手数料に入っています。</div>`;
 }
-for (const id of ["cItem", "cBid", "cShip"]) $(id).addEventListener("input", calcRender);
+for (const id of ["cItem", "cBid"]) $(id).addEventListener("input", calcRender);
 $("cTax").onclick = (e) => { const k = e.target.closest("[data-tax]"); if (!k) return; calcSt.tax = k.dataset.tax; lsSet(LS_CALC, { tax: calcSt.tax }); calcRender(); };
 
 // ------------------------------------------------------------ お店（店舗仕入れの巡回リスト）
