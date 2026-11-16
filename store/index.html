@@ -148,11 +148,11 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     </div>
     <label for="cBid">仕入れ値（円）<span class="s">　店舗は値札・ヤフオクは落札額</span></label>
     <input id="cBid" inputmode="numeric" placeholder="空欄なら上限価格だけ出します" autocomplete="off">
-    <label for="cShip">送料（円）<span class="s">　ヤフオクは送料を入力</span></label>
+    <label for="cShip">国内送料（円）<span class="s">　ヤフオクは送料を入力</span></label>
     <input id="cShip" inputmode="numeric" placeholder="空欄＝0円（店舗）" autocomplete="off">
   </div>
   <div class="card" id="cResult"><div class="empty">設定タブでデータを読み込んでください</div></div>
-  <p class="s">計算は拡張機能・調べると同じ: 売上＝(商品代＋買い手が払う送料$40)×為替（eBayの手数料は送料込みの額にかかるため）。そこから eBay手数料・円転ロス・発送費の実費（見積もり$40）・梱包費・送料・支払う額（税込）を引いて利益。送料の受け取りと発送費はほぼ相殺され、残るのは送料分の手数料だけ。
+  <p class="s">計算は拡張機能・調べると同じ: 売上＝(商品代＋送料$40)×為替（eBayの手数料は送料込みの額にかかるため）。そこから eBay手数料・円転ロス・送料$40・梱包費・国内送料・仕入れ値（税込）を引いて利益。送料$40は売上に足して経費で引くので相殺され、残るのは送料分の手数料だけ。
   上限価格は 利益3,000円以上かつ利益率10%以上 を残す税込の仕入れ値。</p>
 </section>
 
@@ -238,7 +238,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.16.6";
+  var APP_VERSION = "2026.11.16.7";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -683,13 +683,13 @@ function calcRender() {
     <dl class="kv">
       <dt>上限価格（税込）</dt><dd class="g">${c.maxBid ? yen(c.maxBid) : "買わない"}</dd>
       <dt>（税抜（ストア）なら）</dt><dd>${c.maxBid ? yen(Math.floor(c.maxBid / tm + 1e-6)) : "-"}</dd>
-      <dt>売上（商品代$${item}＋買い手の送料$${g.deductionUsd}＝$${usd.toFixed(2)}、×${fx}円）</dt><dd>${yen(rev)}</dd>
+      <dt>売上（商品代$${item}＋送料$${g.deductionUsd}＝$${usd.toFixed(2)}、×${fx}円）</dt><dd>${yen(rev)}</dd>
       <dt>eBay手数料（${g.feePct}%＋$${g.perOrderUsd}）</dt><dd>−${yen(c.fees)}</dd>
       <dt>円転ロス（${g.convLossPct}%）</dt><dd>−${yen(loss)}</dd>
       <dt>入金（円）</dt><dd>${yen(c.net)}</dd>
-      <dt>発送費（実費の見積もり $${g.deductionUsd}・CPaSS＋オークレボ）</dt><dd>−${yen(c.intl)}</dd>
+      <dt>送料（$${g.deductionUsd}）</dt><dd>−${yen(c.intl)}</dd>
       <dt>梱包費</dt><dd>−${yen(g.packing)}</dd>
-      <dt>送料${num($("cShip").value) == null ? "（空欄→0円）" : ""}</dt><dd>−${yen(c.dom)}</dd>
+      <dt>国内送料${num($("cShip").value) == null ? "（空欄→0円）" : ""}</dt><dd>−${yen(c.dom)}</dd>
       ${pay == null ? "" : `<dt>仕入れ値（税込）</dt><dd>−${yen(pay)}</dd>
       <dt>損益分岐の商品代（送料別）</dt><dd>$${be}</dd>`}
     </dl>`;
