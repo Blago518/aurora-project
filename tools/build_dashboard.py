@@ -411,6 +411,10 @@ def report_to_api(rows: list[dict]) -> tuple[list[dict], dict]:
         if typ == "Order" and day:
             gross = _num(r.get("Gross transaction amount")) or 0.0
             cur = (r.get("Transaction currency") or "USD").strip() or "USD"
+            rate = _num(r.get("Exchange rate")) if valid(r.get("Exchange rate")) else None
+            if cur not in ("USD", "--", "") and rate:  # 豪ドル・ポンド建ての注文は、レポートの換算レートでドルに直す
+                refund_gross[oid] *= rate
+                gross, cur = round(gross * rate, 2), "USD"
             orders.append({"date": day.isoformat(), "order_id": oid, "title": "",
                            "sku": r["Custom label"] if valid(r.get("Custom label")) else "",
                            "currency": "USD" if cur in ("--", "") else cur, "item_price": gross, "shipping": 0,

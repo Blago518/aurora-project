@@ -267,6 +267,14 @@ class TestDashboard(unittest.TestCase):
         d = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14), api=api)
         self.assertEqual((d["source"], d["kpi"]["count"], d["source_name"]), ("api", 1, "ebay売上シート"))
 
+    def test_report_non_usd_uses_exchange_rate(self):
+        rows = [{"Custom label": "N2", "Transaction creation date": "14-Nov-26", "Type": "Order", "Order number": "O-9",
+                 "Net amount": "599.63", "Payout currency": "USD", "Gross transaction amount": "1,070.32",
+                 "Transaction currency": "AUD", "Exchange rate": "0.65714", "Description": "--"}]
+        orders, fin = bd.report_to_api(rows)
+        self.assertEqual((orders[0]["currency"], orders[0]["item_price"]), ("USD", 703.35))  # 1,070.32 豪ドル → ドル
+        self.assertAlmostEqual(fin["per"]["O-9"]["net"], 599.63)
+
     def test_ebay_date(self):
         self.assertEqual(bd.parse_date("17-Aug-26"), date(2026, 8, 17))
 
