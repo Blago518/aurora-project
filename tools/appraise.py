@@ -585,6 +585,12 @@ def detect_flags(title: str) -> list[str]:
     return [name for name, pat in FLAG_RULES if re.search(pat, title, re.I)]
 
 
+# ストアの管理番号（機種名ではない）。機種名（D7100・RX100・SR505・A6000・K1000 など）を消さない形だけ:
+#   英字1〜3＋数字6桁以上（B610263・A1346226）／英字2〜3＋数字4桁以上（AB0066・IC0195・OL4709）／
+#   英字＋0で始まる数字（G062a）／数字＋英字−数字（7761E-3）／英字−数字3桁以上（C-2436）
+STORE_CODE_RE = re.compile(r"[a-z]{1,3}\d{6,}[a-z]?|[a-z]{2,3}\d{4,}|[a-z]{1,3}0\d{2,}[a-z]?|\d{3,}[a-z]{1,2}-\d{1,3}|[a-z]{1,2}-\d{3,}")
+
+
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
     t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
@@ -620,6 +626,8 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
         if re.fullmatch(r"\d+", low) and ((len(low) < 2 and max_tokens <= 7) or len(low) >= 4):
             continue  # 「1円」の1や、シリアル番号っぽい長い数字
         if re.fullmatch(r"no\.?\d+", low):
+            continue
+        if STORE_CODE_RE.fullmatch(low):  # ストアの管理番号（B610263・AB0066・G062a・7761E-3 など）
             continue
         line = re.sub(r"^[a-z]\.", "", low)  # g.zuiko → zuiko
         if line in LENS_LINES:  # レンズ銘からメーカーを補う（語は残す）

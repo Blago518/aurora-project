@@ -234,5 +234,27 @@ class ModelKeyGeneration(unittest.TestCase):
         self.assertEqual(out, ["Sony α7 II", "Nikon F3 Limited", "Nikon FM2"])
 
 
+class StoreCodes(unittest.TestCase):
+    """eBay 検索語からストアの管理番号を外す。機種名は消さない（Python と JS で同じ）."""
+    CASES = {"Panasonic パナソニック LUMIX DC-TZ99 ルミックス コンパクトデジタルカメラ ¶ 7761E-3": "Panasonic DC-TZ99",
+             "B610263☆☆良品★ニコン AF 80-200mm F2.8 ED": "Nikon AF 80-200mm F2.8 ED",
+             "G062a【中古美品】Nikon ニコン NIKKOR Z MC 105mm f2.8": "Nikon NIKKOR Z MC 105mm f2.8",
+             "AB0066 YASHICA LENS 35mm 1：2.8 A1341823": "Yashica LENS 35mm F2.8",
+             "ニコン D7100 ボディ": "Nikon D7100", "ソニー RX100 M3": "Sony RX100 M3", "ミノルタ SR505": "Minolta SR505",
+             "ペンタックス K1000": "Pentax K1000"}
+
+    def test_python(self):
+        for t, q in self.CASES.items():
+            self.assertEqual(ba.title_to_query(t), q, t)
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(list(self.CASES), ensure_ascii=False)}.map(t=>m.titleToQuery(t))))")
+        self.assertEqual(out, list(self.CASES.values()))
+
+
 if __name__ == "__main__":
     unittest.main()

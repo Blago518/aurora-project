@@ -42,6 +42,7 @@
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
   const KANTEI = DATA.kantei.map((r) => ({ ...r, re: r.patterns.map((p) => { try { return new RegExp(p, "i"); } catch (e) { return null; } }) }));
 
+  const STORE_CODE = new RegExp("^(?:" + C.storeCodeRe + ")$");
   function titleToQuery(title, maxTokens = 7) {
     let t = title.normalize("NFKC");
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
@@ -71,6 +72,7 @@
       if (!low || NOISE.has(low)) continue;
       if (/^\d+$/.test(low) && ((low.length < 2 && maxTokens <= 7) || low.length >= 4)) continue;
       if (/^no\.?\d+$/.test(low)) continue;
+      if (STORE_CODE.test(low)) continue;  // ストアの管理番号（appraise.py の STORE_CODE_RE と同じ）
       const line = low.replace(/^[a-z]\./, "");
       if (C.lensLines[line]) brand = brand || C.lensLines[line];
       if (C.brandsEn[low]) {
