@@ -283,3 +283,23 @@ class DecisionLog(unittest.TestCase):
             self.assertEqual(ls.append_decisions(csv_text, md), 1)
             self.assertEqual(ls.append_decisions(csv_text, md), 0)  # 2回目は足さない
             self.assertIn("- 2026-11-17 sold も送料無料なら−$30（Claude が記録）", md.read_text(encoding="utf-8"))
+
+
+class BidUpload(unittest.TestCase):
+    """data/bid_log.csv → 「入札結果」シート（必要な列だけ送る）."""
+
+    def test_upload(self):
+        from unittest import mock
+        import ledger_sync as ls
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "bid_log.csv"
+            log.write_text("auction_id,title,max_bid,final_price,result,secret\nx1,Nikon F3,10000,12000,負け,zzz\n",
+                           encoding="utf-8")
+            sent = []
+            with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
+                n = ls.upload_bids(log=log, post=lambda body: sent.append(body) or "OK:1")
+            self.assertEqual(n, 1)
+            self.assertIn("x1,Nikon F3,10000,12000,負け", sent[0])
+            self.assertNotIn("zzz", sent[0])
+            with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
+                self.assertIsNone(ls.upload_bids(log=log, post=lambda body: "NO_SHEET:入札結果"))  # 古いスクリプト

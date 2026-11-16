@@ -53,6 +53,10 @@ BACKUP = DATA / "backup"
 # Claude更新版の「意思決定ログ」シート（Claude がクラウドから書く。列: 日付・決めたこと）→ knowledge/意思決定ログ.md の末尾に追記
 DECISION_SHEET = "意思決定ログ"
 DECISION_MD = ROOT / "knowledge" / "意思決定ログ.md"
+# 入札の記録（data/bid_log.csv）→ Claude更新版の「入札結果」シート（ゼニガメが負け方を学ぶ）。金額は自分の入札上限と公開の最終価格だけ
+BID_SHEET = "入札結果"
+BID_COLUMNS = ["auction_id", "title", "max_bid", "final_price", "result", "end", "usd", "profit_at_max", "profit_final",
+               "trusted", "tentative", "store_tax", "ship", "bid_at"]
 SERVICE = "aurora-ledger"
 SHEET = "古物台帳"
 
@@ -72,7 +76,8 @@ const EXTRA = __EXTRA__;  // シート名 → Mac が使う列
 const PAIRS = [  // Claude更新版の列（見出しの先頭）← 元の古物台帳の列（見出しの先頭）
   ['管理番号', 'No.'], ['購入日', '購入日'], ['品目', '品目'], ['数量', '数量'], ['仕入元', 'アカウント名'],
   ['仕入合計', '仕入金額'], ['仕入URL', 'ヤフオクURL'], ['販売日', '販売日'], ['販売金額', '販売金額'], ['備考', '備考']];
-const OWN = ['意思決定ログ'];  // Claude更新版にあるシートをそのまま返す（Claude が書く。Mac が knowledge/ に追記する）
+const OWN = ['意思決定ログ', '入札結果'];
+const PUT = ['入札結果'];  // Mac から書き込んでよいシート（Claude更新版の中だけ。中身を毎回まるごと置き換える）  // Claude更新版にあるシートをそのまま返す（Claude が書く。Mac が knowledge/ に追記する）
 const DROP = /^(Buyer|Ship to)/;
 const nh = (s) => String(s).normalize('NFKC').replace(/\s+/g, '');
 const colOf = (head, p) => head.findIndex((h) => h === p || h.startsWith(p));
@@ -165,6 +170,21 @@ function doGet(e) {
   const sh = name && SpreadsheetApp.openById(BOOK).getSheetByName(name);
   if (!sh) return ContentService.createTextOutput('NO_SHEET:' + p);
   return ContentService.createTextOutput(csvOf(sh.getDataRange().getDisplayValues())).setMimeType(ContentService.MimeType.CSV);
+}
+
+function doPost(e) {
+  if (!e || !e.parameter || e.parameter.key !== KEY) return ContentService.createTextOutput('forbidden');
+  const p = e.parameter.sheet || '';
+  if (!PUT.includes(p)) return ContentService.createTextOutput('NO_SHEET:' + p);
+  const rows = Utilities.parseCsv(e.postData.contents || '');
+  if (!rows.length) return ContentService.createTextOutput('EMPTY');
+  const book = SpreadsheetApp.openById(BOOK);
+  const sh = book.getSheetByName(p) || book.insertSheet(p);
+  const w = Math.max(...rows.map((r) => r.length));
+  const table = rows.map((r) => r.concat(new Array(w - r.length).fill('')));
+  sh.clearContents();
+  sh.getRange(1, 1, table.length, w).setValues(table);
+  return ContentService.createTextOutput('OK:' + (table.length - 1));
 }
 """
 
@@ -343,6 +363,41 @@ def sync_decisions(url: str, key: str, dry_run: bool = False) -> int | None:
     return n
 
 
+def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> int | None:
+    """data/bid_log.csv の必要な列 → Claude更新版の「入札結果」シート（まるごと置き換え）. 送った行数. 未設定・古いスクリプトは None."""
+    url, key = keychain.get(SERVICE, "url"), keychain.get(SERVICE, "key")
+    log = log or DATA / "bid_log.csv"
+    if not url or not key or not log.exists():
+        return None
+    rows = list(csv.DictReader(log.read_text(encoding="utf-8-sig").splitlines()))
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=BID_COLUMNS, extrasaction="ignore")
+    w.writeheader()
+    w.writerows(rows)
+    if dry_run:
+        print(f"入札結果: {len(rows)}行を送る予定 → Claude更新版「{BID_SHEET}」", file=sys.stderr)
+        return len(rows)
+    try:
+        if post:
+            res = post(buf.getvalue())
+        else:
+            sep = "&" if "?" in url else "?"
+            req = urllib.request.Request(
+                f"{url}{sep}key={urllib.parse.quote(key)}&sheet={urllib.parse.quote(BID_SHEET)}",
+                data=buf.getvalue().encode("utf-8"), headers={"Content-Type": "text/csv; charset=utf-8"}, method="POST")
+            with urllib.request.urlopen(req, timeout=60) as r:  # Google は 302 で結果のページに転送する
+                res = r.read().decode("utf-8-sig")
+    except (urllib.error.URLError, OSError) as e:
+        print(f"入札結果: 送れませんでした（{e}）", file=sys.stderr)
+        return None
+    if not res.startswith("OK"):
+        print("入札結果: 送れませんでした。スプレッドシートの Apps Script が古いためです"
+              "（python3 tools/ledger_sync.py script で貼り替え）", file=sys.stderr)
+        return None
+    print(f"入札結果: {len(rows)}行 → Claude更新版「{BID_SHEET}」", file=sys.stderr)
+    return len(rows)
+
+
 def cmd_script() -> None:
     """スクリプトを新しくしたとき: 貼り替えて新バージョンでデプロイ（URL・合言葉はそのまま）."""
     key = keychain.get(SERVICE, "key")
@@ -369,6 +424,7 @@ def cmd_script() -> None:
 """)
     input("Enter を押すと試しに読み込みます…")
     sync(dry_run=True)
+    upload_bids()
 
 
 def cmd_setup() -> None:
