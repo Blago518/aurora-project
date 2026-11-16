@@ -87,7 +87,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <header>
   <div class="row"><h1>店舗リサーチ</h1><span class="st" id="dataSt">データ未読込</span></div>
   <nav role="tablist">
-    <button role="tab" data-tab="bid" aria-selected="false">入札</button>
+    <button role="tab" data-tab="calc" aria-selected="false">計算</button>
     <button role="tab" data-tab="look" aria-selected="true">調べる</button>
     <button role="tab" data-tab="rec" aria-selected="false">おすすめ</button>
     <button role="tab" data-tab="shop" aria-selected="false">お店</button>
@@ -136,18 +136,24 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 </section>
 
 <!-- ===================================================== 入札（毎朝の入札候補） -->
-<section id="bid" hidden>
+<section id="calc" hidden>
   <div class="card">
-    <h2 id="bidTitle">入札候補</h2>
-    <div class="chips" id="bidChips">
-      <button class="chip" data-f="good" aria-pressed="true">◎○</button>
-      <button class="chip" data-f="tent" aria-pressed="false">確認してから</button>
+    <h2>eBay利益電卓</h2>
+    <label for="cItem">eBay商品代 $（送料別）</label>
+    <input id="cItem" inputmode="decimal" placeholder="例 140" autocomplete="off">
+    <label for="cBid">落札額（円）<span class="s">　ストアは税抜の入札額</span></label>
+    <input id="cBid" inputmode="numeric" placeholder="例 10000（空欄なら上限だけ出します）" autocomplete="off">
+    <label>区分</label>
+    <div class="chips" id="cKind">
+      <button class="chip" data-kind="store" aria-pressed="true">ストア（税10%上乗せ）</button>
+      <button class="chip" data-kind="priv" aria-pressed="false">個人</button>
     </div>
-    <div id="bidList" class="mt"><div class="empty">設定タブでデータを読み込んでください</div></div>
-    <p class="s">緑の金額＝ヤフオクの入札欄にそのまま入れる上限額（ストアは税抜の入札額）。この額までなら利益3,000円以上かつ利益率10%以上（★安心枠は2,000円・5%）。
-    仮◎○は相場が未登録で、eBay出品中の価格から仮に計算した額です。sold を見て、売れた価格がこの想定以上か確かめてから入札してください（相場の登録は Mac の拡張機能で）。
-    Mac が毎朝つくる入札リストを、アプリを開いたときに読み込みます。終わった出品は自動で消えます。</p>
+    <label for="cShip">ヤフオク送料（円）</label>
+    <input id="cShip" inputmode="numeric" placeholder="空欄＝1,000円で計算" autocomplete="off">
   </div>
+  <div class="card" id="cResult"><div class="empty">設定タブでデータを読み込んでください</div></div>
+  <p class="s">計算は拡張機能・調べると同じ: 売上＝(商品代＋送料$40)×為替。eBay手数料・円転ロス・海外送料$40・梱包費・ヤフオク送料・落札額（ストアは×1.1）を引いて利益。
+  上限は 利益3,000円以上かつ利益率10%以上 を残す落札額（ヤフオクの入札単位に切り下げ）。</p>
 </section>
 
 <!-- ===================================================== おすすめ -->
@@ -232,7 +238,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.16.1";
+  var APP_VERSION = "2026.11.16.2";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -267,7 +273,7 @@ function useData(d) {
   const sales = d.refs.filter((r) => r.tier <= 1).length;
   $("dataSt").textContent = `データ ${d.built}`;
   $("dataInfo").innerHTML = `作成 ${esc(d.built)}／相場 ${d.refs.length.toLocaleString()}件（うち販売実績 ${sales.toLocaleString()}件）／おすすめ候補 ${d.recs.length}機種／為替 1ドル=${d.cfg.fx}円`;
-  renderBrands(); renderRecs(); renderBids(); look();
+  renderBrands(); renderRecs(); calcRender(); look();
 }
 $("dataBtn").onclick = () => $("dataFile").click();
 $("dataFile").onchange = async (e) => {
@@ -646,78 +652,51 @@ $("brandChips").onclick = (e) => { const b = e.target.dataset.brand; if (b == nu
 $("kindChips").onclick = (e) => { const k = e.target.dataset.kind; if (!k) return; recSel.kind = k; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
 $("recList").onclick = (e) => { const n = e.target.dataset.look; if (n) setInput(n, ""); };
 
-// ------------------------------------------------------------ 入札（毎朝の入札候補）
-const LS_BIDF = "storeBidFilter";
-let bidFilter = lsGet(LS_BIDF, "good");
-function leftOf(end) {
-  const t = Date.parse(end);
-  if (!t) return ["", false];
-  const m = Math.floor((t - Date.now()) / 60000);
-  if (m < 0) return ["終了", false];
-  const d = new Date(t), at = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  return [m < 60 ? `あと${m}分` : m < 24 * 60 ? `あと${Math.floor(m / 60)}時間` : at, m < 3 * 60];
-}
-function toast(msg) {
-  let t = $("toast");
-  if (!t) { t = document.createElement("div"); t.id = "toast"; document.body.appendChild(t); }
-  t.textContent = msg; t.className = "show";
-  clearTimeout(t._h); t._h = setTimeout(() => (t.className = ""), 4000);
-}
-function renderBids() {
-  const B = DATA && DATA.bids;
-  if (!B || !Array.isArray(B.items)) {
-    $("bidTitle").textContent = "入札候補";
-    $("bidList").innerHTML = `<div class="empty">${DATA ? "入札リストがまだ届いていません（Mac で python3 tools/update_all.py を実行すると届きます）" : "設定タブでデータを読み込んでください"}</div>`;
-    return;
+// ------------------------------------------------------------ 計算（eBay利益電卓）
+// 計算は core.calculate（拡張機能・調べると同じ）。入れる$は送料別の商品代 → 送料$40を足して送料込みで計算
+const LS_CALC = "storeCalc";
+const calcSt = Object.assign({ kind: "store" }, lsGet(LS_CALC, {}));
+const num = (v) => { const n = Number(String(v || "").replace(/[^\d.]/g, "")); return String(v || "").trim() === "" || isNaN(n) ? null : n; };
+function calcRender() {
+  for (const c of $("cKind").children) c.setAttribute("aria-pressed", String(c.dataset.kind === calcSt.kind));
+  if (!DATA) return;
+  const g = DATA.cfg, fx = g.fx, ship = num($("cShip").value), item = num($("cItem").value), bid = num($("cBid").value);
+  if (item == null) { $("cResult").innerHTML = '<div class="empty">eBay商品代（送料別の$）を入れてください</div>'; return; }
+  const usd = item + g.deductionUsd, store = calcSt.kind === "store", tm = 1 + g.storeTaxPct / 100;
+  const it = (tax, b) => ({ price: b == null ? null : (tax ? b * tm : b), ship, tax, flags: [] });
+  const c = core.calculate(it(store, bid), usd, fx);
+  const cS = core.calculate(it(true, null), usd, fx), cP = core.calculate(it(false, null), usd, fx);
+  const rev = Math.round(usd * fx), loss = rev - c.fees - c.net;
+  // 損益分岐の商品代（この落札額で利益0になる eBay の商品代）
+  let be = null;
+  if (bid != null) {
+    let lo = 0, hi = 20000;
+    for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; (core.calculate(it(store, bid), m + g.deductionUsd, fx).profit >= 0 ? (hi = m) : (lo = m)); }
+    be = Math.round(hi * 100) / 100;
   }
-  const live = B.items.filter((i) => !i.end || Date.parse(i.end) > Date.now());
-  const chk = (i) => (i.check != null ? i.check : i.tent);  // 確認してから＝仮◎○＋根拠が頒布会リスト・鑑定表
-  const good = live.filter((i) => !chk(i)), tent = live.filter(chk);
-  for (const c of $("bidChips").children) {
-    c.setAttribute("aria-pressed", String(c.dataset.f === bidFilter));
-    c.textContent = c.dataset.f === "good" ? `入札候補 ${good.length}件` : `確認してから ${tent.length}件`;
-  }
-  const list = bidFilter === "tent" ? tent : good;
-  $("bidTitle").textContent = `入札候補（${B.built} 作成）`;
-  $("bidList").innerHTML = list.length ? list.map((i) => {
-    const [left, soon] = leftOf(i.end);
-    const cls = i.mark === "◎" ? "g" : "o";
-    const tags = (i.trusted ? '<span class="tag trust">★安心枠</span>' : "") + (i.tent ? '<span class="tag tent">仮・sold未確認</span>' : i.check ? '<span class="tag tent">根拠が頒布会・鑑定表 → sold で確認</span>' : "") +
-      i.flags.map((f) => `<span class="tag">${esc(f)}</span>`).join("") +
-      (i.desc ? `<span class="tag ${i.desc.includes("記載なし") ? "ok" : ""}">${esc(i.desc.includes("記載なし") ? "✓ 説明文に難の記載なし" : i.desc)}</span>` : "");
-    return `<div class="bid${i.tent ? " tent" : ""}"><div class="top"><div class="mk ${cls}">${esc(i.mark)}<small class="${soon ? "hot" : ""}">${esc(left)}</small></div>
-      <div class="tt"><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>
-      <div class="s">現在 ${yen(i.price)}・入札${i.bids ?? "-"}・送料 ${i.ship != null ? yen(i.ship) : "不明→1,000円で計算"}</div>${tags}
-      <div class="max"><span class="s">入札する上限額</span><strong data-copyamt="${esc(i.id)}" title="タップで金額をコピー">${yen(i.maxBid)}</strong><span class="s">タップでコピー</span></div>
-      <div class="s">今の価格で落札なら 利益 ${yen(i.profit)}${i.margin != null ? `（${i.margin}%）` : ""}${i.breakeven ? `・損益分岐 ${yen(i.breakeven)}` : ""}${/ストア/.test(i.taxNote) ? "・ストア（支払いは税込）" : ""}</div>
-      <div class="s">想定 ${nusd(i.usd)}（送料別）・根拠: ${esc(i.basis)}</div>
-      <div class="links"><a class="mini main" href="${esc(i.url)}" target="_blank" rel="noopener">ヤフオク</a><a class="mini" href="${esc(i.sold)}" target="_blank" rel="noopener">sold</a><a class="mini" href="${esc(i.now)}" target="_blank" rel="noopener">now</a><button class="mini" data-copy="${esc(i.id)}">URLコピー</button></div>
-      </div></div></div>`;
-  }).join("") : `<div class="empty">${bidFilter === "tent" ? "確認してから入札する候補はありません" : "いま確認なしで入札できる候補はありません。「確認してから」も見てください"}</div>`;
+  const pay = bid == null ? null : Math.round(store ? bid * tm : bid);
+  const cls = c.profit == null ? "" : c.profit >= 0 ? "g" : "x";
+  $("cResult").innerHTML = `
+    ${bid == null ? "" : `<div class="s">利益（${store ? "ストア" : "個人"}・落札額 ${yen(bid)}）</div>
+    <div class="big ${cls}" style="font-size:30px">${yen(c.profit)}</div>
+    <div class="s">利益率 ${c.margin}%（売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? " ・ 基準（利益3,000円・10%）に届かない" : " ・ 基準クリア"}</div>`}
+    <dl class="kv">
+      <dt>${store ? "ストア" : "個人"}の入札上限</dt><dd class="g">${cS.maxBid && store ? yen(cS.maxBid) : !store && cP.maxBid ? yen(cP.maxBid) : "入札しない"}</dd>
+      ${store ? `<dt>（支払いは税込）</dt><dd>${cS.maxBid ? yen(Math.round(cS.maxBid * tm)) : "-"}</dd>` : ""}
+      <dt>${store ? "個人" : "ストア"}なら</dt><dd>${store ? (cP.maxBid ? yen(cP.maxBid) : "入札しない") : (cS.maxBid ? yen(cS.maxBid) + "（税抜）" : "入札しない")}</dd>
+      <dt>売上（$${usd.toFixed(2)}×${fx}円）</dt><dd>${yen(rev)}</dd>
+      <dt>eBay手数料（${g.feePct}%＋$${g.perOrderUsd}）</dt><dd>−${yen(c.fees)}</dd>
+      <dt>円転ロス（${g.convLossPct}%）</dt><dd>−${yen(loss)}</dd>
+      <dt>入金（円）</dt><dd>${yen(c.net)}</dd>
+      <dt>海外送料（$${g.deductionUsd}）</dt><dd>−${yen(c.intl)}</dd>
+      <dt>梱包費</dt><dd>−${yen(g.packing)}</dd>
+      <dt>ヤフオク送料${ship == null ? "（空欄→1,000円）" : ""}</dt><dd>−${yen(c.dom)}</dd>
+      ${bid == null ? "" : `<dt>支払う額（${store ? "税込" : "税なし"}）</dt><dd>−${yen(pay)}</dd>
+      <dt>損益分岐の商品代（送料別）</dt><dd>$${be}</dd>`}
+    </dl>`;
 }
-$("bidChips").onclick = (e) => { const f = e.target.dataset.f; if (!f) return; bidFilter = f; lsSet(LS_BIDF, f); renderBids(); };
-// コピー（iPhone の Safari で clipboard API が使えないときは選択してコピー）
-async function copyText(t) {
-  try { await navigator.clipboard.writeText(t); return true; } catch (err) {}
-  const a = document.createElement("textarea");
-  a.value = t; a.setAttribute("readonly", ""); a.style.cssText = "position:fixed;top:0;left:0;opacity:0";
-  document.body.appendChild(a); a.select(); a.setSelectionRange(0, t.length);
-  let ok = false; try { ok = document.execCommand("copy"); } catch (err) {}
-  a.remove(); return ok;
-}
-$("bidList").onclick = async (e) => {
-  const d = e.target.dataset, id = d.copy || d.copyamt;
-  if (!id) return;
-  const i = DATA.bids.items.find((x) => x.id === id);
-  if (!i) return;
-  if (d.copy) {
-    const ok = await copyText(i.url);
-    toast(ok ? `ヤフオクのURLをコピーしました。オークファンに貼り付けて、上限 ${yen(i.maxBid)} で予約してください（金額もタップでコピーできます）` : "コピーできませんでした。［ヤフオク］を開いて共有からコピーしてください");
-  } else {
-    const ok = await copyText(String(i.maxBid));
-    toast(ok ? `上限額 ${Number(i.maxBid).toLocaleString()} をコピーしました（入札欄に貼り付け）` : "コピーできませんでした");
-  }
-};
+for (const id of ["cItem", "cBid", "cShip"]) $(id).addEventListener("input", calcRender);
+$("cKind").onclick = (e) => { const k = e.target.closest("[data-kind]"); if (!k) return; calcSt.kind = k.dataset.kind; lsSet(LS_CALC, { kind: calcSt.kind }); calcRender(); };
 
 // ------------------------------------------------------------ お店（店舗仕入れの巡回リスト）
 const LS_AREA = "storeShopArea", LS_DONE = "storeShopDone";
@@ -752,7 +731,7 @@ $("shopList").onclick = (e) => {
 function showTab(t) {
   for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", String(b.dataset.tab === t));
   for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== t;
-  if (t === "bid" && DATA) renderBids();  // 残り時間・終わった出品を最新に
+  if (t === "calc") calcRender();
 }
 for (const b of document.querySelectorAll("nav button")) b.onclick = () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); };
 
