@@ -13,13 +13,50 @@ python3 tools/appraise.py          # data/search_urls.txt の検索URLを全部�
 open reports
 ```
 
-## データを更新したとき
+## 拡張機能で相場を直したとき
+各行の［直す］（sold の商品代＝送料を含まない$を入れる。計算では送料$40を足して手数料を出す）や［登録］を押すと、その相場メモが `ダウンロード/aurora_price_memo.csv` に自動保存される。
+`build_store.py`・`build_extension.py`・`appraise.py` を実行すると `data/price_memo.csv` に自動で取り込まれ（同じ機種は金額を更新）、スマホにも反映される。直した相場は同じ機種の過去データより優先される。
+
+## 自動化（初回だけ設定。以後は何もしなくてよい）
+| 何を | 初回の設定 | 以後 |
+|---|---|---|
+| Chatwork の販売報告 | `python3 tools/chatwork_sync.py setup`（API トークンと日報チャットの URL） | 自動で取り込み |
+| 頒布会リスト（Excel） | なし | ダウンロードフォルダに保存すれば、次の自動更新で取り込み（ファイル名は何でもよい） |
+| 古物台帳（スプレッドシート） | `python3 tools/ledger_sync.py setup`（スクリプトを貼って公開） | 自動で取り込み |
+| スマホのデータ | `python3 tools/store_publish.py setup`（GitHub のトークン）→ 設定コードを iPhone のアプリに貼る | アプリを開くと最新 |
+| 全部の更新 | `python3 tools/schedule.py install` | 毎朝 8:40 と Mac のログイン時に自動。終わると通知 |
+
+拡張機能は、更新後に `chrome://extensions` の ↻ を押すと新しい相場になる。
+
+## データを更新したとき（コマンド1つ）
+```bash
+python3 tools/update_all.py
+```
+- 古物台帳: スプレッドシートの「古物台帳」シートを「ファイル → ダウンロード → CSV」でダウンロードフォルダへ
+- 頒布会: 商品リストの xlsx をダウンロードフォルダへ
+- Chatwork: 日報チャットの販売報告を公式 API で自動取り込み（初回だけ `python3 tools/chatwork_sync.py setup`）
+- 拡張機能で直した相場・CPaSS/オークレボの明細も自動で取り込み、拡張機能・スマホ用データ・ナレッジまで作り直す
+
+## 個別に作り直すとき
 ```bash
 python3 tools/build_reference_prices.py   # data/ledger.csv（古物台帳）+ data/hanpukai_*.xlsx → data/reference_prices.csv
 python3 tools/build_extension.py          # → extension/（chrome://extensions で ↻）
+python3 tools/build_store.py              # → 店舗アプリのデータ（iCloud Drive › aurora › store_data.json）
 python3 tools/build_knowledge.py          # → knowledge/相場/・knowledge/機種/
+python3 tools/build_dashboard.py          # → reports/dashboard.html（数字のグラフ）
 python3 -m unittest discover -s tools     # テスト
 ```
+
+## 店舗リサーチ（iPhone アプリ）
+`store/`（GitHub Pages: https://blago518.github.io/aurora-project/store/ ）。お店で使う。
+- 調べる: 商品名（または📷で値札を撮影）→ 判定・「この値段以下なら買い（税込）」・eBay 販売済み／出品中（高い順）／Product Research
+- おすすめ: メーカー＋カメラ/レンズ → 過去の平均利益×販売回数の上位20機種
+- 判定は拡張機能と同じ（`store/core.js` は `extension_template.js` の `@core-start`〜`@core-end` のコピー。直接編集しない）
+- 店頭は国内送料0円・値札は税込の支払額として計算
+- 値札読み取りは Claude API（Haiku 5.5）。APIキーと相場データは iPhone の中だけに保存
+
+初回: Safari で上のURL → 共有 → ホーム画面に追加 → 設定タブで store_data.json と APIキーを入れる。
+データ更新: `python3 tools/build_store.py` → アプリの設定タブでファイルを選び直す。
 
 ## Chrome拡張機能を入れる（初回）
 1. `chrome://extensions` → 右上「デベロッパー モード」をオン

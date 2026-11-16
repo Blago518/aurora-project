@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m unittest:*)",
+      "Bash(python3 tools/appraise.py:*)",
+      "Bash(python3 tools/update_all.py:*)",
+      "Bash(python3 tools/build_reference_prices.py:*)",
+      "Bash(python3 tools/build_extension.py:*)",
+      "Bash(python3 tools/build_store.py:*)",
+      "Bash(python3 tools/build_knowledge.py:*)",
+      "Bash(python3 tools/build_dashboard.py:*)",
+      "Bash(python3 tools/schedule.py status:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_commit.py\"", "timeout": 20, "statusMessage": "公開チェック中…"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/run_tests.py\"", "timeout": 180, "statusMessage": "テスト中…"}]}
+    ]
+  }
+}

@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1728">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="店舗リサーチ">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>店舗リサーチ</title>
+<style>
+:root{--navy:#0b1728;--ink:#14263a;--sub:#5d7083;--line:#e3e9ef;--bg:#f2f5f9;--card:#fff;--blue:#176e96;--soft:#e8f2f8;
+--good:#1f7a5c;--ok:#1b6387;--bad:#a4473a;--warn:#8a6514;--warnbg:#fff7e3}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;-webkit-text-size-adjust:100%}
+header{background:var(--navy);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 16px 0;position:sticky;top:0;z-index:5}
+header .row{display:flex;align-items:center;gap:8px}
+header h1{font-size:17px;margin:0;flex:1}
+header .st{font-size:11px;color:#a9c3d6}
+nav{display:flex;margin-top:8px}
+nav button{flex:1;background:none;border:0;color:#a9c3d6;font-size:14px;font-weight:700;padding:10px 0;border-bottom:3px solid transparent}
+nav button[aria-selected=true]{color:#fff;border-bottom-color:#4fc3d9}
+main{max-width:640px;margin:0 auto;padding:12px 16px calc(env(safe-area-inset-bottom) + 40px)}
+section[hidden]{display:none}
+.card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 2px 10px #18345110}
+.card h2{font-size:14px;margin:0 0 10px;color:var(--sub)}
+label{display:block;font-size:12px;font-weight:700;color:var(--sub);margin:10px 0 4px}
+input[type=search],input[type=text],input[type=password],input[type=number],input[inputmode]{width:100%;font-size:17px;padding:12px;border:1px solid #cdd7e3;border-radius:10px;background:#fff;color:var(--ink);-webkit-appearance:none}
+input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px #d7eef6}
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:48px;border:0;border-radius:12px;background:var(--blue);color:#fff;
+font-size:16px;font-weight:800;text-decoration:none;cursor:pointer;padding:0 12px}
+.btn.sec{background:var(--soft);color:#14415a}.btn.dark{background:var(--navy)}.btn.line{background:#fff;color:#14415a;border:1px solid #b9cfdb}
+.btn:disabled,.btn.off{opacity:.45;pointer-events:none}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mt{margin-top:10px}.s{font-size:12px;color:var(--sub)}.chk{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink);font-weight:600;margin-top:10px}
+.chk input{width:20px;height:20px}
+.status{font-size:13px;color:var(--sub);margin-top:8px;min-height:1em;white-space:pre-line}
+.status.err{color:var(--bad)}
+.photo{display:none;width:100%;max-height:160px;object-fit:contain;border-radius:10px;background:#eef2f6;margin-top:10px}
+.verdict{display:flex;align-items:center;gap:12px}
+.mark{font-size:40px;font-weight:900;line-height:1;min-width:48px;text-align:center}
+.g{color:var(--good)}.o{color:var(--ok)}.x{color:var(--bad)}.w{color:var(--warn)}
+.big{font-size:22px;font-weight:900}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:12px;font-size:14px}
+.kv dt{color:var(--sub)}.kv dd{margin:0;text-align:right;font-weight:700;white-space:nowrap}
+.note{background:var(--warnbg);color:var(--warn);border-radius:10px;padding:10px;font-size:13px;margin-top:10px}
+details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);cursor:pointer}
+.ref{font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);display:flex;gap:8px}.ref span:first-child{flex:1}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid #c3d2dd;background:#fff;color:#284c62;border-radius:99px;padding:8px 12px;font-size:14px;font-weight:700}
+.chip[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}
+.chip[aria-pressed=true] .s{color:#d6eaf5}
+.rec{padding:12px 0;border-bottom:1px solid var(--line)}.rec:last-child{border:0}
+.rec .t{display:flex;gap:8px;align-items:baseline}.rec .t b{flex:1;font-size:15px}.rec .n{color:var(--sub);font-size:12px;width:22px}
+.rec .buy{font-size:14px;margin:4px 0 6px 30px}.rec .buy strong{font-size:17px;color:var(--good)}
+.rec .links{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:6px;margin-left:30px}
+.mini{font-size:12px;font-weight:700;border-radius:8px;padding:8px 4px;text-align:center;text-decoration:none;background:var(--soft);color:#14415a;border:0}
+.mini.main{background:var(--blue);color:#fff}
+.hist{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.hist button{border:0;background:var(--soft);color:#14415a;border-radius:8px;padding:6px 10px;font-weight:700}
+.shop{padding:12px 0;border-bottom:1px solid var(--line)}.shop:last-child{border:0}
+.shop .t{display:flex;gap:8px;align-items:baseline}.shop .t b{flex:1;font-size:15px}
+.shop .no{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border-radius:99px;background:var(--ok);color:#fff;font-size:13px;font-weight:800}
+.shop.done{opacity:.5}.shop.done .no{background:var(--good)}
+.shop .d{font-size:13px;margin:4px 0 6px 32px}.shop .links{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:6px;margin-left:32px}
+.leg{font-size:12px;color:var(--sub);margin-left:32px;padding:4px 0}
+.empty{color:var(--sub);font-size:14px;text-align:center;padding:16px 0}
+.bid{padding:12px 0;border-bottom:1px solid var(--line)}.bid:last-child{border:0}
+.bid .top{display:flex;gap:10px;align-items:flex-start}.bid .mk{font-size:26px;font-weight:900;line-height:1;min-width:34px;text-align:center}
+.bid .mk small{display:block;font-size:10px;font-weight:700;color:var(--sub);margin-top:4px}
+.bid .tt{flex:1;min-width:0}.bid .tt a{color:var(--ink);font-weight:700;text-decoration:none;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bid .max{display:flex;align-items:baseline;gap:8px;margin:8px 0 2px}.bid .max strong{cursor:pointer}.bid .max strong{font-size:22px;color:var(--good)}
+.bid .tent .max strong,.bid.tent .max strong{color:var(--warn)}
+.bid .links{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
+.bid .links .mini{white-space:nowrap;display:flex;align-items:center;justify-content:center;font-size:13px}
+.tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin:2px 4px 0 0;background:#fdecea;color:var(--bad)}
+.tag.trust{background:#e6f4ee;color:var(--good)}.tag.tent{background:var(--warnbg);color:var(--warn)}.tag.ok{background:#e6f4ee;color:var(--good)}
+.hot,.bid .mk small.hot{color:var(--bad);font-weight:800}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 16px);background:var(--navy);color:#fff;border-radius:12px;padding:12px 14px;
+font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9}#toast.show{opacity:1}
+code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-break:break-all}
+</style>
+</head>
+<body>
+<header>
+  <div class="row"><h1>店舗リサーチ</h1><span class="st" id="dataSt">データ未読込</span></div>
+  <nav role="tablist">
+    <button role="tab" data-tab="calc" aria-selected="false">計算</button>
+    <button role="tab" data-tab="look" aria-selected="true">調べる</button>
+    <button role="tab" data-tab="rec" aria-selected="false">おすすめ</button>
+    <button role="tab" data-tab="shop" aria-selected="false">お店</button>
+    <button role="tab" data-tab="set" aria-selected="false">設定</button>
+  </nav>
+</header>
+<main>
+<!-- ===================================================== 調べる -->
+<section id="look">
+  <div class="card">
+    <button class="btn dark" id="camBtn" type="button">📷 値札を撮って読み取る</button>
+    <input id="camFile" type="file" accept="image/*" capture="environment" hidden>
+    <img id="photo" class="photo" alt="">
+    <div class="status" id="ocrSt"></div>
+    <label for="name">商品名・型番</label>
+    <input id="name" type="search" placeholder="例: Nikon FM2 / キヤノン New FD 50mm F1.4" autocomplete="off" enterkeyhint="search">
+    <label for="price">値札の価格（税込でお店に払う額・円）</label>
+    <input id="price" inputmode="numeric" pattern="[0-9]*" placeholder="例: 18000" autocomplete="off">
+    <label class="chk"><input type="checkbox" id="junk"> ジャンク表記がある（想定販売価格を下げて計算）</label>
+  </div>
+
+  <div class="card" id="result" hidden></div>
+
+  <div class="card">
+    <h2>eBayで確認（高い順）</h2>
+    <label for="query" style="margin-top:0">検索語（英語・直してOK）</label>
+    <input id="query" type="search" placeholder="商品名を入れると自動で入ります" autocomplete="off">
+    <label>eBayのカテゴリ（商品名から自動。違えばタップ）</label>
+    <div class="chips" id="catChips"></div>
+    <label>除外キーワード（タップでオン／オフ。次回も覚えています）</label>
+    <div class="chips" id="exChips"></div>
+    <input id="exCustom" type="text" class="mt" placeholder="ほかに除外する語（英語・スペース区切り）例: FM2N mount" autocomplete="off" autocapitalize="off">
+    <div class="s mt" id="qPreview"></div>
+    <div class="grid3 mt">
+      <a class="btn" id="lSold" target="_blank" rel="noopener">販売済み</a>
+      <a class="btn sec" id="lNow" target="_blank" rel="noopener">出品中</a>
+      <a class="btn line" id="lPr" target="_blank" rel="noopener">Product Research</a>
+    </div>
+    <p class="s">販売済み・出品中は「価格＋送料の高い順」で120件表示。Product Research は過去90日の販売（Best Offer 込みの実際の成約額）。除外キーワードは Product Research では効かない場合があります。</p>
+  </div>
+
+  <div class="card">
+    <h2>最近調べた商品</h2>
+    <div id="hist"></div>
+  </div>
+</section>
+
+<!-- ===================================================== 入札（毎朝の入札候補） -->
+<section id="calc" hidden>
+  <div class="card">
+    <h2>eBay利益電卓（店舗・ヤフオク）</h2>
+    <label for="cItem">eBay商品代 $（送料別）</label>
+    <input id="cItem" inputmode="decimal" placeholder="例 140" autocomplete="off">
+    <label>区分</label>
+    <div class="chips" id="cTax">
+      <button class="chip" data-tax="in" aria-pressed="true">税込（個人）</button>
+      <button class="chip" data-tax="ex" aria-pressed="false">税抜（ストア）</button>
+    </div>
+    <label for="cBid">仕入れ値（円）<span class="s">　店舗は値札・ヤフオクは落札額</span></label>
+    <input id="cBid" inputmode="numeric" placeholder="空欄なら上限価格だけ出します" autocomplete="off">
+  </div>
+  <div class="card" id="cResult"><div class="empty">設定タブでデータを読み込んでください</div></div>
+  <p class="s">計算は拡張機能・調べると同じ。売上（商品代）から eBay手数料・円転ロス・梱包費・仕入れ値（税込）を引いて利益。送料$40は買い手から受け取ってそのまま発送に使うので±0（手数料だけは送料込みの額にかかる）。
+  上限価格は 利益3,000円以上かつ利益率10%以上 を残す税込の仕入れ値。</p>
+</section>
+
+<!-- ===================================================== おすすめ -->
+<section id="rec" hidden>
+  <div class="card">
+    <h2>メーカー</h2>
+    <div class="chips" id="brandChips"></div>
+    <h2 class="mt">種類</h2>
+    <div class="chips" id="kindChips">
+      <button class="chip" data-kind="camera" aria-pressed="true">カメラ</button>
+      <button class="chip" data-kind="lens" aria-pressed="false">レンズ</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2 id="recTitle">おすすめ</h2>
+    <div id="recList"><div class="empty">設定タブでデータを読み込んでください</div></div>
+    <p class="s">並び順: 過去の平均利益 × 販売回数（自分の販売実績・Chatwork実績）。緑の金額＝税込でこの値段以下なら、利益3,000円以上かつ利益率10%以上（国内送料0円で計算）。</p>
+  </div>
+</section>
+
+<!-- ===================================================== お店 -->
+<section id="shop" hidden>
+  <div class="card">
+    <div class="chips" id="areaChips"></div>
+    <div class="s mt" id="areaInfo"></div>
+  </div>
+  <div class="card"><div id="shopList"></div></div>
+  <div class="card">
+    <details>
+      <summary>Appleマップの「ガイド」にまとめる方法（最初に1回）</summary>
+      <ol class="s">
+        <li>「地図」を押す → Appleマップで店が開く</li>
+        <li>店の画面の「…」または「＋」→「ガイドに追加」→ 初回は「新規ガイド」で名前を「カメラ店」</li>
+        <li>2軒目からは「カメラ店」を選ぶだけ。マップの「ガイド」から全部の店を一覧で見られます</li>
+      </ol>
+      <p class="s">店が見つからず住所のピンだけ出たときは、ピンを押して「ガイドに追加」でも入ります。</p>
+    </details>
+  </div>
+</section>
+
+<!-- ===================================================== 設定 -->
+<section id="set" hidden>
+  <div class="card">
+    <h2>① 自動更新（おすすめ）</h2>
+    <div id="autoInfo" class="s">未設定。設定すると、アプリを開くたびに最新の相場データを自動で読み込みます（②の手作業が不要）。</div>
+    <label for="autoCode">設定コード（AURORA1: で始まる）</label>
+    <input id="autoCode" type="text" placeholder="AURORA1: で始まるコードを貼り付け" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="grid2 mt">
+      <button class="btn" id="autoSave" type="button">保存して読み込む</button>
+      <button class="btn sec" id="autoDel" type="button">解除</button>
+    </div>
+    <div class="status" id="autoMsg"></div>
+    <p class="s">データは暗号化されて届き、この iPhone の中で合言葉を使って元に戻します。合言葉は外へ送りません。</p>
+  </div>
+  <div class="card">
+    <details id="manualBox" open><summary>② 相場データ（手動）― ①の自動更新を設定していれば不要</summary>
+    <div id="dataInfo" class="s mt">まだ読み込んでいません。</div>
+    <button class="btn mt" id="dataBtn" type="button">データファイルを選ぶ（store_data.json）</button>
+    <input id="dataFile" type="file" accept=".json,application/json" hidden>
+    <div class="status" id="dataMsg"></div>
+    <p class="s">Mac で <code>python3 tools/build_store.py</code> を実行すると iCloud Drive の「aurora」フォルダに入ります。ボタン → 「ブラウズ」→ iCloud Drive → aurora → store_data.json。データはこの iPhone の中だけに保存され、外へ送られません。</p>
+    </details>
+  </div>
+  <div class="card">
+    <h2>③ 値札読み取り（Claude API）</h2>
+    <label for="apiKey" style="margin-top:0">APIキー（sk-ant- で始まる）</label>
+    <input id="apiKey" type="password" placeholder="未設定" autocomplete="off">
+    <div class="grid2 mt">
+      <button class="btn" id="keySave" type="button">保存</button>
+      <button class="btn sec" id="keyDel" type="button">削除</button>
+    </div>
+    <div class="status" id="keyMsg"></div>
+    <p class="s">モデル: Claude Haiku 5.5（1枚 約0.03〜0.05円）。キーはこの iPhone の中だけに保存し、写真と一緒に Anthropic（api.anthropic.com）にだけ送ります。</p>
+  </div>
+  <div class="card">
+    <h2>アプリの版</h2>
+    <div class="s">版 <b id="appVer"></b>（新しい機能が届かないときは下のボタン）</div>
+    <button class="btn sec mt" id="reloadApp" type="button">最新版に更新</button>
+  </div>
+</section>
+</main>
+
+<script>
+  // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
+  var APP_VERSION = "2026.11.16.9";
+  var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
+  document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
+</script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const yen = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ja-JP") + "円");
+const usd = (v) => (v == null ? "-" : "$" + Number(v).toFixed(v >= 100 ? 0 : 2));
+// eBay の$は送料を除いた商品代（net・送料別）で表示する（相場データ・計算は送料込みのまま。送料は config.toml の deduction_usd）
+const nusd = (v) => (v == null ? "-" : usd(Math.round((Number(v) - ((DATA && DATA.cfg.deductionUsd) || 0)) * 100) / 100));
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const LS_KEY = "storeApiKey", LS_HIST = "storeHist", LS_REC = "storeRecSel";
+const SRC = ["自分の販売実績", "Chatwork実績", "頒布会リスト（出品価格）", "鑑定表（推定）"];
+let DATA = null, core = null;
+
+// ------------------------------------------------------------ データ（IndexedDB に保存）
+function idb() {
+  return new Promise((ok, ng) => {
+    const r = indexedDB.open("aurora-store", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error);
+  });
+}
+async function idbGet(k) { const db = await idb(); return new Promise((ok, ng) => { const q = db.transaction("kv").objectStore("kv").get(k); q.onsuccess = () => ok(q.result); q.onerror = () => ng(q.error); }); }
+async function idbSet(k, v) { const db = await idb(); return new Promise((ok, ng) => { const t = db.transaction("kv", "readwrite"); t.objectStore("kv").put(v, k); t.oncomplete = () => ok(); t.onerror = () => ng(t.error); }); }
+
+function useData(d) {
+  if (!d || d.kind !== "aurora-store" || !Array.isArray(d.refs)) throw new Error("store_data.json ではありません");
+  DATA = d; core = makeCore(d);
+  const sales = d.refs.filter((r) => r.tier <= 1).length;
+  $("dataSt").textContent = `データ ${d.built}`;
+  $("dataInfo").innerHTML = `作成 ${esc(d.built)}／相場 ${d.refs.length.toLocaleString()}件（うち販売実績 ${sales.toLocaleString()}件）／おすすめ候補 ${d.recs.length}機種／為替 1ドル=${d.cfg.fx}円`;
+  renderBrands(); renderRecs(); calcRender(); look();
+}
+$("dataBtn").onclick = () => $("dataFile").click();
+$("dataFile").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    useData(d);
+    await idbSet("data", d);
+    $("dataMsg").className = "status"; $("dataMsg").textContent = "読み込みました。次回からは自動で使います。";
+  } catch (err) { $("dataMsg").className = "status err"; $("dataMsg").textContent = "読み込めませんでした: " + err.message; }
+};
+
+// ------------------------------------------------------------ 自動更新（暗号化配信）
+const LS_AUTO = "storeAuto";
+async function autoUpdate(manual) {
+  const cfg = lsGet(LS_AUTO, null);
+  if (!cfg) { $("autoInfo").textContent = "未設定。設定すると、アプリを開くたびに最新の相場データを自動で読み込みます（②の手作業が不要）。"; return; }
+  $("autoInfo").textContent = "設定済み。最新を確認しています…";
+  try {
+    const d = await fetchStore(cfg);
+    const fresh = !DATA || d.built !== DATA.built;
+    useData(d);
+    await idbSet("data", d);
+    $("autoInfo").textContent = `設定済み。最新のデータ（${d.built}作成）を使っています。Mac が毎朝8:40ごろとログイン時に、販売データ・相場・入札候補を更新して届けます（このアプリは開くだけで最新になります）。`;
+    $("manualBox").open = false;
+    $("dataSt").textContent = `データ ${d.built}（自動）`;
+    if (manual || fresh) { $("autoMsg").className = "status"; $("autoMsg").textContent = fresh ? "最新のデータを読み込みました。" : "すでに最新です。"; }
+  } catch (err) {
+    $("autoInfo").textContent = "設定済み。最新を読めなかったので、前回のデータを使っています。";
+    if (manual) { $("autoMsg").className = "status err"; $("autoMsg").textContent = "読み込めませんでした: " + (err.message || err); }
+  }
+}
+$("autoSave").onclick = () => {
+  const cfg = parseSetupCode($("autoCode").value);
+  if (!cfg) { $("autoMsg").className = "status err"; $("autoMsg").textContent = "設定コードを読めません: " + setupCodeHint($("autoCode").value); return; }
+  lsSet(LS_AUTO, cfg); $("autoCode").value = "";
+  autoUpdate(true);
+};
+$("autoDel").onclick = () => { try { localStorage.removeItem(LS_AUTO); } catch (e) {} $("autoMsg").textContent = "解除しました。"; autoUpdate(false); };
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoUpdate(false); });
+
+// ------------------------------------------------------------ 調べる
+function lookup(name, price, junkBox) {
+  const q = core.titleToQuery(name) || name.trim();
+  const flags = core.detectFlags(name);
+  if (junkBox && !flags.includes("ジャンク")) flags.push("ジャンク");
+  let refs = core.matchPreferMemo(q + " " + name, DATA.refs.filter(core.isMemo), DATA.refs.filter((r) => !core.isMemo(r)));
+  if (!refs.length) refs = core.matchKantei(name);
+  let u = refs.length ? Math.round(core.median(core.conditionAdjusted ? core.conditionAdjusted(refs, name, flags) : refs.map((r) => r.price)) * 100) / 100 : null;
+  if (u != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) u = Math.round(u * DATA.cfg.junkFactor * 100) / 100;
+  const it = { price, ship: 0, tax: false, flags };
+  it.calc = u != null ? core.calculate(it, u, DATA.cfg.fx) : null;
+  const [mark, reason] = core.judge(it);
+  return { q, flags, refs, usd: u, calc: it.calc, mark, reason };
+}
+
+function storeReason(r) {  // 拡張機能（ヤフオク向け）の言葉を店頭向けに
+  return r.replace("基準を満たす入札額なし", "この相場では基準（利益3,000円・10%）を満たす仕入値がない")
+    .replace("現在価格不明", "値札の価格を入れると判定します").replace("上限超過", "買える上限を超えています");
+}
+
+// 過去データの状態（Near MINT $229.99 など）。手で直した相場（相場メモ）は除く
+function conds(refs) {
+  return refs.filter((x) => x.tier <= 2).slice(0, 5)
+    .map((x) => `${esc(core.conditionOf(x) || "記載なし")} ${nusd(x.price)}${core.isMemo(x) ? "（直した相場）" : ""}`).join("<br>");
+}
+function renderResult(name, price, r) {
+  const el = $("result");
+  if (!name.trim()) { el.hidden = true; return; }
+  el.hidden = false;
+  if (!DATA) { el.innerHTML = `<div class="empty">設定タブで相場データを読み込むと、利益と判定が出ます。<br>eBayのリンクは下から使えます。</div>`; return; }
+  const cls = { "◎": "g", "○": "o", "×": "x" }[r.mark] || "w";
+  const c = r.calc;
+  let h = `<div class="verdict"><div class="mark ${cls}">${esc(r.mark === "要確認" ? "？" : r.mark)}</div>
+    <div><div class="big ${cls}">${c ? (r.mark === "◎" || r.mark === "○" ? "買い候補" : r.mark === "×" ? "見送り" : "要確認") : "相場データなし"}</div>
+    <div class="s">${esc(c ? storeReason(r.reason) : "過去の販売実績に一致する機種がありません。下の eBay 販売済みで確認してください")}</div></div></div>`;
+  if (c) {
+    const tier = r.refs[0] ? r.refs[0].tier : 3;
+    h += `<dl class="kv">
+      <dt>この値段以下なら買い（税込）</dt><dd class="g">${yen(c.maxBid)}</dd>
+      <dt>損益ゼロになる値段（税込）</dt><dd>${yen(c.breakeven)}</dd>
+      <dt>想定販売価格（eBay・送料別）</dt><dd>${nusd(r.usd)}${r.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
+      <dt>根拠</dt><dd>${esc(SRC[tier] || "")} ${r.refs.length}件の中央値</dd>
+      ${conds(r.refs) ? `<dt>状態</dt><dd>${conds(r.refs)}</dd>` : ""}
+      ${core.conditionNote && core.conditionNote(r.refs, name, r.flags) ? `<dt></dt><dd class="s">${esc(core.conditionNote(r.refs, name, r.flags))}</dd>` : ""}
+      ${price != null ? `<dt>値札で買ったときの利益</dt><dd class="${c.profit >= 0 ? "g" : "x"}">${yen(c.profit)}（${c.margin}%）</dd>` : ""}
+    </dl>`;
+    if (tier >= 2) h += `<div class="note">根拠が弱いデータです（${esc(SRC[tier])}）。eBay の販売済みで必ず確認してください。</div>`;
+    const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
+    if (warn.length) h += `<div class="note">注意: ${esc(warn.join("・"))}</div>`;
+    h += `<details><summary>一致した過去データ ${r.refs.length}件</summary>${r.refs.map((x) =>
+      `<div class="ref"><span>${esc(x.title)}</span><span>${esc(core.conditionOf(x) || "")}</span><span>${nusd(x.price)}<span class="s">送料別</span></span><span class="s">${esc((x.source || "").replace(/\(.*$/, ""))}</span></div>`).join("")}</details>`;
+  }
+  el.innerHTML = h;
+}
+
+// データ未読込のときのリンク（core.js の ebay() と同じ形）
+const ebayLinks = (q) => ({
+  sold: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&LH_Sold=1&LH_Complete=1&_sop=16&_ipg=120",
+  now: "https://www.ebay.com/sch/i.html?_nkw=" + encodeURIComponent(q).replace(/%20/g, "+") + "&_sop=16&_ipg=120",
+  pr: "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=" + encodeURIComponent(q) + "&dayRange=90&tabName=SOLD",
+});
+// eBay の検索語: 入力した語は全部残す（照合用の titleToQuery のように7語で切ったり分割したりしない）。
+// 日本語のメーカー名・色は英語に直し、それ以外の日本語（ボディ・美品など）は消す。
+function ebayQuery(name) {
+  let t = String(name).normalize("NFKC");
+  if (DATA) for (const [ja, en] of DATA.consts.brandsJa.concat(DATA.consts.wordsJa)) t = t.split(ja).join(` ${en} `);
+  t = t.replace(/[^\x21-\x7Eαµ]+/g, " ").replace(/[\[\](){}<>!?#*"'`,;~^|\\]+/g, " ");
+  const seen = new Set(), out = [];
+  for (const w of t.split(/\s+/)) {
+    const k = w.toLowerCase();
+    if (/^\d{4,}$/.test(w)) continue;  // 出品者の管理番号（例: 5019）。照合と同じく数字だけ4桁以上は使わない
+    if (w && !seen.has(k)) { seen.add(k); out.push(w); }
+  }
+  return out.join(" ");
+}
+
+// 除外キーワード（eBay の「-語」）
+const LS_EX = "storeExclude";
+const EX_PRESETS = [["strap", "ストラップ"], ["case", "ケース"], ["cap", "キャップ"], ["hood", "フード"], ["filter", "フィルター"],
+  ["manual", "説明書"], ["box", "箱"], ["adapter", "アダプター"], ["battery", "電池"], ["charger", "充電器"],
+  ["lens", "レンズ付き"], ["parts", "ジャンク"], ["lot", "まとめ売り"]];
+const ex = lsGet(LS_EX, { on: [], custom: "" });
+if (ex.autoLens === undefined) ex.autoLens = true;
+$("exCustom").value = ex.custom || "";
+function renderExChips() {
+  $("exChips").innerHTML = `<button class="chip" data-ex="@lens" aria-pressed="${ex.autoLens}">他の焦点距離・F値 <span class="s">レンズのとき</span></button>` +
+    EX_PRESETS.map(([w, ja]) =>
+      `<button class="chip" data-ex="${w}" aria-pressed="${ex.on.includes(w)}">${w} <span class="s">${ja}</span></button>`).join("");
+}
+
+// レンズの「他の焦点距離・F値」の除外語。消してはいけない語が消える語は使わない:
+// ・35mm（説明文の「35mm フィルム」）、55mm・58mm（フィルター径）は除外しない
+// ・整数のF値（F2・F4…）は除外しない（-2 は型番の 2、-f4 は「for Nikon F4」などボディ名も消すため）
+const LENS_FOCALS = [14, 15, 16, 17, 18, 20, 21, 24, 25, 28, 40, 45, 50, 60, 75, 80, 85, 90, 100, 105, 110, 135, 150, 180, 200, 300, 400];
+const LENS_FNUMS = ["0.95", "1.2", "1.4", "1.7", "1.8", "2.0", "2.5", "2.8", "3.5", "4.5", "5.6"];
+function lensSpec(base) {
+  const t = base.toLowerCase();
+  // 焦点距離は mm と cm（古いレンズの 7.5cm など）。cm は mm に直す
+  const focals = [...t.matchAll(/(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?\s*(mm|cm)\b/g)];
+  const fnums = [...t.matchAll(/(?:\bf\s*\/?\s*|\b1\s*:\s*)(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?/g)];
+  if (!focals.length || (!fnums.length && !/\blens\b/.test(t))) return null;
+  const nums = (ms) => ms.flatMap((m) => [m[1], m[2]]).filter(Boolean).map(Number);
+  const mm = focals.flatMap((m) => [m[1], m[2]].filter(Boolean).map((v) => Math.round(Number(v) * (m[3] === "cm" ? 10 : 1))));
+  return { focals: mm, prime: focals.length === 1 && !focals[0][2], fnums: nums(fnums) };
+}
+function lensExcludes(base) {
+  const s = lensSpec(base);
+  if (!s) return [];
+  // 長さの上限で切るときに残す順: F値 → 調べたい焦点距離に近い順
+  const out = [];
+  if (s.fnums.length) for (const v of LENS_FNUMS) if (!s.fnums.includes(Number(v))) out.push("f" + v, v);
+  if (s.prime) {
+    const me = s.focals[0];
+    out.push(...LENS_FOCALS.filter((f) => f !== me).sort((a, b) => Math.abs(Math.log(a / me)) - Math.abs(Math.log(b / me))).map((f) => f + "mm"));
+  }
+  return out;
+}
+function excludeWords(base) {
+  const inBase = new Set(base.toLowerCase().split(/\s+/));
+  const isLens = !!lensSpec(base);
+  const custom = String(ex.custom || "").normalize("NFKC").split(/[\s,、]+/).map((w) => w.replace(/^-+/, "").toLowerCase());
+  const auto = ex.autoLens ? lensExcludes(base) : [];
+  return [...new Set(ex.on.filter((w) => !(isLens && w === "lens")).concat(custom, auto))]
+    .filter((w) => w && /^[\x21-\x7E]+$/.test(w) && !inBase.has(w));
+}
+$("exChips").onclick = (e) => {
+  const b = e.target.closest("[data-ex]"); if (!b) return;
+  const w = b.dataset.ex;
+  if (w === "@lens") ex.autoLens = !ex.autoLens;
+  else ex.on = ex.on.includes(w) ? ex.on.filter((x) => x !== w) : ex.on.concat(w);
+  lsSet(LS_EX, ex); renderExChips(); updateLinks(); renderRecs();
+};
+$("exCustom").addEventListener("input", () => { ex.custom = $("exCustom").value; lsSet(LS_EX, ex); updateLinks(); renderRecs(); });
+
+// eBay の検索語が長すぎると後ろが切れるので、300文字に収まる分だけ除外語を付ける（自分で選んだ語が優先）
+const MAX_QUERY = 300;
+function withEx(base) {
+  if (!base) return "";
+  let q = base;
+  for (const w of excludeWords(base)) if (q.length + w.length + 2 <= MAX_QUERY) q += " -" + w;
+  return q;
+}
+// eBay のカテゴリ（店舗アプリだけ）。商品名から自動で決め、ボタンで変えられる
+const CATS = [["auto", "自動"], ["0", "すべて"], ["3323", "レンズ"], ["15230", "フィルムカメラ"], ["31388", "デジタルカメラ"]];
+const DIGITAL_RE = /\b(digital|dslr|mirrorless|coolpix|powershot|cyber-?shot|lumix|finepix|ixy|ixus|exilim|dsc-?\w+|ilce-?\d+|nex-?\d+|eos\s*(?:r\d*|kiss\s*[xm]\w*|\d+d\w*)|d\d{2,4}[a-z]?|z\s?\d{1,2}|z\s?f[c]?|x-?t\d+|x-?e\d|x-?h\d|x-?s\d+|x100\w*|x-?pro\d|gfx\w*|gr\s*(?:ii|iii|iv|digital)|om-?d|e-?m\d+|e-?pl?\d+|a\d{4}|k-(?:1|3|5|7|30|50|70)\b|kp|m(?:8|9|10|11)\b|q\d?|sl2?)\b|(?:^|\s)α\s?\d/i;
+let catSel = "auto";
+function autoCat(base) {
+  if (!base) return "0";
+  if (lensSpec(base)) return "3323";
+  return DIGITAL_RE.test(base) ? "31388" : "15230";
+}
+const catOf = (base) => (catSel === "auto" ? autoCat(base) : catSel);
+const catName = (id) => (CATS.find(([k]) => k === id) || ["", ""])[1];
+function renderCatChips() {
+  const a = autoCat($("query").value.trim());
+  $("catChips").innerHTML = CATS.map(([k, n]) =>
+    `<button class="chip" data-cat="${k}" aria-pressed="${k === catSel}">${k === "auto" ? `自動 <span class="s">${esc(catName(a))}</span>` : n}</button>`).join("");
+}
+$("catChips").onclick = (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catSel = b.dataset.cat; updateLinks(); };
+// core.js の ebay() のリンクにカテゴリを付ける（販売済み・出品中は _sacat、Product Research は categoryId）
+function linksWithCat(q, cat) {
+  const L = core ? core.ebay(q) : ebayLinks(q);
+  if (cat === "0") return L;
+  return { sold: L.sold + "&_sacat=" + cat, now: L.now + "&_sacat=" + cat, pr: L.pr + "&categoryId=" + cat };
+}
+
+let queryTouched = false;
+function updateLinks() {
+  const q = withEx($("query").value.trim());
+  const cat = catOf($("query").value.trim());
+  renderCatChips();
+  $("qPreview").textContent = q ? `eBayで検索する語: ${q}（カテゴリ: ${catName(cat)}）` : "";
+  const L = linksWithCat(q, cat);
+  for (const [id, k] of [["lSold", "sold"], ["lNow", "now"], ["lPr", "pr"]]) {
+    const a = $(id);
+    a.classList.toggle("off", !q);
+    a.href = q ? L[k] : "#";
+  }
+}
+function look() {
+  const name = $("name").value, price = parsePrice($("price").value);
+  const r = DATA && name.trim() ? lookup(name, price, $("junk").checked) : null;
+  if (!queryTouched) $("query").value = ebayQuery(name);
+  updateLinks();
+  renderResult(name, price, r);
+}
+function parsePrice(s) { const n = Number(String(s).normalize("NFKC").replace(/[^\d]/g, "")); return n > 0 ? n : null; }
+$("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; look(); });
+$("price").addEventListener("input", look);
+$("junk").addEventListener("change", look);
+$("query").addEventListener("input", () => { queryTouched = true; updateLinks(); });
+$("name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.target.blur(); remember(); } });
+for (const id of ["lSold", "lNow", "lPr"]) $(id).addEventListener("click", remember);
+
+function remember() {
+  const name = $("name").value.trim();
+  if (!name) return;
+  const h = lsGet(LS_HIST, []).filter((x) => x.name !== name);
+  h.unshift({ name, price: $("price").value, t: new Date().toLocaleDateString("ja-JP") });
+  lsSet(LS_HIST, h.slice(0, 20)); renderHist();
+}
+function renderHist() {
+  const h = lsGet(LS_HIST, []);
+  $("hist").innerHTML = h.length ? h.map((x, i) => `<div class="hist"><span>${esc(x.name)}${x.price ? ` <span class="s">${esc(x.price)}円</span>` : ""}</span><button data-i="${i}">開く</button></div>`).join("")
+    : `<div class="empty">まだありません</div>`;
+}
+$("hist").onclick = (e) => {
+  const i = e.target.dataset.i; if (i == null) return;
+  const x = lsGet(LS_HIST, [])[i];
+  setInput(x.name, x.price);
+};
+function setInput(name, price) {
+  $("name").value = name; $("price").value = price || ""; $("junk").checked = false; queryTouched = false; catSel = "auto";
+  look(); showTab("look"); window.scrollTo({ top: 0 });
+}
+
+// ------------------------------------------------------------ 値札の読み取り（Claude API）
+const TAG_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["found", "maker", "model", "kind", "search_query", "price_tax_included_jpy", "junk", "notes"],
+  properties: {
+    found: { type: "boolean", description: "カメラ・レンズの値札や商品が写っているか" },
+    maker: { type: "string", description: "メーカー（英語表記。例: Nikon, Canon, Pentax, Olympus）。不明なら空" },
+    model: { type: "string", description: "型番・機種名（英数字表記。例: FM2, New FD 50mm F1.4）。不明なら空" },
+    kind: { type: "string", enum: ["camera", "lens", "other", "unknown"] },
+    search_query: { type: "string", description: "eBayで検索する英語の語（メーカー＋型番。状態や色は入れない）" },
+    price_tax_included_jpy: { anyOf: [{ type: "integer" }, { type: "null" }], description: "お店に払う税込価格。税抜しか書いていなければ×1.1して四捨五入。価格が読めなければnull" },
+    junk: { type: "boolean", description: "ジャンク・現状品・難あり等の表記があるか" },
+    notes: { type: "string", description: "値札に書かれた状態の表記だけ（例: カビあり、動作未確認、美品）。30字以内、文末に句点は付けない。無ければ空" },
+  },
+};
+const TAG_PROMPT = "中古カメラ店の値札（または商品）の写真です。書かれているメーカー・型番・価格・状態を読み取ってください。" +
+  "日本語のメーカー名（ニコン、キヤノン等）は英語表記に直し、型番はカタログ通りの表記にしてください。" +
+  "読めない項目は推測せず空またはnullにしてください。";
+
+async function photoToJpeg(file, maxSide = 1568) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ng(new Error("画像を開けません")); i.src = url; });
+    const s = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(img.naturalWidth * s); cv.height = Math.round(img.naturalHeight * s);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    return cv.toDataURL("image/jpeg", 0.85).split(",")[1];
+  } finally { URL.revokeObjectURL(url); }
+}
+
+async function readTag(file) {
+  const key = lsGet(LS_KEY, "");
+  if (!key) throw new Error("設定タブで Claude の APIキーを入れてください");
+  const data = await photoToJpeg(file);
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json", "x-api-key": key, "anthropic-version": "2026-10-21",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-5-5", max_tokens: 4000,
+      output_config: { effort: "low", format: { type: "json_schema", schema: TAG_SCHEMA } },
+      messages: [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data } },
+        { type: "text", text: TAG_PROMPT },
+      ] }],
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = body.error && body.error.message || res.statusText;
+    if (res.status === 401) throw new Error("APIキーが正しくありません（設定タブで確認）");
+    if (res.status === 429) throw new Error("混み合っています。少し待ってもう一度");
+    throw new Error(`読み取りに失敗（${res.status}）: ${msg}`);
+  }
+  if (body.stop_reason === "refusal") throw new Error("この写真は読み取れませんでした");
+  if (body.stop_reason === "max_tokens") throw new Error("読み取りが途中で切れました。もう一度撮ってください");
+  const text = (body.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  return JSON.parse(text);
+}
+
+$("camBtn").onclick = () => $("camFile").click();
+$("camFile").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const st = $("ocrSt"), img = $("photo");
+  img.src = URL.createObjectURL(f); img.style.display = "block";
+  st.className = "status"; st.textContent = "読み取り中…（数秒）";
+  $("camBtn").disabled = true;
+  try {
+    const t = await readTag(f);
+    if (!t.found || !(t.search_query || t.model)) { st.className = "status err"; st.textContent = "型番を読み取れませんでした。値札に近づいて撮り直すか、手で入力してください。"; return; }
+    const name = t.search_query || [t.maker, t.model].filter(Boolean).join(" ");
+    $("name").value = name; queryTouched = false; catSel = "auto";
+    if (t.price_tax_included_jpy) $("price").value = t.price_tax_included_jpy;
+    $("junk").checked = !!t.junk;
+    look(); remember();
+    const note = String(t.notes || "").trim().replace(/[。.．\s]+$/, "");
+    st.textContent = `読み取り: ${name}${t.price_tax_included_jpy ? "／" + yen(t.price_tax_included_jpy) + "（税込）" : "／価格は読めず"}。違っていたら直してください。` +
+      (note ? `\n状態のメモ: ${note.length > 40 ? note.slice(0, 40) + "…" : note}` : "");
+  } catch (err) { st.className = "status err"; st.textContent = err.message; }
+  finally { $("camBtn").disabled = false; }
+};
+
+$("apiKey").value = lsGet(LS_KEY, "") ? "••••••••（保存済み）" : "";
+$("apiKey").onfocus = () => { if ($("apiKey").value.startsWith("•")) $("apiKey").value = ""; };
+$("keySave").onclick = () => {
+  const k = $("apiKey").value.trim();
+  if (!k.startsWith("sk-ant-")) { $("keyMsg").className = "status err"; $("keyMsg").textContent = "sk-ant- で始まるキーを貼り付けてください"; return; }
+  lsSet(LS_KEY, k); $("apiKey").value = "••••••••（保存済み）"; $("keyMsg").className = "status"; $("keyMsg").textContent = "保存しました";
+};
+$("keyDel").onclick = () => { try { localStorage.removeItem(LS_KEY); } catch (e) {} $("apiKey").value = ""; $("keyMsg").textContent = "削除しました"; };
+
+// ------------------------------------------------------------ おすすめ
+const recSel = lsGet(LS_REC, { brand: "", kind: "camera" });
+function renderBrands() {
+  const count = {};
+  for (const r of DATA.recs) count[r.brand] = (count[r.brand] || 0) + r.sales + (r.sales ? 0 : 0.01);
+  const brands = Object.keys(count).sort((a, b) => count[b] - count[a]);
+  if (!brands.includes(recSel.brand)) recSel.brand = brands[0] || "";
+  $("brandChips").innerHTML = brands.map((b) => `<button class="chip" data-brand="${esc(b)}" aria-pressed="${b === recSel.brand}">${esc(b)}</button>`).join("");
+  for (const c of $("kindChips").children) c.setAttribute("aria-pressed", String(c.dataset.kind === recSel.kind));
+}
+function renderRecs() {
+  if (!DATA) return;
+  const list = DATA.recs.filter((r) => r.brand === recSel.brand && r.kind === recSel.kind).slice(0, 20);
+  $("recTitle").textContent = `${recSel.brand} の${recSel.kind === "lens" ? "レンズ" : "カメラ"} おすすめ ${list.length}品`;
+  $("recList").innerHTML = list.length ? list.map((r, i) => {
+    const L = linksWithCat(withEx(r.label), r.kind === "lens" ? "3323" : DIGITAL_RE.test(r.label) ? "31388" : "15230");
+    return `<div class="rec"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
+      <div class="buy">税込 <strong>${yen(r.maxBuy)}</strong> 以下なら買い <span class="s">／想定${nusd(r.usd)}（送料別）${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
+      <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">販売済み</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">出品中</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
+  }).join("") : `<div class="empty">この条件の販売実績はまだありません</div>`;
+}
+$("brandChips").onclick = (e) => { const b = e.target.dataset.brand; if (b == null) return; recSel.brand = b; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
+$("kindChips").onclick = (e) => { const k = e.target.dataset.kind; if (!k) return; recSel.kind = k; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
+$("recList").onclick = (e) => { const n = e.target.dataset.look; if (n) setInput(n, ""); };
+
+// ------------------------------------------------------------ 計算（eBay利益電卓・店舗仕入れ）
+// 計算は core.calculate（拡張機能・調べると同じ）。入れる$は送料別の商品代 → 送料$40を足して送料込みで計算。
+// 値札が税抜なら×1.1した税込の額を払う。送料は空欄なら0円（店頭）
+const LS_CALC = "storeCalc";
+const calcSt = Object.assign({ tax: "in" }, lsGet(LS_CALC, {}));
+const num = (v) => { const n = Number(String(v || "").replace(/[^\d.]/g, "")); return String(v || "").trim() === "" || isNaN(n) ? null : n; };
+function calcRender() {
+  for (const c of $("cTax").children) c.setAttribute("aria-pressed", String(c.dataset.tax === calcSt.tax));
+  if (!DATA) return;
+  const g = DATA.cfg, fx = g.fx, item = num($("cItem").value), raw = num($("cBid").value);
+  const ship = 0, tm = 1 + g.storeTaxPct / 100, ex = calcSt.tax === "ex";  // 国内送料は見ない（ユーザー指定 2026-11-16）
+  if (item == null) { $("cResult").innerHTML = '<div class="empty">eBay商品代（送料別の$）を入れてください</div>'; return; }
+  const usd = item + g.deductionUsd;
+  const pay = raw == null ? null : Math.round(ex ? raw * tm : raw);  // 払う額（税込）
+  const it = (price) => ({ price, ship, tax: false, flags: [] });
+  const c = core.calculate(it(pay), usd, fx);
+  // 表示: 送料$40は受け取ってそのまま発送に使う（±0）ので、売上は商品代だけで見せる。手数料は送料込みの額にかかる
+  const sales = Math.round(usd * fx) - c.intl, take = c.net - c.intl, loss = sales - c.fees - take;
+  let be = null;  // 損益分岐の商品代（この仕入れ値で利益0になる eBay の商品代）
+  if (pay != null) {
+    let lo = 0, hi = 20000;
+    for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; (core.calculate(it(pay), m + g.deductionUsd, fx).profit >= 0 ? (hi = m) : (lo = m)); }
+    be = Math.round(hi * 100) / 100;
+  }
+  const cls = c.profit == null ? "" : c.profit >= 0 ? "g" : "x";
+  $("cResult").innerHTML = `
+    ${pay == null ? "" : `<div class="s">利益（仕入れ値 ${yen(pay)}（税込）${ex ? `＝${yen(raw)}（税抜）×1.1` : ""}）</div>
+    <div class="big ${cls}" style="font-size:30px">${yen(c.profit)}</div>
+    <div class="s">利益率 ${c.margin}%（送料込みの売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? " ・ 基準（利益3,000円・10%）に届かない" : " ・ 基準クリア"}</div>`}
+    <dl class="kv">
+      <dt>上限価格（税込）</dt><dd class="g">${c.maxBid ? yen(c.maxBid) : "買わない"}</dd>
+      <dt>（税抜（ストア）なら）</dt><dd>${c.maxBid ? yen(Math.floor(c.maxBid / tm + 1e-6)) : "-"}</dd>
+      <dt>売上（商品代$${item}×${fx}円）</dt><dd>${yen(sales)}</dd>
+      <dt>eBay手数料（商品代＋送料$${g.deductionUsd}の${g.feePct}%＋$${g.perOrderUsd}）</dt><dd>−${yen(c.fees)}</dd>
+      <dt>円転ロス（${g.convLossPct}%）</dt><dd>−${yen(loss)}</dd>
+      <dt>手取り（円）</dt><dd>${yen(take)}</dd>
+      <dt>梱包費</dt><dd>−${yen(g.packing)}</dd>
+      ${pay == null ? "" : `<dt>仕入れ値（税込）</dt><dd>−${yen(pay)}</dd>
+      <dt>損益分岐の商品代（送料別）</dt><dd>$${be}</dd>`}
+    </dl>
+    <div class="note">送料$${g.deductionUsd}は計算済みです（買い手から受け取り、そのまま発送に使うので±0。余裕ではありません）。送料分の手数料も上の eBay手数料に入っています。</div>`;
+}
+for (const id of ["cItem", "cBid"]) $(id).addEventListener("input", calcRender);
+$("cTax").onclick = (e) => { const k = e.target.closest("[data-tax]"); if (!k) return; calcSt.tax = k.dataset.tax; lsSet(LS_CALC, { tax: calcSt.tax }); calcRender(); };
+
+// ------------------------------------------------------------ お店（店舗仕入れの巡回リスト）
+const LS_AREA = "storeShopArea", LS_DONE = "storeShopDone";
+const AM = "https://maps.apple.com/?";
+const amPlace = (sh) => AM + "q=" + encodeURIComponent(sh.q) + "&sll=" + sh.ll;
+const amWalk = (addr) => AM + "daddr=" + encodeURIComponent(addr) + "&dirflg=w";   // 出発は現在地
+function renderShops() {
+  const S = window.SHOPS; if (!S) { $("shopList").innerHTML = '<div class="empty">店リストを読み込めませんでした（設定 → 最新版に更新）</div>'; return; }
+  const cur = lsGet(LS_AREA, S.areas[0].id), done = lsGet(LS_DONE, {});
+  const a = S.areas.find((x) => x.id === cur) || S.areas[0];
+  $("areaChips").innerHTML = S.areas.map((x) => `<button class="chip" data-area="${x.id}" aria-pressed="${x.id === a.id}">${esc(x.name)} <span class="s">${x.shops.length}軒</span></button>`).join("");
+  $("areaInfo").innerHTML = `スタート: <a href="${amWalk(a.startQ)}">${esc(a.start)}</a>（この順で歩くと計 ${esc(a.walk)}）。営業時間は ${esc(S.checked)} 調べ。`;
+  $("shopList").innerHTML = a.shops.map((sh, i) => {
+    const k = a.id + ":" + i, from = i ? "前の店" : a.start;
+    return `<div class="leg">↓ ${esc(from)}から徒歩 約${sh.min}分</div>
+<div class="shop${done[k] ? " done" : ""}"><div class="t"><span class="no">${done[k] ? "✓" : i + 1}</span><b>${esc(sh.name)}</b></div>
+<div class="d">${esc(sh.floor)}<br>🕒 ${esc(sh.hours)}${sh.off ? "／休 " + esc(sh.off) : ""}<br>${esc(sh.stock)}${sh.note ? `<div class="note">${esc(sh.note)}${sh.tel ? `（<a href="tel:${sh.tel}">${sh.tel}</a>）` : ""}</div>` : ""}</div>
+<div class="links"><a class="mini" href="${amPlace(sh)}">📍 地図</a><a class="mini main" href="${amWalk(sh.addr)}">🚶 ここへ歩く</a><button class="mini" data-done="${k}">${done[k] ? "戻す" : "行った"}</button></div></div>`;
+  }).join("") + `<div class="leg">↓ 帰り</div><a class="btn line" href="${amWalk(a.end || a.startQ)}">🚶 ${esc(a.end || a.start)}へ歩く</a>
+<button class="btn sec mt" data-reset="${a.id}">「行った」をリセット</button>`;
+}
+$("areaChips").onclick = (e) => { const b = e.target.closest("[data-area]"); if (!b) return; lsSet(LS_AREA, b.dataset.area); renderShops(); };
+$("shopList").onclick = (e) => {
+  const d = e.target.dataset, done = lsGet(LS_DONE, {});
+  if (d.done) { if (done[d.done]) delete done[d.done]; else done[d.done] = 1; }
+  else if (d.reset) { for (const k of Object.keys(done)) if (k.startsWith(d.reset + ":")) delete done[k]; }
+  else return;
+  lsSet(LS_DONE, done); renderShops();
+};
+
+// ------------------------------------------------------------ タブ・起動
+function showTab(t) {
+  for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", String(b.dataset.tab === t));
+  for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== t;
+  if (t === "calc") calcRender();
+}
+for (const b of document.querySelectorAll("nav button")) b.onclick = () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); };
+
+renderHist();
+renderShops();
+$("appVer").textContent = APP_VERSION;
+$("reloadApp").onclick = () => { location.replace(location.pathname + "?r=" + Date.now()); };
+renderExChips();
+updateLinks();
+idbGet("data").then((d) => { if (d) useData(d); else if (!lsGet(LS_AUTO, null)) showTab(lsGet(LS_HIST, []).length ? "look" : "set"); })
+  .catch(() => showTab("set"))
+  .finally(() => autoUpdate(false));
+</script>
+</body>
+</html>

@@ -35,12 +35,21 @@ def draw(size: int = 1024) -> Image.Image:
     return im
 
 
+STORE = Path(__file__).resolve().parent.parent / "store"
+
+
 def main() -> None:
     OUT.mkdir(exist_ok=True)
     big = draw()
     for n in (16, 32, 48, 128):
         big.resize((n, n), Image.LANCZOS).save(OUT / f"icon{n}.png")
     print(f"アイコンを作成: {OUT}")
+    # 店舗リサーチ（iPhone のホーム画面用）。角丸は iPhone 側で付くので四角・不透明で作る
+    sq = Image.new("RGB", big.size, NAVY)
+    sq.paste(big, (0, 0), big)
+    for n in (180, 512):
+        sq.resize((n, n), Image.LANCZOS).save(STORE / f"icon-{n}.png")
+    print(f"アイコンを作成: {STORE}")
 
 
 if __name__ == "__main__":

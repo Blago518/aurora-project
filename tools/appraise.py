@@ -109,6 +109,11 @@ class Item:
     expected_price_usd: float | None = None
     price_source: str = ""
     calc: dict = field(default_factory=dict)
+    seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
+    trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
+    desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
+    desc_checked: bool = False  # 説明文を読んだか（check_descriptions）
+    tentative: dict = field(default_factory=dict)   # 仮◎○（相場が無いが eBay 出品中の価格なら利益が出る。tentative.py）
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +307,7 @@ def parse_listing_page(page: str) -> tuple[list[Item], int | None]:
             prefilled=True,
             store_tax=x.get("taxFlag") == 1,
             memo="ストア" if (x.get("seller") or {}).get("isStore") else "",
+            seller_id=str((x.get("seller") or {}).get("userId") or ""),
         ))
     return items, total
 
@@ -452,6 +458,39 @@ NOISE_TOKENS = {
     "1", "the", "and", "with", "from", "japan", "mint", "exc", "exc+", "exc++", "exc+++", "near",
     "n", "a", "b", "c", "ab", "aa", "aaa", "s", "sale", "free", "shipping", "used", "ok",
 }
+# 同じ機種でも「型」で相場が違うもの。タイトルの書き方をそろえてから（VARIANT_NORMALIZE）、
+# 型が違う実績とは照合しない。strict=True は「片方にだけ型の表記がある」場合も別物とみなす（保守的）。
+# neg=True は eBay の検索語に、ほかの型を除外する語（-MMG など）も入れる。ebay は eBay 検索で使う表記。
+VARIANT_NORMALIZE = [
+    (r"\bAE\s*[-/]?\s*(?:West\s*)?(?:G\b|Germany\b)", " AEG "),
+    (r"\bAE\s*[-/]?\s*(?:J\b|Japan\b)", " AEJ "),
+    (r"\bMM\s*[-/]?\s*(?:West\s*)?(?:G\b|Germany\b)", " MMG "),
+    (r"\bMM\s*[-/]?\s*(?:J\b|Japan\b)", " MMJ "),
+    (r"\bAi\s*改|\bAi[-\s]?converted\b|\bAi'?d\b", " AiKai "),
+    (r"\bAi\s*-?\s*S\b", " Ai-S "),
+    (r"(?<![A-Za-z])S\s*\.\s*S\s*\.\s*C\b\.?", " SSC "),
+    (r"(?<![A-Za-z.])S\s*\.\s*C\b\.?", " SC "),
+    (r"\bNew\s*FD\b|\bnFD\b|\bFDn\b|ニュー\s*FD", " NewFD "),
+    (r"アイレベル|\beye\s*-?\s*level\b", " EyeLevel "),   # Nikon F・F2 のファインダー（相場が違う）
+    (r"フォトミック|\bphotomic\b", " Photomic "),
+]
+VARIANT_GROUPS = [
+    {"name": "Contax/Yashica（ツァイス C/Y）", "ctx": ["contax", "yashica"], "strict": True, "neg": True,
+     "vars": {"mmg": "MMG", "mmj": "MMJ", "aeg": "AEG", "aej": "AEJ"}},
+    {"name": "Hasselblad", "ctx": ["hasselblad"], "strict": True, "neg": True,
+     "vars": {"cfe": "CFE", "cfi": "CFi", "cf": "CF", "cb": "CB", "fe": "FE"}},
+    {"name": "Nikon（非Ai/Ai/Ai-S/Ai改）", "ctx": ["nikon", "nikkor"], "strict": False, "neg": False,
+     "vars": {"nonai": "Non-Ai", "ai": "Ai", "ai-s": "(Ai-S,AIS)", "aikai": "Ai"}},
+    {"name": "Canon FD（S.S.C./S.C./New FD）", "ctx": ["fd", "newfd"], "strict": False, "neg": False,
+     "vars": {"ssc": "(SSC,S.S.C.)", "sc": "(S.C.,SC)", "newfd": '("New FD",nFD)'}},
+    {"name": "Minolta（MC/MD）", "ctx": ["minolta", "rokkor"], "strict": False, "neg": True,
+     "vars": {"mc": "MC", "md": "MD"}},
+    # 「F2 アイレベル」に「F2 Photomic A」の相場が当たっていた（2026-11-16）。両方に表記があって違うときだけ別物
+    {"name": "Nikon F/F2（アイレベル/フォトミック）", "ctx": ["nikon"], "strict": False, "neg": False,
+     "vars": {"eyelevel": '("Eye Level",Eyelevel)', "photomic": "Photomic"}},
+]
+
+
 FLAG_RULES = [
     ("ジャンク", r"ジャンク|部品取り|現状品|動作未確認|動作不良|不具合|故障|for\s*parts"),
     ("光学難あり", r"カビ|クモリ|曇り|バルサム|ヤケ|傷あり|キズあり|拭き傷"),
@@ -459,24 +498,135 @@ FLAG_RULES = [
     ("美品", r"超美品|極上|美品|新品同様|未使用"),
     ("セット品", r"セット|まとめ|おまとめ|大量|\d+\s*点"),
     ("アダプター等", r"アダプタ|adapter|コンバーター|converter|接写リング|中間リング|エクステンション|テレプラス|"
-                   r"teleplus|テレコンバーター|テレコン|ムター|mutar|エクステンダー|extender|塗料|ペイント|マウント変換|→"),
-    ("付属品のみ?", r"(?:キャップ|ストラップ|ケース|フード|フィルター|背面|裏蓋|データバック|ファインダー)"
-                   r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|取扱説明書|説明書のみ|\bback\b"),
+                   r"teleplus|テレコンバーター|テレコン|ムター|mutar|エクステンダー|extender|塗料|ペイント|マウント変換|→|"
+                   r"^(?!.*\d\s*mm).*(?:adapt-?all|アダプトール)"),  # タムロンの交換マウント。焦点距離があればレンズ本体なので除く
+    ("付属品のみ?", r"(?:キャップ|ストラップ|ケース|フード|フィルター|背面|裏蓋|データバック|ファインダー|使用説明書|説明書)"
+                   r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|カタログ|説明書のみ|\bback\b|"
+                   # 「Sonnar T*180mmF2.8用」= そのレンズ用の付属品（「ニコン用」のようなマウントの表記は mm が無いので当たらない）
+                   r"\d+\s*mm\s*(?:F\s*/?\s*\d+(?:\.\d+)?)?\s*用|"
+                   r"ポーチ|月号|雑誌|ムック|書籍|写真集|カメラスタイル|\bP-?FILTER\b|magazine|マグニファイ|アイピース|ルーペ|アイカップ|接眼|magnifier|eyepiece|"
+                   # 三脚まわりの部品（例: 「Wimberley AP-452 … 400mm F2.8G / 600mm F4G 用プレート」に 600mm F4 の相場が当たっていた）
+                   r"ウィンバリー|wimberley|\bkirk\b|カーク|really\s*right\s*stuff|sunwayfoto|アルカ\s*スイス|arca[\s\-]*swiss|"
+                   r"レンズフット|レンズプレート|クイックリリース|lens\s*(?:plate|foot)|replacement\s*foot|"
+                   # 箱だけ（「【元箱のみ】… レンズ用元箱」が入札候補に出ていた）。「元箱付き」は除かない
+                   r"(?:元|外|空|化粧)?箱のみ|空箱|用(?:の)?(?:元|外|化粧)箱|\bbox\s*only\b|\bempty\s*box\b|"
+                   # カメラ・レンズの形をした雑貨（「レンズ型タンブラー」に 24-70mm の相場が当たっていた）
+                   r"タンブラー|マグカップ|ステンレスマグ|\bmug\b|tumbler|キーホルダー|ミニチュア|フィギュア|ガチャ|ぬいぐるみ|"
+                   r"(?:レンズ|カメラ)型|ノベルティ|ステッカー|バッジ|ピンバッジ"),
 ]
+
+
+# ---- 状態（コンディション）. 規則はここだけに書き、拡張機能・店舗アプリへは build_extension.py で渡す
+# 過去データ（eBay の商品名・頒布会のコンディション欄・手で直した相場の状態）→ 状態の名前。$1 は ( ) の中身
+COND_RULES = [
+    (r"\b(?:almost|nearly|near)\s*unused\b", "TOP MINT"),
+    (r"\b(?:top|t)[\s.\-]*mint\b", "TOP MINT"),
+    (r"\balmost[\s.\-]*mint\b", "Almost MINT"),
+    (r"\b(?:near|n)[\s.\-]*mint\b|\bnmint\b", "Near MINT"),
+    (r"\b(?:unused|brand\s*new|new\s*in\s*box)\b|未使用|新品", "Unused"),
+    (r"\bmint\b", "MINT"),
+    (r"\bexc(?:ellent)?\s*\+\s*([1-9])\b", "Exc+$1"),
+    (r"\bexc(?:ellent)?\s*(\+{1,9})", "Exc$1"),
+    (r"\bexc(?:ellent)?\b", "Exc"),
+    (r"\b(?:for\s*parts|parts\s*only|as[\s\-]?is|not\s*working|junk)\b|ジャンク|部品取り", "ジャンク"),
+]
+# 状態のランク（大きいほど良い）。ジャンクや分からない状態（頒布会の A・AB など）はランク無し＝補正しない
+# 2026-11-15 ユーザー指定: Unused > TOP MINT > MINT > Almost MINT > Near MINT > Exc+5 の順に1ランク（$10）ずつ
+COND_RANK = {"Unused": 11, "未使用": 11, "TOP MINT": 10, "MINT": 9, "Almost MINT": 8, "Near MINT": 7,
+             "Exc+5": 6, "Exc+++++": 6, "Exc+4": 5, "Exc++++": 5, "Exc+3": 4, "Exc+++": 4,
+             "Exc+2": 3, "Exc++": 3, "Exc+1": 2, "Exc+": 2, "Exc": 1}
+# ヤフオクの商品名（日本語の表記だけ使う。英語の MINT・Exc+++ は出品者の自己申告なので使わない）→ ランク。上から順に見る
+LISTING_COND_RULES = [
+    (r"未使用に近", 10), (r"未使用|新品未開封", 11), (r"新品同様", 10), (r"極上|超美品", 9), (r"美品", 7),
+    (r"良品|動作品|動作確認済|動作良好|完動|実用品|並品|難あり", 6),
+]
+LISTING_DEFAULT_RANK = 7  # 表記なし＝Near MINT として計算（ユーザーの指定 2026-11-15）
+
+
+def _cond_label(m: re.Match, out: str) -> str:
+    return out.replace("$1", m.group(1)) if "$1" in out else out
+
+
+def condition_of(row: dict) -> str:
+    """過去データの状態. 頒布会リストのコンディション欄・相場メモの状態（source の括弧内）→ 商品名 の順."""
+    src = unicodedata.normalize("NFKC", str(row.get("source") or ""))
+    h = re.match(r"^(頒布会リスト|相場メモ)\((.*?)\)?$", src)
+    for t in [h.group(2) if h else "", unicodedata.normalize("NFKC", str(row.get("title") or ""))]:
+        for pat, out in COND_RULES:
+            m = re.search(pat, t, re.I)
+            if m:
+                return _cond_label(m, out)
+    if h and h.group(1) == "相場メモ":
+        return h.group(2).strip()
+    w = h and re.match(r"^[^\s)]+", h.group(2))
+    return w.group(0) if w else ""
+
+
+def listing_rank(title: str) -> int:
+    t = unicodedata.normalize("NFKC", title or "")
+    for pat, rank in LISTING_COND_RULES:
+        if re.search(pat, t):
+            return rank
+    return LISTING_DEFAULT_RANK
+
+
+def condition_adjusted(matches: list[dict], title: str, flags: list[str], step: float) -> list[float]:
+    """過去データの価格を、この出品の状態に合わせて 1ランク step ドルずつ補正する（ジャンクの出品は補正しない）."""
+    lr = None if "ジャンク" in flags or not step else listing_rank(title)
+    out = []
+    for m in matches:
+        rr = COND_RANK.get(condition_of(m))
+        p = m["_price"]
+        out.append(round(max(p + step * (lr - rr), 0), 2) if lr is not None and rr is not None else p)
+    return out
 
 
 def detect_flags(title: str) -> list[str]:
     return [name for name, pat in FLAG_RULES if re.search(pat, title, re.I)]
 
 
+# ---- 出品者の管理番号（Tj036・Ft644461・NA77401・IT120751・【L256】・OL4709 など）を検索語から外す
+# 型番（M645・D850・GW690・SB800・SX-70 など）と形が似ているので、形だけでは決めない:
+#   1. 相場データ（売れた実績の eBay タイトル・鑑定表）に出てくる語は型番 → 絶対に外さない
+#   2. 型番にはまず無い形（Tj036 のような大文字＋小文字＋数字、英字1〜3文字＋数字5桁以上）→ 外す
+#   3. 型番にもある形（【L256】のような括弧の中だけの英数字、OL4709 のような英字2〜3文字＋数字4桁）
+#      → メーカー名より前にあるときだけ外す（管理番号はタイトルの頭、型番はメーカー名の後ろに書かれる）
+# 拡張機能の isStockCode と同じ規則（tools/test_appraise.py で一致を確認）
+STOCK_CODE_STRONG = (r"[A-Z][a-z]\d{3,}", r"[A-Za-z]{1,3}-?\d{5,}")
+STOCK_CODE_WEAK = (r"[A-Za-z]{2,3}\d{4}",)
+BRACKET_CODE_RE = r"[【\[〔<]\s*([A-Za-z]{0,3}-?\d{2,7}[A-Za-z]?)\s*[】\]〕>]"
+KNOWN_MODEL_TOKENS: set[str] = set()
+
+
+def set_known_models(titles) -> None:
+    """相場データのタイトルに出てくる英数字の語（型番）を覚える。ここにある語は管理番号として外さない."""
+    KNOWN_MODEL_TOKENS.clear()
+    for t in titles:
+        for tok in re.findall(r"[A-Za-z0-9][A-Za-z0-9\-]*", unicodedata.normalize("NFKC", str(t or ""))):
+            low = tok.lower().replace("-", "")
+            if re.search(r"\d", low) and re.search(r"[a-z]", low):
+                KNOWN_MODEL_TOKENS.add(low)
+
+
+def is_stock_code(tok: str, before_brand: bool, bracketed: bool) -> bool:
+    if tok.lower().replace("-", "") in KNOWN_MODEL_TOKENS:
+        return False
+    if any(re.fullmatch(p, tok) for p in STOCK_CODE_STRONG):
+        return True
+    return before_brand and (bracketed or any(re.fullmatch(p, tok) for p in STOCK_CODE_WEAK))
+
+
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
     t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
+    t = re.sub(BRACKET_CODE_RE, lambda m: " \x01" + m.group(1) + " ", t)  # 【L256】→ 管理番号の候補の印（\x01）を付ける
     t = re.sub(r"\d+円[~〜～]?", " ", t)  # 「1円～」
     t = re.sub(r"\b[wW]\s*/\s*", " ", t)  # w/case（with）
     t = re.sub(r"(\d)\s*(mm|㎜)\s*([fF]\s*/?\s*\d)", r"\1mm \3", t)  # 75-150mmF4 → 75-150mm F4
     t = re.sub(r"[①-⑳]", " ", t)  # まとめ⑤ 等の丸数字
     t = re.sub(r"非\s*-?\s*A[iI](?![-sS])", " nonAi ", t)  # 非Ai（Ai/Ai-Sとは相場が違う）
+    for pat, rep in VARIANT_NORMALIZE:  # 型の表記をそろえる（AE Japan → AEJ、S.S.C. → SSC など）
+        t = re.sub(pat, rep, t, flags=re.I)
     t = re.sub(r"[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b", " ", t)  # #v4081 等の管理番号
     t = re.sub(r"(\d)\s*[・･]\s*(\d)", r"\1.\2", t)        # f2・8 → f2.8
     t = re.sub(r"\b[fF]\s*/\s*(\d)", r"F\1", t)              # f/2.8 → F2.8
@@ -490,11 +640,17 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
         if ja in t:
             brand = brand or en
             all_brands.append(en)
-            t = t.replace(ja, " ")
+            t = t.replace(ja, " \x02 ")  # \x02 = メーカー名があった位置（管理番号の判定に使う）
     for ja, en in WORDS_JA:
         t = t.replace(ja, f" {en} ")
     tokens: list[str] = []
-    for tok in re.findall(r"[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*", t):
+    found = list(re.finditer(r"[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*", t))
+    brand_at = [t.find("\x02")] if "\x02" in t else []
+    brand_at += [m.start() for m in found if m.group().lower().strip(".-") in BRANDS_EN][:1]
+    # メーカー名が無いタイトルは「先頭の語」だけを頭とみなす（Polaroid 【SX-70】 の SX-70 を外さない）
+    first_brand = min(brand_at) if brand_at else (found[0].end() if found else 0)
+    for m in found:
+        tok = m.group()
         low = tok.lower().strip(".-")
         if not low or low in NOISE_TOKENS:
             continue
@@ -503,6 +659,8 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
             continue  # 「1円」の1や、シリアル番号っぽい長い数字
         if re.fullmatch(r"no\.?\d+", low):
             continue
+        if is_stock_code(tok, m.start() < first_brand, m.start() > 0 and t[m.start() - 1] == "\x01"):
+            continue  # 出品者の管理番号は eBay の検索語に入れない
         line = re.sub(r"^[a-z]\.", "", low)  # g.zuiko → zuiko
         if line in LENS_LINES:  # レンズ銘からメーカーを補う（語は残す）
             brand = brand or LENS_LINES[line]
@@ -562,7 +720,7 @@ def quantile(values: list[float], q: float) -> float:
 def _tokens(s: str) -> set[str]:
     q = title_to_query(s, max_tokens=20)
     q = unicodedata.normalize("NFKC", q).lower()
-    q = re.sub(r"(\d)\s*mm", r"\1mm", q)
+    q = re.sub(r"(\d)\s*mm(?![a-z])", r"\1mm", q)  # 「50 mm」→50mm（「F1.4 MMJ」はつなげない）
     q = re.sub(r"\bf\s*/\s*(\d)", r"f\1", q)  # f/1.4 → f1.4
     q = re.sub(r"[()\[\]+&]", " ", q)
     out = set()
@@ -612,57 +770,6 @@ def read_sales(path: Path | None) -> list[dict]:
     return rows
 
 
-SALES_SOURCES = ("reference_prices.csv", "ebay_sales.csv", "chatwork_sales.csv", "price_memo.csv")
-
-
-def _sale_date(v: str):
-    """販売日を日付にする（2026/10/05・2026-10-05・2026年10月5日 など）。読めなければ None."""
-    m = re.search(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})", v or "")
-    if not m:
-        return None
-    try:
-        return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).date()
-    except ValueError:
-        return None
-
-
-def drop_duplicate_api_sales(rows: list[dict]) -> list[dict]:
-    """eBay API の売上のうち、古物台帳に同じ販売があるものを除く（台帳を優先）.
-
-    同じ販売とみなす条件: 送料込みの金額の差が $1 以内、かつ販売日の差が2日以内（時差を考慮）。
-    台帳1件につき API 1件まで対応させる。
-    """
-    ledger = [r for r in rows if r.get("source") == "自分の販売実績"]
-    used: set[int] = set()
-    out = []
-    for r in rows:
-        if not str(r.get("source", "")).startswith("自分の販売実績(eBay API)"):
-            out.append(r)
-            continue
-        d = _sale_date(r.get("date", ""))
-        hit = None
-        for i, l in enumerate(ledger):
-            if i in used or abs(l["_price"] - r["_price"]) > 1.0:
-                continue
-            ld = _sale_date(l.get("date", ""))
-            if d and ld and abs((d - ld).days) > 2:
-                continue
-            hit = i
-            break
-        if hit is None:
-            out.append(r)
-        else:
-            used.add(hit)
-    return out
-
-
-def load_default_sales(data_dir: Path = DATA) -> tuple[list[dict], list[Path]]:
-    """data/ の相場データを読み、eBay API の売上は台帳と重複しない分だけ足す."""
-    paths = [p for p in (data_dir / n for n in SALES_SOURCES) if p.exists()]
-    rows = [row for p in paths for row in read_sales(p)]
-    return drop_duplicate_api_sales(rows), paths
-
-
 ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)
 THIRD_PARTY = {"tamron", "sigma", "tokina", "7artisans", "ttartisan", "brightin", "kenko", "pixco", "k&f", "meike", "viltrox", "laowa",
                "samyang", "yongnuo", "kipon", "fotodiox", "neewer", "commlite", "sg-image", "pergear",
@@ -670,6 +777,36 @@ THIRD_PARTY = {"tamron", "sigma", "tokina", "7artisans", "ttartisan", "brightin"
 COLOR_WORDS = {"black", "silver", "chrome", "white", "red", "blue", "green", "brown"}
 GENERATIONS = {"ii", "iii", "iv", "mkii", "mkiii", "mk2", "mk3", "mark"}
 PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定", "whiteface", "af"}
+
+def variants_conflict(qt: set, rt: set) -> bool:
+    """型が違う（または strict のグループで片方にだけ型がある）なら True."""
+    for g in VARIANT_GROUPS:
+        if not (set(g["ctx"]) & (qt | rt)):
+            continue
+        qv, rv = qt & set(g["vars"]), rt & set(g["vars"])
+        if (qv != rv) if g["strict"] else (qv and rv and qv != rv):
+            return True
+    return False
+
+
+def ebay_search_query(query: str, title: str = "") -> str:
+    """eBay 検索語に型を入れる（入っていなければ足す）。neg のグループはほかの型を除外する語も足す."""
+    toks = _tokens(f"{query} {title}")
+    words = query.split()
+    for g in VARIANT_GROUPS:
+        if not (set(g["ctx"]) & toks):
+            continue
+        found = [v for v in g["vars"] if v in toks]
+        if len(found) != 1:
+            continue
+        v = found[0]
+        disp = g["vars"][v]
+        words = [disp if w.lower() == v else w for w in words]
+        if disp not in words:
+            words.append(disp)
+        if g["neg"]:
+            words += ["-" + d for k, d in g["vars"].items() if k != v and d != disp]
+    return " ".join(dict.fromkeys(words))
 
 
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表"]
@@ -684,6 +821,11 @@ def source_tier(row: dict) -> int:
     if src.startswith("鑑定表"):
         return 3
     return 0
+
+
+def _lensy(tokens: set[str]) -> bool:
+    """焦点距離（50mm・5cm）があればレンズ."""
+    return any(t.endswith("mm") or re.fullmatch(r"\d+(?:\.\d+)?cm", t) for t in tokens)
 
 
 def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[dict]:
@@ -701,8 +843,8 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         rb = rt & brands
         if rb and not (rb & qt):
             continue
-        # レンズ（mm表記あり）とボディ（なし）を取り違えない
-        if any(t.endswith("mm") for t in qt) != any(t.endswith("mm") for t in rt):
+        # レンズ（mm・cm表記あり）とボディ（なし）を取り違えない（「NIKKOR-H 5cm f2」に「Nikon F2」が当たっていた）
+        if _lensy(qt) != _lensy(rt):
             continue
         # 付属品だけの実績（ストラップ・ケース等）は本体の参考にしない
         if ACCESSORY_RE.search(row.get("title", "")) and not ACCESSORY_RE.search(query):
@@ -715,6 +857,13 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
             continue
         # II / III などの世代違いは別機種
         if (qt & GENERATIONS) != (rt & GENERATIONS):
+            continue
+        # 型違い（Contax の MMJ と AEG など）は相場が違う
+        if variants_conflict(qt, rt):
+            continue
+        # 実績側の英字の語（メーカー・レンズ銘など）が1つも無ければ別物
+        # 例: 「YASHICA 35mm 1:2.8」に「ALPA 35mm 2.8」が数字だけで当たっていた
+        if not (qt & {t for t in rt if not re.search(r"\d", t) and t not in COLOR_WORDS}):
             continue
         # 型番・焦点距離・F値など数字を含む語は、実績側のものが全部一致すること
         digits = {t for t in rt if re.search(r"\d", t)}
@@ -791,10 +940,13 @@ def match_kantei(title: str, table: list[dict]) -> list[dict]:
             continue
         if "nonai" in qt and rt & {"ai", "ai-s"}:
             continue
-        if any(x.endswith("mm") for x in qt) != any(x.endswith("mm") for x in rt):
+        if _lensy(qt) != _lensy(rt):
             continue
         model = {x for x in rt if re.search(r"\d", x) and not x.endswith("mm") and not x.startswith("f")}
         if model and not model <= qt:
+            continue
+        # 焦点距離・F値は表の側の値がタイトルに全部あること（「55mm F3.5」に「18mm f/3.5」が当たっていた）
+        if not {x for x in rt if re.fullmatch(r"[\d.\-]+mm|f[\d.\-]+", x)} <= qt:
             continue
         return [dict(row, _score=1.0)]
     return []
@@ -853,8 +1005,11 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
         return fixed - bid * k
 
     # 上限入札額: 利益額と利益率の両方の基準を満たす最大値
-    by_profit = (fixed - j["min_profit_jpy"]) / k
-    by_margin = (fixed - j["min_margin_pct"] / 100 * revenue_jpy) / k
+    # 安心ストア（フォロー中）は人気で利益率が低いので基準を緩める（config.toml の trusted_*）
+    min_profit = j.get("trusted_min_profit_jpy", j["min_profit_jpy"]) if item.trusted else j["min_profit_jpy"]
+    min_margin = j.get("trusted_min_margin_pct", j["min_margin_pct"]) if item.trusted else j["min_margin_pct"]
+    by_profit = (fixed - min_profit) / k
+    by_margin = (fixed - min_margin / 100 * revenue_jpy) / k
     max_bid = max(0, round_down_to_increment(min(by_profit, by_margin)))
     breakeven = max(0, round_down_to_increment(fixed / k))
 
@@ -899,6 +1054,8 @@ def judge(item: Item) -> tuple[str, str]:
     now = item.current_price_jpy
     if {"付属品のみ?", "アダプター等", "セット品"} & set(item.flags):
         return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
+    if item.desc_hits:  # 説明文にカビ・クモリ等（拡張機能の説明文チェックと同じ規則）
+        return "要確認", prefix + "説明文に " + "・".join(h["word"] for h in item.desc_hits) + "（方針では避ける）"
     if "光学難あり" in item.flags:  # 方針: 修理しないので光学難（カビ・クモリ等）は避ける
         return "要確認", prefix + "光学難あり（方針では避ける）。写真で程度を確認してください"
     if c["max_bid_jpy"] <= 0:
@@ -928,7 +1085,8 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
     if item.ebay_price_usd is not None:
         item.expected_price_usd, item.price_source = item.ebay_price_usd, "手入力"
     elif item.history_matches:
-        ps = [m["_price"] for m in item.history_matches]
+        step = float(cfg["judge"].get("condition_step_usd", 0) or 0)
+        ps = condition_adjusted(item.history_matches, item.title, item.flags, step)
         item.expected_price_usd = round(statistics.median(ps), 2)
         src = str(item.history_matches[0].get("source", ""))
         label = SOURCE_LABELS[source_tier(item.history_matches[0])]
@@ -943,8 +1101,212 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
     item.calc = calculate(item, cfg, fx)
 
 
+MEMO_DOWNLOAD = "aurora_price_memo.csv"  # 拡張機能が「直す」「登録」のたびに ダウンロード/ に上書き保存する
+MEMO_FIELDS = ["title", "sold_price_usd", "source", "memo"]
+
+
+def import_extension_memo(downloads: Path | None = None, dest: Path | None = None) -> tuple[int, int]:
+    """拡張機能が保存した相場メモ（ダウンロード/aurora_price_memo.csv）を data/price_memo.csv に取り込む.
+
+    同じ機種（title）の相場メモは金額を新しい値に更新し、無ければ追加する。相場メモ以外の行はそのまま残す。
+    戻り値: (追加した件数, 更新した件数)。ファイルが無ければ (0, 0)。
+    """
+    downloads = downloads or Path.home() / "Downloads"
+    dest = dest or DATA / "price_memo.csv"
+    files = sorted(downloads.glob("aurora_price_memo*.csv"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        return 0, 0
+    new = {}  # 機種名 → (金額, source)。source は 相場メモ か 相場メモ(状態)
+    for r in csv.DictReader(files[-1].read_text(encoding="utf-8-sig").splitlines()):
+        t, v = (r.get("title") or "").strip(), _float_or_none(r.get("sold_price_usd"))
+        src = (r.get("source") or "").strip()
+        if t and v:
+            new[t] = (v, src if src.startswith("相場メモ") else "相場メモ")
+    rows, fields = [], list(MEMO_FIELDS)
+    if dest.exists():
+        rd = csv.DictReader(dest.read_text(encoding="utf-8-sig").splitlines())
+        fields = list(rd.fieldnames or MEMO_FIELDS) + [f for f in MEMO_FIELDS if f not in (rd.fieldnames or [])]
+        rows = list(rd)
+    added = updated = 0
+    today = datetime.now().strftime("%Y-%m-%d")
+    for r in rows:
+        t = (r.get("title") or "").strip()
+        if t in new and is_memo(r):
+            v, src = new[t]
+            if _float_or_none(r.get("sold_price_usd")) != v or (r.get("source") or "") != src:
+                r["sold_price_usd"], r["source"], r["memo"] = f"{v:g}", src, f"拡張機能で直した {today}"
+                updated += 1
+            del new[t]
+    for t, (v, src) in new.items():
+        rows.append({"title": t, "sold_price_usd": f"{v:g}", "source": src, "memo": f"拡張機能で直した {today}"})
+        added += 1
+    if added or updated:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        print(f"相場メモを取り込み: 追加 {added}件・更新 {updated}件（{files[-1].name} → {dest.name}）", file=sys.stderr)
+    return added, updated
+
+
+# ---- 説明文チェック（extension_template.js の descHits と同じ規則）
+DEFECT_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|剥離|ヤケ|黄変|"
+                       r"拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響)")
+PHOTO_ONLY_RE = re.compile(r"光学[^\n]{0,15}\n?(?:[^\n]{0,60}\n?){0,3}?[^\n]{0,40}写真[^\n]{0,10}確認")
+NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
+
+
+def desc_hits(text: str, cond: str = "") -> list[dict]:
+    hits: list[dict] = []
+    for m in DEFECT_RE.finditer(text):
+        i, w = m.start(), m.group(1)
+        if i > 0 and text[i - 1] == "「":
+            continue  # 「動作未確認品」は返品対象外 など、規約の定型文
+        around = text[max(0, i - 15):i + 25]
+        if w == "故障" and re.search(r"初期不良|自然故障|返品|保証|修理|場合", around):
+            continue
+        s_start = max(text.rfind("。", 0, i + 1), text.rfind("\n", 0, i + 1)) + 1
+        s_end = re.search(r"[。\n]", text[i:])
+        sentence = text[s_start:(i + s_end.start()) if s_end else i + 80]
+        if re.search(r"返品|返金|対象外|保証|免責", text[max(0, i - 200):i]) and \
+                len(re.findall(r"カビ|かび|くもり|クモリ|曇り|サビ|錆|キズ|傷|磨耗|摩耗|劣化|ゴミ|チリ|ホコリ", sentence)) >= 3:
+            continue
+        rest = text[i:i + 60]
+        kv = re.match(r"^\s*[：:]\s*([^\s　、。|｜]+)", rest[len(w):])
+        if kv:
+            if re.match(r"^(なし|無し|ナシ|無|ない|-|ー|×)", kv.group(1)):
+                continue
+        else:
+            cut = re.search(r"[。\n】|｜]", rest)
+            if NEG_RE.search(rest[:cut.start()] if cut else rest):
+                continue
+        if any(h["word"] == w for h in hits):
+            continue
+        hits.append({"word": w, "snip": " ".join(text[max(0, i - 18):i + 32].split())})
+    ph = PHOTO_ONLY_RE.search(text)
+    if ph:
+        hits.append({"word": "光学は写真で確認", "snip": " ".join(ph.group(0).split())[:60]})
+    if cond and "状態が悪い" in cond:
+        hits.append({"word": "状態が悪い", "snip": "商品の状態: " + cond})
+    return hits
+
+
+def read_description(page: str) -> tuple[str, str]:
+    """出品ページの説明文（テキスト）と商品の状態."""
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
+    if not m:
+        return "", ""
+    j = json.loads(m.group(1))
+    props = j.get("props") or {}
+    st = (props.get("pageProps") or {}).get("initialState") or props.get("initialState") or {}
+    item = (((st.get("item") or {}).get("detail") or {}).get("item")) or {}
+    raw = str(item.get("descriptionHtml") or item.get("description") or "")
+    raw = re.sub(r"<br\s*/?>", "\n", raw, flags=re.I)
+    raw = re.sub(r"</(p|div|li|tr|h\d)>", "\n", raw, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", raw).replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    return text, str(item.get("conditionName") or "")
+
+
+CONFIG_DEFAULT_SHIP = 1000  # 表示用。計算は config.toml の default_domestic_shipping_jpy（main で上書き）
+# eBay の$は送料を除いた商品代（net・送料別）で表示する（2026-11-15 ユーザー指定）。計算は送料込みのまま
+CONFIG_SHIP_USD = 40.0  # 表示用。config.toml の [shipping] deduction_usd（main で上書き）
+
+
+def _net(v) -> float | None:
+    return None if v is None else round(float(v) - CONFIG_SHIP_USD, 2)
+
+
+def item_shipping(page: str) -> int | None:
+    """出品ページの送料（extension_template.js の shipFee と同じ）: 出品者負担なら0、配送方法の送料（一律）の一番安いもの。分からなければ None."""
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
+    if not m:
+        return None
+    props = json.loads(m.group(1)).get("props") or {}
+    st = (props.get("pageProps") or {}).get("initialState") or props.get("initialState") or {}
+    item = (((st.get("item") or {}).get("detail") or {}).get("item")) or {}
+    if item.get("chargeForShipping") == "seller":
+        return 0
+    fees = [x.get("shippingFee") for x in ((item.get("shipping") or {}).get("methods") or []) if isinstance(x, dict)]
+    fees = [int(v) for v in fees if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0]
+    return min(fees) if fees else None
+
+
+def check_descriptions(items: list[Item], delay: float, cfg: dict | None = None, fx: float | None = None) -> int:
+    """◎○の出品だけ出品ページを読み、説明文にカビ・クモリ等があれば要確認にする. 検索結果に送料が無ければ、
+    出品ページの送料で計算し直す（無ければ既定の額のまま）. 読んだ件数を返す."""
+    n = 0
+    for it in items:
+        if not it.auction_id or judge(it)[0] not in ("◎", "○"):
+            continue
+        try:
+            page = http_get(it.url)
+            text, cond = read_description(page)
+        except Exception as e:  # 読めなくても判定は続ける
+            it.fetch_note += f"説明文を読めませんでした（{e}） "
+            continue
+        if it.domestic_shipping_jpy is None:
+            ship = item_shipping(page)
+            if ship is not None:
+                it.domestic_shipping_jpy = ship
+                it.fetch_note += "送料は出品ページ "
+                if cfg and it.expected_price_usd is not None:
+                    it.calc = calculate(it, cfg, fx)
+        it.desc_hits = desc_hits(text, cond)
+        it.desc_checked = True
+        n += 1
+        time.sleep(delay)
+    return n
+
+
+# ---- 安心ストア（フォロー中）: data/trusted_sellers.csv（user_id,name）。拡張機能がストアのページで自動登録し、
+#      ダウンロード/aurora_trusted_sellers.csv に保存 → import_extension_trusted() で取り込む
+TRUSTED_DOWNLOAD = "aurora_trusted_sellers.csv"
+
+
+def load_trusted(path: Path | None = None) -> dict[str, str]:
+    path = path or DATA / "trusted_sellers.csv"
+    if not path.exists():
+        return {}
+    return {r["user_id"].strip(): (r.get("name") or "").strip()
+            for r in csv.DictReader(path.read_text(encoding="utf-8-sig").splitlines()) if (r.get("user_id") or "").strip()}
+
+
+def import_extension_trusted(downloads: Path | None = None, dest: Path | None = None) -> bool:
+    """拡張機能が保存した安心ストアの一覧（全件）で data/trusted_sellers.csv を置き換える. 変わったら True."""
+    downloads = downloads or Path.home() / "Downloads"
+    dest = dest or DATA / "trusted_sellers.csv"
+    files = sorted(downloads.glob("aurora_trusted_sellers*.csv"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        return False
+    rows = [r for r in csv.DictReader(files[-1].read_text(encoding="utf-8-sig").splitlines())
+            if (r.get("user_id") or "").strip() and str(r.get("on", "1")).strip() != "0"]
+    new = {r["user_id"].strip(): (r.get("name") or "").strip() for r in rows}
+    if new == load_trusted(dest):
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["user_id", "name"])
+        w.writerows(sorted(new.items(), key=lambda kv: kv[1]))
+    print(f"安心ストアを取り込み: {len(new)}件（{files[-1].name} → {dest.name}）", file=sys.stderr)
+    return True
+
+
+def is_memo(row: dict) -> bool:
+    """相場メモ（手で直した相場）. 過去データより優先する（extension_template.js の isMemo と同じ）."""
+    return str(row.get("source") or "").startswith("相場メモ")
+
+
+def match_prefer_memo(query: str, memo: list[dict], others: list[dict]) -> list[dict]:
+    return match_sales(query, memo) or match_sales(query, others)
+
+
 def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline: bool,
             delay: float, kantei: list[dict] | None = None) -> None:
+    memo = [s for s in sales if is_memo(s)]
+    others = [s for s in sales if not is_memo(s)]
+    set_known_models([s.get("title") for s in sales] + [k.get("title") for k in (kantei or [])])
     for i, item in enumerate(items, 1):
         if not item.prefilled:
             print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)
@@ -959,7 +1321,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
             continue
 
         # 照合はタイトル全体（検索語は7語に絞っているため）
-        item.history_matches = match_sales(f"{item.ebay_query} {item.title}", sales)
+        item.history_matches = match_prefer_memo(f"{item.ebay_query} {item.title}", memo, others)
         if not item.history_matches and kantei:
             item.history_matches = match_kantei(item.title, kantei)
 
@@ -984,10 +1346,25 @@ def rows_for_output(items: list[Item]) -> list[dict]:
     for it in items:
         mark, reason = judge(it)
         c = it.calc
-        links = ebay_links(it.ebay_query) if it.ebay_query else {}
+        links = ebay_links(ebay_search_query(it.ebay_query, it.title)) if it.ebay_query else {}
         rows.append(
             {
                 "判定": mark,
+                "枠": "安心" if it.trusted else "チャレンジ",
+                # 確認不要＝根拠が 自分の販売実績・Chatwork実績・自分で登録した相場（または手入力）。頒布会リスト・鑑定表（推定）は確認してから
+                "根拠の強さ": "確認不要" if (it.ebay_price_usd is not None or (it.history_matches and source_tier(it.history_matches[0]) <= 1))
+                else "確認してから" if it.expected_price_usd is not None else "",
+                "国内送料": it.domestic_shipping_jpy,
+                "国内送料の根拠": ("出品ページ" if "送料は出品ページ" in it.fetch_note else "検索結果")
+                if it.domestic_shipping_jpy is not None else f"不明→{_yen(int(CONFIG_DEFAULT_SHIP))}で計算",
+                "仮判定": it.tentative.get("mark", ""),
+                "仮の上限入札額": it.tentative.get("max_bid"),
+                "仮の想定USD": it.tentative.get("usd"),
+                "仮の利益(現在価格)": it.tentative.get("profit"),
+                "仮の根拠": (f"{it.tentative['label']} ・ eBay出品中（送料別）最安${_net(it.tentative['min']):.0f}・中央値${_net(it.tentative['med']):.0f}"
+                          f"（{it.tentative['n']}件）から案 ${_net(it.tentative['sg']):g}") if it.tentative else "",
+                "仮のsoldURL": (it.tentative.get("links") or {}).get("sold", ""),
+                "仮の出品中URL": (it.tentative.get("links") or {}).get("active", ""),
                 "理由": reason,
                 "タイトル": it.title,
                 "ヤフオクURL": it.url,
@@ -995,14 +1372,14 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "即決価格": it.buy_now_jpy,
                 "入札数": it.bids,
                 "終了": it.end_time,
-                "eBay検索語": it.ebay_query,
+                "eBay検索語": ebay_search_query(it.ebay_query, it.title) if it.ebay_query else "",
                 "eBay販売済みURL": links.get("sold", ""),
                 "eBay出品中URL": links.get("active", ""),
                 "eBayProductResearchURL": links.get("research", ""),
                 "過去実績件数": len(it.history_matches) or None,
                 "過去実績URL": " ".join(m.get("ebay_url", "") for m in it.history_matches if m.get("ebay_url")),
                 "過去実績の内訳": " / ".join(
-                    f"{m.get('title', '')} ${m['_price']:g}"
+                    f"{m.get('title', '')} ${_net(m['_price']):g}（送料別）"
                     + (f" 仕入{int(float(m['purchase_jpy'])):,}円" if str(m.get('purchase_jpy') or '').replace('.', '').isdigit() else "")
                     + f" [{m.get('source', '自分の販売実績')}]"
                     for m in it.history_matches[:5]),
@@ -1021,6 +1398,8 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "損益分岐入札額": c.get("breakeven_bid_jpy"),
                 "上限までの余裕": c.get("headroom_jpy"),
                 "注意": " / ".join(it.flags),
+                "説明文": ("説明文に " + "・".join(h["word"] for h in it.desc_hits)) if it.desc_hits
+                else "説明文に光学難・故障の記載なし" if it.desc_checked else "",
                 "メモ": (it.memo + " " + it.fetch_note).strip(),
             }
         )
@@ -1080,7 +1459,10 @@ def model_key(title: str) -> tuple[str, str]:
     toks = title_to_query(title, 20).split()
     brand = toks[0] if toks and toks[0].lower() in {b.lower() for b in BRANDS_EN.values()} else ""
     rest = toks[1:] if brand else toks
-    key_toks = [t for t in rest if re.search(r"\d", t)][:3] or rest[:2]
+    # 世代（II・III）と限定などの型も機種名に残す（拡張機能の modelKey と同じ考え方）
+    gen = lambda t: t.lower() in GENERATIONS or t.lower() in PREMIUM_VARIANTS  # noqa: E731
+    digits = [t for t in rest if re.search(r"\d", t)][:3]
+    key_toks = ([t for t in rest if t in digits or gen(t)] if digits else []) or rest[:2]
     label = " ".join(([brand] if brand else []) + key_toks)
     norm = []
     for t in label.lower().split():
@@ -1130,9 +1512,14 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
                unpriced: list[dict] | None = None) -> None:
     e = html.escape
     j = cfg["judge"]
-    cards = []
+    cards: dict[str, list[str]] = {"安心": [], "チャレンジ": [], "要確認": [], "確認": []}
+    # 付属品だけ（カタログ・フード・説明書など）・アダプター等は仕入れの対象外 → 出さない（件数だけ）
+    is_acc = lambda r: any(f in (r.get("注意") or "") for f in ("付属品のみ?", "アダプター等"))  # noqa: E731
+    acc_n = sum(1 for r in rows if is_acc(r))
+    rows_all, rows = rows, [r for r in rows if not is_acc(r)]
     shown = [r for r in rows if r["判定"] in ("◎", "○") or (r["判定"] == "要確認" and r["想定販売価格USD"])]
     hidden_bad = [r for r in rows if r["判定"] == "×"]
+    tent = sorted((r for r in rows if r.get("仮判定")), key=lambda r: -(r.get("仮の利益(現在価格)") or 0))
     for r in shown:
         cls = {"◎": "good", "○": "ok", "×": "bad"}.get(r["判定"], "unk")
         def link(u, label):
@@ -1140,16 +1527,18 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
         hist = " ".join(
             link(u, f"実績{i+1}") for i, u in enumerate(r["過去実績URL"].split()) if u
         )
-        cards.append(f"""
+        box = (cards["要確認"] if r["判定"] == "要確認" else cards["確認"] if r.get("根拠の強さ") == "確認してから"
+               else cards[r.get("枠") or "チャレンジ"])
+        box.append(f"""
 <article class="card {cls}">
-  <div class="top"><span class="mark">{e(r['判定'])}</span><h2>{e(r['タイトル'] or r['ヤフオクURL'])}</h2></div>
+  <div class="top"><span class="mark">{e(r['判定'])}</span><h2>{'★ ' if r.get('枠') == '安心' else ''}{e(r['タイトル'] or r['ヤフオクURL'])}</h2></div>
   <p class="reason">{e(r['理由'])}{(' ・ ⚠ ' + e(r['注意'])) if r['注意'] else ''}</p>
   <div class="grid">
     <div><label>現在価格</label><b>{_yen(r['現在価格']) or '-'}</b><small>入札{r['入札数'] if r['入札数'] is not None else '-'}・即決{_yen(r['即決価格']) or '-'}</small></div>
     <div class="hl"><label>入札する上限額（このまま入札）</label><b>{_yen(r['上限入札額']) or '-'}</b><small>{e(r["入札額の税"])} ・ 損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
-    <div><label>想定販売価格</label><b>{_usd(r['想定販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ Net {_usd(r['Net販売価格USD'])}</small></div>
+    <div><label>eBay相場（送料別）</label><b>{_usd(r['Net販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ 送料込み {_usd(r['想定販売価格USD'])}</small></div>
     <div><label>利益（現在価格）</label><b>{_yen(r['利益(現在価格)']) or '-'}</b><small>利益率 {r['利益率%'] if r['利益率%'] is not None else '-'}%</small></div>
-    <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料</small></div>
+    <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料（{e(r["国内送料の根拠"])}）</small></div>
     <div><label>eBay手数料／国際送料</label><b>{_yen(r['eBay手数料']) or '-'}</b><small>送料 {_yen(r['国際送料']) or '-'}</small></div>
   </div>
   <p class="links">{link(r['ヤフオクURL'], 'ヤフオク出品')}{link(r['eBay販売済みURL'], 'eBay販売済み')}{link(r['eBay出品中URL'], 'eBay出品中')}{link(r['eBayProductResearchURL'], 'Product Research')}{hist}</p>
@@ -1157,6 +1546,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
   <p class="meta">検索語: <code>{e(r['eBay検索語'])}</code> ・ 終了: {e(r['終了'] or '-')}{(' ・ ' + e(r['メモ'])) if r['メモ'] else ''}</p>
 </article>""")
     counts = {k: sum(r["判定"] == k for r in rows) for k in ("◎", "○", "要確認", "×")}
+    counts["付属品など"] = acc_n
     doc = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>ヤフオク入札判断</title>
 <style>
@@ -1180,12 +1570,27 @@ h2{{font-size:16px;margin:22px 0 6px}}details{{margin:12px 0}}.mini{{font-size:1
 .tbl a{{color:inherit;font-weight:700;white-space:nowrap}}
 </style></head><body><div class="wrap">
 <h1>ヤフオク入札判断レポート</h1>
-<p class="summary">{datetime.now():%Y-%m-%d %H:%M} 作成 ・ {len(rows)}件（◎{counts['◎']} ○{counts['○']} 要確認{counts['要確認']} ×{counts['×']}）<br>
+<p class="summary">{datetime.now():%Y-%m-%d %H:%M} 作成 ・ {len(rows_all)}件（◎{counts['◎']} ○{counts['○']} 要確認{counts['要確認']} ×{counts['×']} ・ 付属品など{counts['付属品など']}件は除外）<br>
 為替 1USD={fx:.2f}円（円転ロス{cfg['fx']['conversion_loss_pct']}%） ・ 基準: 利益{j['min_profit_jpy']:,}円以上かつ利益率{j['min_margin_pct']}%以上 ・
 eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['international_fee_pct']}%+広告{cfg['ebay']['ad_rate_pct']}%+${cfg['ebay']['per_order_fee_usd']}<br>
 上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの相場は自動取得しません（規約順守）。soldリンク・Product Researchで確認してください。</p>
-<h2>入札候補（◎○は終了が近い順）</h2>
-{''.join(cards) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
+<h2>★ 安心枠（フォロー中のストア）{len(cards['安心'])}件</h2>
+<p class="summary">基準: 利益{j.get('trusted_min_profit_jpy', j['min_profit_jpy']):,}円以上かつ利益率{j.get('trusted_min_margin_pct', j['min_margin_pct'])}%以上（人気で利益率が低いので緩め）。終了が近い順。</p>
+{''.join(cards['安心']) or '<p class="summary">ありません（ストアのページを開くと、フォロー中なら拡張機能が自動で安心ストアに登録します）。</p>'}
+<h2>チャレンジ枠（その他の出品者）{len(cards['チャレンジ'])}件</h2>
+{''.join(cards['チャレンジ']) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
+<h2>確認してから入札: 根拠が頒布会リスト・鑑定表（推定）の ◎○ {len(cards['確認'])}件</h2>
+<p class="summary">売れた価格ではない根拠です。sold を見て、売れた商品代が相場以上なら拡張機能の［直す$］で登録 → 入札候補に上がります。</p>
+{''.join(cards['確認']) or '<p class="summary">ありません。</p>'}
+<h2>確認してから入札: 仮◎○（相場は未登録・eBay出品中の価格で仮に計算）{len(tent)}件</h2>
+<p class="summary">sold を見て、売れた商品代（送料別）が根拠の「案」以上なら入札してよい候補。ヤフオクの検索ページで拡張機能の［登録］を押すと ◎○ に上がり、同じ機種の今後の出品にも効きます。利益の大きい順。</p>
+<table class="tbl"><tr><th>判定</th><th>商品</th><th>現在</th><th>仮の上限（このまま入札）</th><th>仮の利益</th><th>根拠</th><th>eBay</th></tr>{''.join(
+    f'<tr><td>仮{e(r["仮判定"])}</td><td>{"★ " if r.get("枠") == "安心" else ""}<a href="{e(r["ヤフオクURL"])}" target="_blank" rel="noopener">{e(r["タイトル"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small></td>'
+    f'<td>{_yen(r["現在価格"])}</td><td><b>{_yen(r["仮の上限入札額"])}</b></td><td>{_yen(r["仮の利益(現在価格)"])}</td>'
+    f'<td><small>{e(r["仮の根拠"])}</small></td><td><a href="{e(r["仮のsoldURL"])}" target="_blank" rel="noopener">sold</a> '
+    f'<a href="{e(r["仮の出品中URL"])}" target="_blank" rel="noopener">now</a></td></tr>'
+    for r in tent)}</table>
+<details><summary>要確認（説明文の難・付属品の可能性など）{len(cards['要確認'])}件</summary>{''.join(cards['要確認'])}</details>
 <details><summary>× 見送り {len(hidden_bad)}件</summary><ul class="mini">{''.join(
     f'<li><a href="{e(r["ヤフオクURL"])}" target="_blank" rel="noopener">{e(r["タイトル"][:60])}</a> 現在{_yen(r["現在価格"])} / 上限{_yen(r["上限入札額"])}</li>'
     for r in hidden_bad)}</ul></details>
@@ -1212,7 +1617,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("input", type=Path, nargs="?", default=DATA / "search_urls.txt",
                     help="ヤフオクの検索結果URL・出品URLの一覧（省略時は data/search_urls.txt）。ブックマークHTML / CSV も可")
     ap.add_argument("--sales", type=Path, nargs="*", default=None,
-                    help="過去の販売実績CSV（複数可）。省略時は data/ の reference_prices.csv, ebay_sales.csv, chatwork_sales.csv, price_memo.csv")
+                    help="過去の販売実績CSV（複数可）。省略時は data/ の reference_prices.csv, chatwork_sales.csv, price_memo.csv")
     ap.add_argument("--kantei", type=Path, help="鑑定ブックマークレットのテキスト（.txt/.js/.docx）。相場表を参考に使う")
     ap.add_argument("--config", type=Path, help="設定ファイル（既定: config.toml）")
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
@@ -1254,16 +1659,33 @@ def main(argv: list[str] | None = None) -> int:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1
     if args.sales is None:
-        sales, args.sales = load_default_sales()
-    else:
-        sales = drop_duplicate_api_sales([row for p in args.sales for row in read_sales(p)])
+        import_extension_memo()
+        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
+                      if p.exists()]
     if args.kantei is None:
         args.kantei = next(iter(sorted(DATA.glob("kantei_bookmarklet.*"))), None)
+    sales = [row for p in args.sales for row in read_sales(p)]
     print(f"販売実績・相場: {len(sales)}件（{', '.join(p.name for p in args.sales) or 'なし'}）", file=sys.stderr)
     kantei = read_kantei_table(args.kantei) if args.kantei else []
     if args.kantei:
         print(f"鑑定表: {len(kantei)}件の相場を読み込み", file=sys.stderr)
+    import_extension_trusted()
+    trusted = load_trusted()
+    for it in items:
+        it.trusted = bool(it.seller_id) and it.seller_id in trusted
+    if trusted:
+        print(f"安心ストア: {len(trusted)}件（出品 {sum(it.trusted for it in items)}件が安心枠）", file=sys.stderr)
     analyze(items, sales, cfg, fx, args.offline, args.delay, kantei)
+    if not args.offline:
+        global CONFIG_DEFAULT_SHIP
+        CONFIG_DEFAULT_SHIP = cfg["yahoo"]["default_domestic_shipping_jpy"]
+        global CONFIG_SHIP_USD
+        CONFIG_SHIP_USD = float(cfg["shipping"].get("deduction_usd", 0))
+        n = check_descriptions(items, args.delay, cfg, fx)
+        print(f"説明文チェック: ◎○ {n}件を確認（カビ・クモリ等があれば要確認に）", file=sys.stderr)
+        import tentative  # 相場が無い出品を eBay 出品中の価格（公式 Browse API）で仮に判定
+        t = tentative.add_tentative(items, cfg, fx)
+        print(f"仮◎○: {t}件（sold を見て、拡張機能で［登録］すると ◎○ に）", file=sys.stderr)
 
 
     rows = rows_for_output(items)
