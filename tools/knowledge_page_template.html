@@ -157,15 +157,24 @@ td { font-variant-numeric: tabular-nums; }
 
   // ---------- ニューロン ----------
   var GROUP_COLOR = { '入口': '#ffffff', '方針': '#4fe3ff', 'ツール': '#a585ff', '記録': '#5cffc4', 'Macのみ': '#ffb547' };
+  // 図の中だけで使う短い名前（ノートの名前そのものは変えない）
+  var SHORT = { '00_ホーム': 'ホーム', '入札判断の基準': '入札基準', 'ジャンク品の考え方': 'ジャンク方針', '拡張機能の使い方': '拡張機能',
+    'Pythonツールの使い方': '鑑定レポート', 'データ更新手順': 'データ更新', '意思決定ログ': '決めたこと', '改善アイデア': '改善案',
+    'データソース': '相場の元データ', '照合ルールと落とし穴': '照合ルール', '相場インデックス': '相場一覧', '仕入先一覧': '仕入先',
+    'ヤフオク検索URL': '検索URL', 'CLAUDE': '事業プロフィール' };
+  function shortLabel(name) {
+    var last = name.split('/').pop();
+    return SHORT[last] || last.replace(/(の使い方|の考え方|手順|一覧)$/, '');
+  }
   function buildGraph() {
-    var nodes = notes.map(function (n) { return { key: n.name, id: n.id, label: n.title, group: n.group, mac: false }; });
+    var nodes = notes.map(function (n) { return { key: n.name, id: n.id, label: shortLabel(n.name), group: n.group, mac: false }; });
     var idx = {}; nodes.forEach(function (n, i) { idx[n.key] = i; });
     var seen = {}, edges = [];
     notes.forEach(function (n) {
       var re = /\[\[([^\]]+)\]\]/g, m;
       while ((m = re.exec(n.md))) {
         var t = m[1];
-        if (!(t in idx)) { idx[t] = nodes.length; nodes.push({ key: t, id: null, label: t.split('/').pop(), group: 'Macのみ', mac: true }); }
+        if (!(t in idx)) { idx[t] = nodes.length; nodes.push({ key: t, id: null, label: shortLabel(t), group: 'Macのみ', mac: true }); }
         var a = idx[n.name], b = idx[t];
         if (a === b) continue;
         var k = a < b ? a + '-' + b : b + '-' + a;
@@ -283,7 +292,7 @@ td { font-variant-numeric: tabular-nums; }
         ctx.font = (n === focus ? '700 13px ' : '500 11.5px ') + '"Noto Sans JP", sans-serif';
         ctx.fillStyle = n.mac ? 'rgba(255,200,120,0.85)' : '#d6eeff';
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        ctx.fillText(n.label + (n.mac ? ' ·Mac' : ''), n.x, n.y + n.r + 5);
+        ctx.fillText(n.label, n.x, n.y + n.r + 5);
         ctx.globalAlpha = 1;
       });
     }
