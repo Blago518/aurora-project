@@ -459,6 +459,12 @@
     } catch (e) { return 0; }
   }
   const memoSource = (cond) => (cond ? `相場メモ(${cond})` : "相場メモ");
+  // 相場データ＋このブラウザの相場メモ。同じ機種の相場メモが Mac 側（data/price_memo.csv）にもあれば、新しいこちらだけを使う
+  // （［直す］し直す前の古い登録が残り、2つの真ん中で計算されていた: $150 Near MINT と古い Exc+5 $150 → $155）
+  function allRefs() {
+    const mine = memoRefs(), keys = new Set(mine.map((r) => r.title.toLowerCase()));
+    return DATA.refs.filter((r) => !(isMemo(r) && keys.has(String(r.title || "").toLowerCase()))).concat(mine);
+  }
   function memoRefs() {
     return Object.entries(load(LS_MEMO, {})).map(([title, v]) => {
       const m = memoVal(v);
@@ -514,7 +520,7 @@
 
   // ------------------------------------------------------------------ 鑑定
   function evaluate(items, fx) {
-    const refs = DATA.refs.concat(memoRefs());
+    const refs = allRefs();
     const memoPool = refs.filter(isMemo), otherPool = refs.filter((r) => !isMemo(r));
     const trusted = trustedIds();
     for (const it of items) {
@@ -1090,7 +1096,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     return [...out.values()];
   }
   function kitJudge(x) {
-    const refs = DATA.refs.concat(memoRefs());
+    const refs = allRefs();
     const flags = detectFlags(x.name), q = titleToQuery(x.name);
     let m = matchPreferMemo(q + " " + x.name, refs.filter(isMemo), refs.filter((r) => !isMemo(r)));
     if (!m.length) m = matchKantei(x.name);
