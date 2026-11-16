@@ -44,7 +44,7 @@ font-size:16px;font-weight:800;text-decoration:none;cursor:pointer;padding:0 12p
 .g{color:var(--good)}.o{color:var(--ok)}.x{color:var(--bad)}.w{color:var(--warn)}
 .big{font-size:22px;font-weight:900}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:12px;font-size:14px}
-.kv dt{color:var(--sub)}.kv dd{margin:0;text-align:right;font-weight:700}
+.kv dt{color:var(--sub)}.kv dd{margin:0;text-align:right;font-weight:700;white-space:nowrap}
 .note{background:var(--warnbg);color:var(--warn);border-radius:10px;padding:10px;font-size:13px;margin-top:10px}
 details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);cursor:pointer}
 .ref{font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);display:flex;gap:8px}.ref span:first-child{flex:1}
@@ -141,18 +141,22 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <h2>eBay利益電卓</h2>
     <label for="cItem">eBay商品代 $（送料別）</label>
     <input id="cItem" inputmode="decimal" placeholder="例 140" autocomplete="off">
-    <label for="cBid">落札額（円）<span class="s">　ストアは税抜の入札額</span></label>
-    <input id="cBid" inputmode="numeric" placeholder="例 10000（空欄なら上限だけ出します）" autocomplete="off">
     <label>区分</label>
     <div class="chips" id="cKind">
       <button class="chip" data-kind="store" aria-pressed="true">ストア（税10%上乗せ）</button>
       <button class="chip" data-kind="priv" aria-pressed="false">個人</button>
     </div>
+    <label for="cBid">落札額（円）</label>
+    <div class="chips" id="cTax">
+      <button class="chip" data-tax="in" aria-pressed="true">税込（ヤフオクの表示価格）</button>
+      <button class="chip" data-tax="ex" aria-pressed="false">税抜（入札欄の額）</button>
+    </div>
+    <input id="cBid" class="mt" inputmode="numeric" placeholder="例 10000（空欄なら上限だけ出します）" autocomplete="off">
     <label for="cShip">ヤフオク送料（円）</label>
     <input id="cShip" inputmode="numeric" placeholder="空欄＝1,000円で計算" autocomplete="off">
   </div>
   <div class="card" id="cResult"><div class="empty">設定タブでデータを読み込んでください</div></div>
-  <p class="s">計算は拡張機能・調べると同じ: 売上＝(商品代＋送料$40)×為替。eBay手数料・円転ロス・海外送料$40・梱包費・ヤフオク送料・落札額（ストアは×1.1）を引いて利益。
+  <p class="s">計算は拡張機能・調べると同じ: 売上＝(商品代＋買い手が払う送料$40)×為替（eBayの手数料は送料込みの額にかかるため）。そこから eBay手数料・円転ロス・発送費の実費（見積もり$40）・梱包費・ヤフオク送料・支払う額（ストアは税込）を引いて利益。送料の受け取りと発送費はほぼ相殺され、残るのは送料分の手数料だけ。
   上限は 利益3,000円以上かつ利益率10%以上 を残す落札額（ヤフオクの入札単位に切り下げ）。</p>
 </section>
 
@@ -238,7 +242,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.16.2";
+  var APP_VERSION = "2026.11.16.3";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -655,12 +659,17 @@ $("recList").onclick = (e) => { const n = e.target.dataset.look; if (n) setInput
 // ------------------------------------------------------------ 計算（eBay利益電卓）
 // 計算は core.calculate（拡張機能・調べると同じ）。入れる$は送料別の商品代 → 送料$40を足して送料込みで計算
 const LS_CALC = "storeCalc";
-const calcSt = Object.assign({ kind: "store" }, lsGet(LS_CALC, {}));
+const calcSt = Object.assign({ kind: "store", tax: "in" }, lsGet(LS_CALC, {}));
 const num = (v) => { const n = Number(String(v || "").replace(/[^\d.]/g, "")); return String(v || "").trim() === "" || isNaN(n) ? null : n; };
 function calcRender() {
   for (const c of $("cKind").children) c.setAttribute("aria-pressed", String(c.dataset.kind === calcSt.kind));
+  for (const c of $("cTax").children) c.setAttribute("aria-pressed", String(c.dataset.tax === calcSt.tax));
+  $("cTax").hidden = calcSt.kind !== "store";  // 個人の出品は税なし
   if (!DATA) return;
-  const g = DATA.cfg, fx = g.fx, ship = num($("cShip").value), item = num($("cItem").value), bid = num($("cBid").value);
+  const g = DATA.cfg, fx = g.fx, ship = num($("cShip").value), item = num($("cItem").value);
+  const tm0 = 1 + g.storeTaxPct / 100, raw = num($("cBid").value);
+  // ストアで「税込（表示価格）」を入れたら税抜の入札額に戻す（そのままだと×1.1が二重になる）
+  const bid = raw == null ? null : calcSt.kind === "store" && calcSt.tax === "in" ? raw / tm0 : raw;
   if (item == null) { $("cResult").innerHTML = '<div class="empty">eBay商品代（送料別の$）を入れてください</div>'; return; }
   const usd = item + g.deductionUsd, store = calcSt.kind === "store", tm = 1 + g.storeTaxPct / 100;
   const it = (tax, b) => ({ price: b == null ? null : (tax ? b * tm : b), ship, tax, flags: [] });
@@ -677,18 +686,18 @@ function calcRender() {
   const pay = bid == null ? null : Math.round(store ? bid * tm : bid);
   const cls = c.profit == null ? "" : c.profit >= 0 ? "g" : "x";
   $("cResult").innerHTML = `
-    ${bid == null ? "" : `<div class="s">利益（${store ? "ストア" : "個人"}・落札額 ${yen(bid)}）</div>
+    ${bid == null ? "" : `<div class="s">利益（${store ? `ストア・入札額 ${yen(bid)}（税抜）＝支払い ${yen(bid * tm)}（税込）` : `個人・落札額 ${yen(bid)}`}）</div>
     <div class="big ${cls}" style="font-size:30px">${yen(c.profit)}</div>
     <div class="s">利益率 ${c.margin}%（売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? " ・ 基準（利益3,000円・10%）に届かない" : " ・ 基準クリア"}</div>`}
     <dl class="kv">
       <dt>${store ? "ストア" : "個人"}の入札上限</dt><dd class="g">${cS.maxBid && store ? yen(cS.maxBid) : !store && cP.maxBid ? yen(cP.maxBid) : "入札しない"}</dd>
       ${store ? `<dt>（支払いは税込）</dt><dd>${cS.maxBid ? yen(Math.round(cS.maxBid * tm)) : "-"}</dd>` : ""}
       <dt>${store ? "個人" : "ストア"}なら</dt><dd>${store ? (cP.maxBid ? yen(cP.maxBid) : "入札しない") : (cS.maxBid ? yen(cS.maxBid) + "（税抜）" : "入札しない")}</dd>
-      <dt>売上（$${usd.toFixed(2)}×${fx}円）</dt><dd>${yen(rev)}</dd>
+      <dt>売上（商品代$${item}＋買い手の送料$${g.deductionUsd}＝$${usd.toFixed(2)}、×${fx}円）</dt><dd>${yen(rev)}</dd>
       <dt>eBay手数料（${g.feePct}%＋$${g.perOrderUsd}）</dt><dd>−${yen(c.fees)}</dd>
       <dt>円転ロス（${g.convLossPct}%）</dt><dd>−${yen(loss)}</dd>
       <dt>入金（円）</dt><dd>${yen(c.net)}</dd>
-      <dt>海外送料（$${g.deductionUsd}）</dt><dd>−${yen(c.intl)}</dd>
+      <dt>発送費（実費の見積もり $${g.deductionUsd}・CPaSS＋オークレボ）</dt><dd>−${yen(c.intl)}</dd>
       <dt>梱包費</dt><dd>−${yen(g.packing)}</dd>
       <dt>ヤフオク送料${ship == null ? "（空欄→1,000円）" : ""}</dt><dd>−${yen(c.dom)}</dd>
       ${bid == null ? "" : `<dt>支払う額（${store ? "税込" : "税なし"}）</dt><dd>−${yen(pay)}</dd>
@@ -696,7 +705,8 @@ function calcRender() {
     </dl>`;
 }
 for (const id of ["cItem", "cBid", "cShip"]) $(id).addEventListener("input", calcRender);
-$("cKind").onclick = (e) => { const k = e.target.closest("[data-kind]"); if (!k) return; calcSt.kind = k.dataset.kind; lsSet(LS_CALC, { kind: calcSt.kind }); calcRender(); };
+$("cKind").onclick = (e) => { const k = e.target.closest("[data-kind]"); if (!k) return; calcSt.kind = k.dataset.kind; lsSet(LS_CALC, { kind: calcSt.kind, tax: calcSt.tax }); calcRender(); };
+$("cTax").onclick = (e) => { const k = e.target.closest("[data-tax]"); if (!k) return; calcSt.tax = k.dataset.tax; lsSet(LS_CALC, { kind: calcSt.kind, tax: calcSt.tax }); calcRender(); };
 
 // ------------------------------------------------------------ お店（店舗仕入れの巡回リスト）
 const LS_AREA = "storeShopArea", LS_DONE = "storeShopDone";
