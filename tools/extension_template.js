@@ -42,13 +42,26 @@
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
   const KANTEI = DATA.kantei.map((r) => ({ ...r, re: r.patterns.map((p) => { try { return new RegExp(p, "i"); } catch (e) { return null; } }) }));
 
-  // 出品者の管理番号（Tj036・Ft644461・NA77401・IT120751・OL4709・R09010 など）。appraise.py の STOCK_CODE と同じ
-  const STOCK_CODE = [/^[A-Z][a-z]\d{3,}$/, /^[A-Za-z]{2,3}\d{4,}$/, /^[A-Za-z]-?\d{5,}$/];
-  const isStockCode = (tok) => STOCK_CODE.some((re) => re.test(tok));
+  // 出品者の管理番号（Tj036・Ft644461・NA77401・【L256】・OL4709 など）。規則と理由は appraise.py の is_stock_code と同じ:
+  // 相場データに出てくる語は型番なので外さない／型番に無い形は外す／型番にもある形はメーカー名より前のときだけ外す
+  const STOCK_STRONG = [/^[A-Z][a-z]\d{3,}$/, /^[A-Za-z]{1,3}-?\d{5,}$/], STOCK_WEAK = [/^[A-Za-z]{2,3}\d{4}$/];
+  const BRACKET_CODE = /[【\[〔<]\s*([A-Za-z]{0,3}-?\d{2,7}[A-Za-z]?)\s*[】\]〕>]/g;
+  const KNOWN_MODELS = new Set();
+  for (const r of (DATA.refs || []).concat(DATA.kantei || [])) {
+    for (const tok of String(r.title || "").normalize("NFKC").match(/[A-Za-z0-9][A-Za-z0-9-]*/g) || []) {
+      const low = tok.toLowerCase().replace(/-/g, "");
+      if (/\d/.test(low) && /[a-z]/.test(low)) KNOWN_MODELS.add(low);
+    }
+  }
+  function isStockCode(tok, beforeBrand, bracketed) {
+    if (KNOWN_MODELS.has(tok.toLowerCase().replace(/-/g, ""))) return false;
+    if (STOCK_STRONG.some((re) => re.test(tok))) return true;
+    return beforeBrand && (bracketed || STOCK_WEAK.some((re) => re.test(tok)));
+  }
   function titleToQuery(title, maxTokens = 7) {
     let t = title.normalize("NFKC");
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
-    t = t.replace(/[【\[〔<]\s*[A-Za-z]{0,3}-?\d{2,7}[A-Za-z]?\s*[】\]〕>]/g, " ");  // 【L256】[A-123] 等の括弧つき管理番号（appraise.py と同じ）
+    t = t.replace(BRACKET_CODE, " \u0001$1 ");  // 【L256】→ 管理番号の候補の印（\u0001）を付ける
     t = t.replace(/\d+円[~〜～]?/g, " ");
     t = t.replace(/\b[wW]\s*\/\s*/g, " ");
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
@@ -65,17 +78,22 @@
     let brand = "";
     const allBrands = [];
     for (const [ja, en] of C.brandsJa) {
-      if (t.includes(ja)) { brand = brand || en; allBrands.push(en); t = t.split(ja).join(" "); }
+      if (t.includes(ja)) { brand = brand || en; allBrands.push(en); t = t.split(ja).join(" \u0002 "); }  // \u0002 = メーカー名の位置
     }
     for (const [ja, en] of C.wordsJa) t = t.split(ja).join(` ${en} `);
     const tokens = [];
-    for (const m of t.matchAll(/[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*/g)) {
+    const found = [...t.matchAll(/[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*/g)];
+    const brandAt = (t.includes("\u0002") ? [t.indexOf("\u0002")] : [])
+      .concat(found.filter((m) => C.brandsEn[m[0].toLowerCase().replace(/^[.\-]+|[.\-]+$/g, "")]).map((m) => m.index).slice(0, 1));
+    // メーカー名が無いタイトルは「先頭の語」だけを頭とみなす（appraise.py と同じ）
+    const firstBrand = brandAt.length ? Math.min(...brandAt) : (found.length ? found[0].index + found[0][0].length : 0);
+    for (const m of found) {
       const tok = m[0];
       const low = tok.toLowerCase().replace(/^[.\-]+|[.\-]+$/g, "");
       if (!low || NOISE.has(low)) continue;
       if (/^\d+$/.test(low) && ((low.length < 2 && maxTokens <= 7) || low.length >= 4)) continue;
       if (/^no\.?\d+$/.test(low)) continue;
-      if (isStockCode(tok)) continue;  // 出品者の管理番号は eBay の検索語に入れない（appraise.py の STOCK_CODE と同じ）
+      if (isStockCode(tok, m.index < firstBrand, m.index > 0 && t[m.index - 1] === "\u0001")) continue;  // 出品者の管理番号は検索語に入れない
       const line = low.replace(/^[a-z]\./, "");
       if (C.lensLines[line]) brand = brand || C.lensLines[line];
       if (C.brandsEn[low]) {
