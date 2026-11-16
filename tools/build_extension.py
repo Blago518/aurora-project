@@ -64,7 +64,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "condStep": j.get("condition_step_usd", 0),
             "activeFactor": j.get("active_price_factor", 0.7), "activeMinCount": j.get("active_min_count", 5),
             "browse": False,  # eBay のキーがあれば main() で True にする
-            "autoMaxItems": cfg.get("extension", {}).get("auto_max_items", 2000),
+            "autoMaxItems": min(cfg.get("extension", {}).get("auto_max_items", 1000), 1000),  # 一度に読むのは1000件まで
             "browseMaxModels": cfg.get("extension", {}).get("browse_max_models", 400),
         },
         "consts": {
