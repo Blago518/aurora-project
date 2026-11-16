@@ -969,10 +969,19 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     if (a === "open3") {  // ヤフオク・sold・now を今のタブの右に、この順で開く
       let urls = [];
       try { urls = JSON.parse(btn.dataset.urls || "[]"); } catch (e) { urls = []; }
-      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) chrome.runtime.sendMessage({ type: "openTabs", urls });
-      else urls.forEach((u) => window.open(u, "_blank", "noopener"));
-      btn.textContent = "開きました";
-      setTimeout(() => (btn.textContent = "全て開く"), 2000);
+      const done = (msg) => { btn.textContent = msg; setTimeout(() => (btn.textContent = "全て開く"), msg.length > 8 ? 8000 : 2000); };
+      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
+        try {
+          chrome.runtime.sendMessage({ type: "openTabs", urls }, (r) => {
+            const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : r && r.error;
+            if (!err && r && r.opened >= urls.length) return done("開きました");
+            // 裏方で開けなかった分は、このページから開く（予備）。理由はボタンに出す
+            const rest = urls.slice((r && r.opened) || 0);
+            rest.forEach((u) => window.open(u, "_blank"));
+            done(`開きました（予備の開き方: ${String(err || "途中で止まった").slice(0, 60)}）`);
+          });
+        } catch (e) { urls.forEach((u) => window.open(u, "_blank")); done("開きました（予備の開き方）"); }
+      } else { urls.forEach((u) => window.open(u, "_blank")); done("開きました"); }
     }
     if (a === "bid") {
       const info = state.bidInfo[btn.dataset.id];
