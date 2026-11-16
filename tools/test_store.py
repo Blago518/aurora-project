@@ -232,7 +232,7 @@ class ConditionAdjust(unittest.TestCase):
               "オリンパス OM ZUIKO 35mm F2": 139.99,               # 表記なし=Near MINT
               "オリンパス OM ZUIKO 35mm F2 MINT": 139.99,          # 英語の格付けは使わない
               "ニコン Nikon FM2 ブラック 未使用に近い": 270.0,        # TOP MINT=10: 自分の実績 Exc+3($210)+6ランク（Chatwork より優先）
-              "ニコン Nikon FM2 ブラック ジャンク": 147.0,           # ジャンクは補正せず $210×0.7
+              "ニコン Nikon FM2 ブラック ジャンク": 210.0,           # ジャンクは状態の補正をせず、割引もしない（junk_price_factor = 1.0）
               "キヤノン Canon AE-1 Program 美品": 120.0}
 
     def _python(self):

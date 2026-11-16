@@ -232,7 +232,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.15.9";
+  var APP_VERSION = "2026.11.16.1";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -350,7 +350,7 @@ function renderResult(name, price, r) {
     h += `<dl class="kv">
       <dt>この値段以下なら買い（税込）</dt><dd class="g">${yen(c.maxBid)}</dd>
       <dt>損益ゼロになる値段（税込）</dt><dd>${yen(c.breakeven)}</dd>
-      <dt>想定販売価格（eBay・送料別）</dt><dd>${nusd(r.usd)}${r.flags.includes("ジャンク") ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
+      <dt>想定販売価格（eBay・送料別）</dt><dd>${nusd(r.usd)}${r.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
       <dt>根拠</dt><dd>${esc(SRC[tier] || "")} ${r.refs.length}件の中央値</dd>
       ${conds(r.refs) ? `<dt>状態</dt><dd>${conds(r.refs)}</dd>` : ""}
       ${core.conditionNote && core.conditionNote(r.refs, name, r.flags) ? `<dt></dt><dd class="s">${esc(core.conditionNote(r.refs, name, r.flags))}</dd>` : ""}
