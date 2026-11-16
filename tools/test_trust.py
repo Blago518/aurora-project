@@ -221,5 +221,18 @@ class WrongMatches(unittest.TestCase):
         self.assertEqual(acc, [True, True])
 
 
+class ModelKeyGeneration(unittest.TestCase):
+    """［直す］の相場は機種名に結び付く。世代（II）が落ちると、その出品に当たらない（Sony α7 II → Sony α7 だった）."""
+
+    def test_js(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        titles = ["期間限定セール ソニー デジタル一眼カメラ Sony α7 II【中古】", "Nikon F3 Limited ボディ", "ニコン Nikon FM2 ブラック"]
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(titles, ensure_ascii=False)}.map(t=>m.modelKey(t)[0])))")
+        self.assertEqual(out, ["Sony α7 II", "Nikon F3 Limited", "Nikon FM2"])
+
+
 if __name__ == "__main__":
     unittest.main()

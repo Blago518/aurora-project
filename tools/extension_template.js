@@ -257,9 +257,12 @@
     // 管理番号らしい語（C-2436・OL4709・IC0144・A-164、レンズの機種名に混ざった 3桁以上の数字）は機種名に入れない
     const isLens = rest.some((t) => /mm$/i.test(t));
     const code = (t) => /^[A-Za-z]{1,2}-\d{3,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || /^\d{4,}-\d{1,3}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
-    const keyToks = rest.filter((t) => /\d/.test(t) && !code(t)).slice(0, 3);
+    // 世代（II・III・Mark II）と限定・チタンなどの型も機種名に残す（「Sony α7 II」が「Sony α7」になり、［直す］の相場が当たらなかった）
+    const gen = (t) => GENS.has(t.toLowerCase()) || PREMIUM.has(t.toLowerCase());
+    const keyToks = rest.filter((t) => (/\d/.test(t) && !code(t)) || gen(t)).filter((t, i, a) => !gen(t) || a.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
+    while (keyToks.filter((t) => !gen(t)).length > 3) keyToks.splice(keyToks.findLastIndex((t) => !gen(t)), 1);
     const vt = variantOf(tokensOf(title));
-    const label = (brand ? [brand] : []).concat(keyToks.length ? keyToks : rest.slice(0, 2))
+    const label = (brand ? [brand] : []).concat(keyToks.some((t) => !gen(t)) ? keyToks : rest.slice(0, 2))
       .concat(vt ? [vt.label] : []).join(" ");
     const norm = label.toLowerCase().split(" ").map((t) => {
       if (/^f\/?\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t)) t = t.replace(/^f\/?/, "");
