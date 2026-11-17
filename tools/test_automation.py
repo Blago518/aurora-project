@@ -347,6 +347,23 @@ class SearchUrlSync(unittest.TestCase):
             self.assertIn("# コンパクト（Claude が追加）\n" + u2, body)
             self.assertNotIn("example.com", body)
 
+    def test_remove(self):
+        import ledger_sync as ls
+        u1 = "https://auctions.yahoo.co.jp/search/search?vo=a&auccat=23636"
+        u2 = "https://auctions.yahoo.co.jp/search/search?vo=b"
+        u3 = "https://auctions.yahoo.co.jp/search/search?vo=b&auccat=23636"
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / "search_urls.txt"
+            dest.write_text(f"{u1}\n# 中判（Claude が追加）\n{u2}\n", encoding="utf-8")
+            text = f'"URL","メモ","状態"\n"{u2}","中判（古い）","削除"\n"{u3}","中判",""\n'
+            self.assertEqual(ls.append_search_urls(text, dest), 1)
+            body = dest.read_text(encoding="utf-8")
+            self.assertNotIn(u2, body.splitlines())
+            self.assertEqual(body.count("中判（Claude が追加）"), 1)  # 古い行の見出しは消え、新しい行の見出しだけ
+            self.assertIn(u1, body)
+            self.assertIn(u3, body)
+            self.assertEqual(ls.append_search_urls(text, dest), 0)
+
 
 class SingleBook(unittest.TestCase):
     """1冊運用（写し先＝元の台帳）では「古物台帳_詳細」に写して返す."""

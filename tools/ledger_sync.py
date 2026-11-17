@@ -6,7 +6,7 @@ Apps Script（下の APPS_SCRIPT）は script.google.com の独立したプロ�
     古物台帳: Claude更新版に無い No. の行を足し、ある行は空欄だけ埋める（入っている値・数式は上書きしない。行は消さない）
     管理・ebay売上・J管理・出品情報: Claude更新版の「写し_シート名」に、Mac が使う列だけを毎回写す
     意思決定ログ: Claude更新版の「意思決定ログ」シート（Claude がクラウドから書く）を、knowledge/意思決定ログ.md に追記する
-    検索URL: Claude更新版の「検索URL」シート（Claude がクラウドから書く）の URL を、data/search_urls.txt に足す
+    検索URL: 「検索URL」シート（Claude がクラウドから書く）の URL を data/search_urls.txt に足す。「状態」列が「削除」の URL は消す
     これから増やすシートは、名前を「共有_〜」（Claude → Mac）・「Mac_〜」（Mac → Claude）にすればスクリプトの貼り替えが要らない
 そのあと Claude更新版の古物台帳を CSV で返す。?sheet=… を付けると写しのシートを返す。購入者の名前・住所の列（Buyer…・Ship to…）は
 スクリプトの側で取り除いてから返す。ほかのシートからは EXTRA_SHEETS の列だけを data/ に保存する（グラフ用）:
@@ -380,10 +380,36 @@ def sync_decisions(url: str, key: str, dry_run: bool = False) -> int | None:
     return n
 
 
+def remove_search_urls(urls: list[str], dest: Path) -> int:
+    """data/search_urls.txt から urls の行（と、そのすぐ上の「# …（Claude が追加）」の行）を消す. 消した数."""
+    if not urls or not dest.exists():
+        return 0
+    lines = dest.read_text(encoding="utf-8").splitlines()
+    drop = {u.strip() for u in urls}
+    out, n = [], 0
+    for ln in lines:
+        if ln.strip() in drop:
+            n += 1
+            if out and out[-1].startswith("#") and "Claude が追加" in out[-1]:
+                out.pop()
+            continue
+        out.append(ln)
+    if n:
+        dest.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
+    return n
+
+
 def append_search_urls(text: str, dest: Path | None = None, dry_run: bool = False) -> int:
-    """「検索URL」シートの CSV → data/search_urls.txt に無い URL を「# メモ」付きで末尾に足す. 足した数."""
+    """「検索URL」シートの CSV → data/search_urls.txt に無い URL を「# メモ」付きで末尾に足す. 足した数.
+    「状態」列に「削除」「停止」と書いた行の URL は data/search_urls.txt から消す（検索を差し替えるとき用）."""
     dest = dest or DATA / "search_urls.txt"
-    rows = pick_columns(text, ["URL", "メモ"]) or []
+    rows = pick_columns(text, ["URL", "メモ", "状態"]) or []
+    off = [r.get("URL", "").strip() for r in rows if any(w in r.get("状態", "") for w in ("削除", "停止"))]
+    if off and not dry_run:
+        gone = remove_search_urls(off, dest)
+        if gone:
+            print(f"検索URL: {gone}件を削除 → data/search_urls.txt", file=sys.stderr)
+    rows = [r for r in rows if r.get("URL", "").strip() not in off]
     have = dest.read_text(encoding="utf-8") if dest.exists() else ""
     add = []
     for r in rows:
