@@ -75,7 +75,8 @@ APPS_SCRIPT = r"""// aurora: 元の古物台帳 → Claude更新版 へ毎日写
 const KEY = '__KEY__';
 const BOOK = '__BOOK__';  // Claude更新版（写し先・Mac が読む）
 const SRC = '__SRC__';    // 元の古物台帳（読むだけ）
-const LEDGER = '古物台帳';
+const LEDGER = '古物台帳';  // 元の古物台帳（読むだけ）
+const DST = BOOK === SRC ? '古物台帳_詳細' : LEDGER;  // 1冊運用（2026-11-17〜）は同じ台帳の「古物台帳_詳細」へ写す
 const EXTRA = __EXTRA__;  // シート名 → Mac が使う列
 const PAIRS = [  // Claude更新版の列（見出しの先頭）← 元の古物台帳の列（見出しの先頭）
   ['管理番号', 'No.'], ['購入日', '購入日'], ['品目', '品目'], ['数量', '数量'], ['仕入元', 'アカウント名'],
@@ -90,7 +91,7 @@ const colOf = (head, p) => head.findIndex((h) => h === p || h.startsWith(p));
 const empty = (v) => v === '' || v === null || v === undefined;
 
 function syncLedger(dstBook, srcBook) {
-  const s = srcBook.getSheetByName(LEDGER), d = dstBook.getSheetByName(LEDGER);
+  const s = srcBook.getSheetByName(LEDGER), d = dstBook.getSheetByName(DST);
   if (!s || !d) return '古物台帳シートが見つかりません';
   const sv = s.getDataRange().getValues(), dr = d.getDataRange(), dv = dr.getValues(), df = dr.getFormulas();
   const sh = sv[0].map(nh), dh = dv[0].map(nh);
@@ -172,7 +173,7 @@ function doGet(e) {
   const props = PropertiesService.getScriptProperties();
   if (p === '_status') return ContentService.createTextOutput(props.getProperty('last') || '');
   if (!p) props.setProperty('last', new Date().toISOString() + ' ' + syncAll());  // 古物台帳を読むときに、先に元から写す
-  const name = !p ? LEDGER : (p in EXTRA ? '写し_' + p : (own(p) ? p : null));
+  const name = !p ? DST : (p in EXTRA ? '写し_' + p : (own(p) ? p : null));
   const sh = name && SpreadsheetApp.openById(BOOK).getSheetByName(name);
   if (!sh) return ContentService.createTextOutput('NO_SHEET:' + p);
   return ContentService.createTextOutput(csvOf(sh.getDataRange().getDisplayValues())).setMimeType(ContentService.MimeType.CSV);
@@ -437,6 +438,17 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
     return len(rows)
 
 
+def cmd_single() -> None:
+    """Claude更新版をやめて、元の古物台帳1冊で動かす（2026-11-17〜）. 写し先を元の台帳にしてスクリプトを貼り替える."""
+    src = keychain.get(SERVICE, "src") or ""
+    if not src:
+        print("先に python3 tools/ledger_sync.py setup を実行してください。")
+        sys.exit(1)
+    keychain.set(SERVICE, "book", src)
+    print("写し先を元の古物台帳に切り替えました（古物台帳 → 古物台帳_詳細、写し_〜 も元の台帳に作られます）。")
+    cmd_script()
+
+
 def cmd_script() -> None:
     """スクリプトを新しくしたとき: 貼り替えて新バージョンでデプロイ（URL・合言葉はそのまま）."""
     key = keychain.get(SERVICE, "key")
@@ -499,13 +511,15 @@ def cmd_setup() -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="古物台帳を data/ledger.csv に取り込む")
-    ap.add_argument("cmd", nargs="?", choices=["sync", "setup", "script"], default="sync")
+    ap.add_argument("cmd", nargs="?", choices=["sync", "setup", "script", "single"], default="sync")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
     if args.cmd == "setup":
         cmd_setup()
     elif args.cmd == "script":
         cmd_script()
+    elif args.cmd == "single":
+        cmd_single()
     else:
         sync(args.dry_run)
     return 0

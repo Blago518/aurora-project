@@ -14,7 +14,7 @@
    → スマホ用データ（store_data.json・iCloud・暗号化して自動配信。入札候補もスマホの「入札」タブに届く）→ ナレッジ
    → eBay の出品中一覧・注文・取引明細（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
 5. 入札の結果: 拡張機能の［入札した］の記録を取り込み、終わった出品の最終価格から落札率などを集計 → reports/bid_results.md
-   → 入札の記録を Claude更新版の「入札結果」シートに送る（ゼニガメが負け方を学ぶ）
+   → 入札の記録を 古物台帳の「入札結果」シートに送る（ゼニガメが負け方を学ぶ）
 
 使い方（aurora フォルダで）:
     python3 tools/update_all.py
@@ -154,7 +154,7 @@ def main(argv=None) -> int:
     except Exception as e:  # 集計の失敗で更新全体を止めない
         print(f"  入札の結果を集計できませんでした（{e}）")
     if not args.dry_run:
-        ledger_sync.upload_bids()  # 入札の記録 → Claude更新版「入札結果」（ゼニガメが負け方を学ぶ）
+        ledger_sync.upload_bids()  # 入札の記録 → 古物台帳「入札結果」（ゼニガメが負け方を学ぶ）
     print("\n" + ("✅ 完了" if ok else "⚠ 一部でエラーがありました"))
     print("  Chrome: 新しい相場はヤフオクのページを開き直すだけで反映（↻ は拡張機能のプログラムを新しくしたときだけ）")
     if args.notify:
