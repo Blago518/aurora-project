@@ -148,6 +148,20 @@ class MemoAutoSave(unittest.TestCase):
             self.assertEqual(rows["Leica M6"]["_price"], 1500)  # 相場メモ以外はそのまま
             self.assertEqual(ba.import_extension_memo(dl, dest), (0, 0))  # 2回目は変化なし
             self.assertEqual(ba.import_extension_memo(Path(d) / "none", dest), (0, 0))
+            hist = ba.load_memo_history(Path(d) / "price_memo_history.csv")  # 上書きする前の値も残る
+            self.assertEqual([e[0] for e in hist["Olympus F2 35mm"]], [180, 139.99])
+
+    def test_history_from_extension(self):
+        with tempfile.TemporaryDirectory() as d:
+            dl, dest = Path(d) / "dl", Path(d) / "price_memo.csv"
+            dl.mkdir()
+            (dl / "aurora_price_memo.csv").write_text("title,sold_price_usd,source\nNikon FM2,230,相場メモ(MINT)\n", encoding="utf-8")
+            (dl / "aurora_price_memo_history.csv").write_text(
+                "title,sold_price_usd,cond,date\nNikon FM2,200,,\nNikon FM2,215,MINT,2026-10-05\nNikon FM2,230,MINT,2026-11-17\n", encoding="utf-8")
+            self.assertEqual(ba.import_extension_memo(dl, dest), (1, 0))  # 履歴ファイルを相場メモと取り違えない
+            ba.import_extension_memo(dl, dest)
+            h = ba.load_memo_history(Path(d) / "price_memo_history.csv")["Nikon FM2"]
+            self.assertEqual([e[0] for e in h], [200, 215, 230])  # 2回取り込んでも重ならない・日付順（不明が先）
 
     def test_manifest_has_downloads(self):
         import build_extension as bx
