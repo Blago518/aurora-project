@@ -119,3 +119,31 @@ class WinOdds(unittest.TestCase):
         data.update(refs=[], kantei=[], winStats=st)
         out = run_js(data, f"console.log(JSON.stringify({json.dumps(self.CASES)}.map(([b,s])=>m.winOdds(b,s))))")
         self.assertEqual(out, [br.win_odds(st, b, s) for b, s in self.CASES])
+
+
+class PastBids(unittest.TestCase):
+    """以前の入札分析シートの入札履歴 → 落札見込みの元データ（空欄・未入札は使わない）."""
+
+    def test_rows_and_stats(self):
+        import tempfile
+        import ledger_sync as ls
+        text = ("オークションID,商品名,自分の入札額(円),最終落札価格(円),落札結果,入札日,eBay想定売値($)\n"
+                "a1,Nikon A,\"5,000\",4500,落札成功,46218,59.99\n"
+                "a2,Canon B,5000,7000,落札失敗,2026/08/01,40\n"
+                "a3,Canon C,,7000,落札失敗,46218,40\n"
+                "a4,Canon D,3000,,未入札,46218,40\n"
+                "a2,Canon B,6000,7000,落札失敗,2026/08/02,40\n")
+        rows = ls.past_bids_rows(text)
+        self.assertEqual([r["auction_id"] for r in rows], ["a1", "a2"])
+        self.assertEqual(rows[0]["result"], "落札")
+        self.assertEqual(rows[0]["bid_at"], "2026-07-15")
+        self.assertEqual(rows[1]["max_bid"], 6000)
+        with tempfile.TemporaryDirectory() as d:
+            hist = Path(d) / "h.csv"
+            hist.write_text("auction_id,max_bid,result,store_tax\na1,5000,落札,\na2,6000,負け,\na9,5000,負け,\n", encoding="utf-8")
+            log = Path(d) / "log.csv"
+            log.write_text("auction_id,max_bid,result,store_tax\na9,5000,落札,1\n", encoding="utf-8")
+            st = br.load_win_stats(log, hist)
+        self.assertEqual(st["1万円未満|*"], [2, 3])      # a9 は今の記録（落札）を優先
+        self.assertEqual(st["1万円未満|1"], [1, 1])      # 以前の履歴（ストアか不明）は価格帯だけに数える
+        self.assertNotIn("1万円未満|0", st)

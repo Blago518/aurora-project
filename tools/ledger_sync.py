@@ -59,6 +59,8 @@ DECISION_MD = ROOT / "knowledge" / "意思決定ログ.md"
 BID_SHEET = "入札結果"
 # Claude更新版の「検索URL」シート（Claude がクラウドから書く。列: URL・メモ）→ data/search_urls.txt に無い URL を足す（毎朝の入札リスト用）
 SEARCH_SHEET = "検索URL"
+PAST_BIDS_SHEET = "共有_過去の入札"  # 以前の「入札分析」ファイルの入札履歴（自分の入札額・最終落札価格）。Claude が値だけ写した
+PAST_BIDS = DATA / "bid_history.csv"
 BID_COLUMNS = ["auction_id", "title", "max_bid", "final_price", "result", "end", "usd", "profit_at_max", "profit_final",
                "trusted", "tentative", "store_tax", "ship", "bid_at"]
 SERVICE = "aurora-ledger"
@@ -271,6 +273,7 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_extra(url, key, dry_run)
     sync_decisions(url, key, dry_run)
     sync_search_urls(url, key, dry_run)
+    sync_past_bids(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
     if old == text:
         print("古物台帳: 変化なし", file=sys.stderr)
@@ -401,6 +404,52 @@ def sync_search_urls(url: str, key: str, dry_run: bool = False) -> int | None:
     if n:
         print(f"検索URL: {n}件を{'追加予定' if dry_run else '追加'} → data/search_urls.txt", file=sys.stderr)
     return n
+
+
+def past_bids_rows(text: str) -> list[dict]:
+    """「共有_過去の入札」の CSV → bid_log と同じ形の行（自分の入札額と結果（落札成功／落札失敗）がある行だけ。空欄は使わない）."""
+    from datetime import date, timedelta
+    num = lambda v: float(str(v).replace(",", "").replace("円", "").strip()) if str(v).replace(",", "").replace("円", "").strip() else None
+    out: dict[str, dict] = {}
+    for r in csv.DictReader(io.StringIO(text)):
+        aid, res = (r.get("オークションID") or "").strip(), (r.get("落札結果") or "").strip()
+        try:
+            mb, fp = num(r.get("自分の入札額(円)", "")), num(r.get("最終落札価格(円)", ""))
+        except ValueError:
+            continue
+        if not aid or not mb or mb <= 0 or res not in ("落札成功", "落札失敗"):
+            continue
+        d = (r.get("入札日") or "").strip()
+        if d.replace(".", "").isdigit():  # 表計算の日付の数（1899/12/30 からの日数）
+            d = (date(1899, 12, 30) + timedelta(days=int(float(d)))).isoformat()
+        row = {"auction_id": aid, "title": (r.get("商品名") or "").strip(), "max_bid": int(mb),
+               "final_price": int(fp) if fp else "", "result": "落札" if res == "落札成功" else "負け",
+               "bid_at": d.replace("/", "-"), "usd": r.get("eBay想定売値($)", "").strip(), "store_tax": ""}
+        if aid not in out or mb > float(out[aid]["max_bid"]):  # 同じ出品は高い方の入札額
+            out[aid] = row
+    return list(out.values())
+
+
+def sync_past_bids(url: str, key: str, dry_run: bool = False, dest: Path | None = None) -> int | None:
+    """古物台帳「共有_過去の入札」→ data/bid_history.csv（まるごと置き換え）. 落札見込み（bid_results）に使う."""
+    try:
+        text = fetch(url, key, PAST_BIDS_SHEET)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"過去の入札: 読み込めませんでした（{e}）", file=sys.stderr)
+        return None
+    if text.startswith("NO_SHEET:") or "オークションID" not in text[:300]:
+        return None
+    rows = past_bids_rows(text)
+    if dry_run or not rows:
+        return len(rows)
+    dest = dest or PAST_BIDS
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cols = ["auction_id", "title", "max_bid", "final_price", "result", "bid_at", "usd", "store_tax"]
+    with open(dest, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        w.writerows(rows)
+    return len(rows)
 
 
 def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> int | None:
