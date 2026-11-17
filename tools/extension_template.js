@@ -591,6 +591,10 @@
     return [endStr(e), false];
   };
   const srcLabel = (r) => (r.source || "").replace(/\(.*$/, "");
+  // 根拠が実際に売れた記録（自分の販売実績・Chatwork）なら、その売値（送料込み＝eBayStock・取引明細の合計）も並べる。
+  // 相場メモ・頒布会（出品価格）は売値ではないので出さない
+  const soldLine = (r) => (r && r.price != null && /販売実績/.test(r.source || "") && !isMemo(r)
+    ? `<div class="s" title="根拠の実際の売値（送料込み）。eBayStock・eBayの取引明細の合計と同じ。上の送料別は、ここから送料$${SHIP()}を引いた額">売値 $${Number(r.price).toFixed(2).replace(/\.00$/, "")}（送料込み）</div>` : "");
 
 const css = `
 #yhk,#akit{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(1100px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
@@ -879,7 +883,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${markHtml}<div class="s ${soon ? "hot" : ""}">${left}</div>${ALL && c && i.reason ? `<div class="s">${esc(i.reason)}</div>` : ""}</td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
 <div class="s">${r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します"}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
-<td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a><div class="s">送料別</div>${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
+<td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a><div class="s">送料別</div>${soldLine(r)}${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
@@ -1274,7 +1278,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       : i.calc ? `根拠: ${esc(r.title || "")} [${esc(tier(r.tier))}] ・ ${esc(i.reason || "")}`
       : canBrowse() && /\d/.test(i.label) && i.label.split(" ").length >= 2 && !state.browse[i.label] ? "相場データなし → eBay出品中の価格を調べています…"
       : "相場データなし（sold で確認。eBay出品中も件数が少ないか、機種名が読み取れません）"}</div></td>
-<td class="n">${i.usd != null && !i.acc ? `${nd(i.usd)}<div class="s">送料別</div>` : "-"}<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div></td>
+<td class="n">${i.usd != null && !i.acc ? `${nd(i.usd)}<div class="s">送料別</div>${soldLine(r)}` : "-"}<div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div></td>
 <td class="n">${yen(i.price)}${i.prices.length > 1 ? `<div class="s">表示: ${i.prices.map((v) => yen(v)).join(" / ")}</div>` : ""}</td>
 <td class="n"><b>${yen(c && c.maxBid)}</b>${c ? '<div class="s">この値段（税込）以下なら買い</div>' : ""}</td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
