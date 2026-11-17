@@ -303,3 +303,21 @@ class BidUpload(unittest.TestCase):
             self.assertNotIn("zzz", sent[0])
             with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
                 self.assertIsNone(ls.upload_bids(log=log, post=lambda body: "NO_SHEET:入札結果"))  # 古いスクリプト
+
+
+class SearchUrlSync(unittest.TestCase):
+    """「検索URL」シート → data/search_urls.txt に無い URL だけ足す."""
+
+    def test_append(self):
+        import ledger_sync as ls
+        u1 = "https://auctions.yahoo.co.jp/search/search?vo=a&auccat=23636"
+        u2 = "https://auctions.yahoo.co.jp/search/search?vo=b&auccat=23636"
+        text = f'"URL","メモ"\n"{u1}","中判"\n"{u2}","コンパクト"\n"https://example.com/x","対象外"\n'
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / "search_urls.txt"
+            dest.write_text(u1 + "\n", encoding="utf-8")
+            self.assertEqual(ls.append_search_urls(text, dest), 1)
+            self.assertEqual(ls.append_search_urls(text, dest), 0)
+            body = dest.read_text(encoding="utf-8")
+            self.assertIn("# コンパクト（Claude が追加）\n" + u2, body)
+            self.assertNotIn("example.com", body)
