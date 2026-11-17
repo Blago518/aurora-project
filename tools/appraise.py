@@ -1103,6 +1103,47 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
 
 MEMO_DOWNLOAD = "aurora_price_memo.csv"  # 拡張機能が「直す」「登録」のたびに ダウンロード/ に上書き保存する
 MEMO_FIELDS = ["title", "sold_price_usd", "source", "memo"]
+MEMO_HIST_FIELDS = ["title", "sold_price_usd", "cond", "date"]  # 相場メモの履歴（上書きする前の値も残す。usd は送料込み）
+
+
+def _memo_cond(src: str) -> str:
+    return src[src.index("(") + 1:src.rindex(")")] if "(" in src and src.endswith(")") else ""
+
+
+def add_memo_history(entries: list[dict], dest: Path | None = None) -> int:
+    """相場メモの履歴 data/price_memo_history.csv に、まだ無い（機種・金額・日付）だけ足す. 足した件数."""
+    dest = dest or DATA / "price_memo_history.csv"
+    old = list(csv.DictReader(dest.read_text(encoding="utf-8-sig").splitlines())) if dest.exists() else []
+    have = {(r["title"], f"{_float_or_none(r['sold_price_usd']) or 0:g}", r.get("date", "")) for r in old}
+    add = []
+    for e in entries:
+        v = _float_or_none(e.get("sold_price_usd"))
+        k = ((e.get("title") or "").strip(), f"{v or 0:g}", (e.get("date") or "").strip())
+        if not k[0] or not v or k in have:
+            continue
+        have.add(k)
+        add.append({"title": k[0], "sold_price_usd": k[1], "cond": e.get("cond", ""), "date": k[2]})
+    if add:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=MEMO_HIST_FIELDS, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(old + add)
+    return len(add)
+
+
+def load_memo_history(path: Path | None = None) -> dict[str, list]:
+    """{機種: [[usd, 日付, 状態], ...]}（日付順。日付不明が先）. 拡張機能の「相場の動き」に使う."""
+    path = path or DATA / "price_memo_history.csv"
+    out: dict[str, list] = {}
+    if path.exists():
+        for r in csv.DictReader(path.read_text(encoding="utf-8-sig").splitlines()):
+            v = _float_or_none(r.get("sold_price_usd"))
+            if r.get("title") and v:
+                out.setdefault(r["title"], []).append([v, r.get("date", ""), r.get("cond", "")])
+    for v in out.values():
+        v.sort(key=lambda e: e[1])
+    return out
 
 
 def import_extension_memo(downloads: Path | None = None, dest: Path | None = None) -> tuple[int, int]:
@@ -1113,7 +1154,12 @@ def import_extension_memo(downloads: Path | None = None, dest: Path | None = Non
     """
     downloads = downloads or Path.home() / "Downloads"
     dest = dest or DATA / "price_memo.csv"
-    files = sorted(downloads.glob("aurora_price_memo*.csv"), key=lambda p: p.stat().st_mtime)
+    hist_path = dest.parent / "price_memo_history.csv"
+    hfiles = sorted(downloads.glob("aurora_price_memo_history*.csv"), key=lambda p: p.stat().st_mtime) if downloads.exists() else []
+    if hfiles:  # 拡張機能が残した相場の履歴（上書きする前の値も入っている）
+        add_memo_history(list(csv.DictReader(hfiles[-1].read_text(encoding="utf-8-sig").splitlines())), hist_path)
+    files = [p for p in sorted(downloads.glob("aurora_price_memo*.csv"), key=lambda p: p.stat().st_mtime)
+             if not p.name.startswith("aurora_price_memo_history")] if downloads.exists() else []
     if not files:
         return 0, 0
     new = {}  # 機種名 → (金額, source)。source は 相場メモ か 相場メモ(状態)
@@ -1134,6 +1180,11 @@ def import_extension_memo(downloads: Path | None = None, dest: Path | None = Non
         if t in new and is_memo(r):
             v, src = new[t]
             if _float_or_none(r.get("sold_price_usd")) != v or (r.get("source") or "") != src:
+                # 上書きする前の値と新しい値を履歴に残す（前の日付は memo 欄の「拡張機能で直した 日付」から）
+                od = (r.get("memo") or "").replace("拡張機能で直した", "").strip()
+                add_memo_history([{"title": t, "sold_price_usd": r.get("sold_price_usd"), "cond": _memo_cond(r.get("source") or ""),
+                                   "date": od if od[:2] == "20" else ""},
+                                  {"title": t, "sold_price_usd": v, "cond": _memo_cond(src), "date": today}], hist_path)
                 r["sold_price_usd"], r["source"], r["memo"] = f"{v:g}", src, f"拡張機能で直した {today}"
                 updated += 1
             del new[t]

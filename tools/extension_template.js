@@ -30,7 +30,7 @@
 
   function main(DATA) {
   const C = DATA.consts;
-  const LS_SEEN = "yhkSeenV1", LS_MEMO = "yhkMemoV3", LS_MEMO_OLD = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
+  const LS_SEEN = "yhkSeenV1", LS_MEMO_HIST = "yhkMemoHistV1", LS_MEMO = "yhkMemoV3", LS_MEMO_OLD = "yhkMemoV2", LS_FX = "yhkFxV2", LS_OPEN = "yhkOpenV2";
 
   // @core-start（ここから @core-end までは store/core.js にそのままコピーされる。tools/build_store.py）
   // ------------------------------------------------------------------ 文字列処理（appraise.py と同じ規則）
@@ -858,7 +858,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const markHtml = ALL && !c ? '<span class="s">相場なし</span>' : i.mark;
       return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${markHtml}<div class="s ${soon ? "hot" : ""}">${left}</div>${ALL && c && i.reason ? `<div class="s">${esc(i.reason)}</div>` : ""}</td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">${r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します"}</div>${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
+<div class="s">${r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します"}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a><div class="s">送料別</div>${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
@@ -944,6 +944,35 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
     return "title,sold_price_usd,source\n" + Object.entries(load(LS_MEMO, {}))
       .map(([k, v]) => { const m = memoVal(v); return `${q(k)},${m.usd},${q(memoSource(m.cond))}`; }).join("\n");
+  }
+  // ---- 相場の動き: ［直す］［登録］のたびに {機種: [{usd, cond, d}]} を残す（usd は送料込み、d は日付）。
+  //      Mac にも ダウンロード/aurora_price_memo_history.csv で送り、data/price_memo_history.csv に貯まる（DATA.memoHist で戻ってくる）
+  function addMemoHist(k, old, usd, cond) {
+    const all = load(LS_MEMO_HIST, {}), h = all[k] || [];
+    if (!h.length && old) { const m = memoVal(old); h.push({ usd: m.usd, cond: m.cond, d: "" }); }  // 記録を始める前の相場（日付不明）
+    h.push({ usd, cond, d: new Date().toISOString().slice(0, 10) });
+    all[k] = h.slice(-30); save(LS_MEMO_HIST, all);
+    const q = (x) => '"' + String(x ?? "").replace(/"/g, '""') + '"';
+    const csv = "title,sold_price_usd,cond,date\n" + Object.entries(all).flatMap(([t, hs]) => hs.map((e) => [t, e.usd, e.cond, e.d].map(q).join(","))).join("\n");
+    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id)
+      try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_price_memo_history.csv", csv }, () => void chrome.runtime.lastError); } catch (e) {}
+  }
+  // その機種の相場の動き（2つ以上の違う値があるときだけ）: 「相場の動き $110(10/5) → $125(11/17) ↑+14%」
+  function memoTrend(k) {
+    const seen = new Set(), list = [];
+    for (const e of [...((DATA.memoHist || {})[k] || []).map(([usd, d, cond]) => ({ usd, d, cond })), ...(load(LS_MEMO_HIST, {})[k] || [])]) {
+      const key = e.usd + "|" + (e.d || "");
+      if (!seen.has(key)) { seen.add(key); list.push(e); }
+    }
+    list.sort((a, b) => String(a.d || "").localeCompare(String(b.d || "")));
+    const vals = list.filter((e, i) => i === 0 || e.usd !== list[i - 1].usd);  // 同じ額が続く所は1つに
+    if (vals.length < 2) return "";
+    const last = vals[vals.length - 1], prev = vals[vals.length - 2];
+    const pct = Math.round((last.usd - prev.usd) / prev.usd * 100);
+    const arrow = last.usd > prev.usd ? `<b style="color:#1f7a5c">↑ +${pct}%</b>` : `<b style="color:#a4473a">↓ ${pct}%</b>`;
+    const md = (d) => (d ? `（${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}）` : "（以前）");
+    const path = vals.slice(-4).map((e) => `${nd(e.usd)}${md(e.d)}`).join(" → ");
+    return `<div class="s" title="［直す］［登録］で上書きした相場の履歴（送料別の商品代）。上向きなら強気、下向きなら控えめに">相場の動き ${path} ${arrow}</div>`;
   }
   function saveMemoFile() {
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) return;
@@ -1034,7 +1063,9 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       const vNet = Number((inp && inp.value || "").replace(/[$,\s]/g, ""));
       if (!vNet) return;
       const v = Math.round((vNet + SHIP()) * 100) / 100;  // 入力は送料別 → 保存は送料込み
-      const memo = load(LS_MEMO, {}); memo[k] = { usd: v, cond: sel ? sel.value : "" }; save(LS_MEMO, memo);
+      const memo = load(LS_MEMO, {});
+      addMemoHist(k, memo[k], v, sel ? sel.value : "");  // 上書きする前の相場も残す（相場の上がり下がりを見る）
+      memo[k] = { usd: v, cond: sel ? sel.value : "" }; save(LS_MEMO, memo);
       // 押した行の出品: 選んだ状態＝この出品の状態（入れた金額がそのままこの行の相場になる）。行は今の欄に残す
       const link = btn.closest("tr") && btn.closest("tr").querySelector('a[href*="/auction/"]');
       const id = link ? (link.getAttribute("href").match(/auction\/([^/?#]+)/) || [])[1] : "";

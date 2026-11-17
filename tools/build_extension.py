@@ -49,7 +49,8 @@ def build_data(cfg: dict, fx: float) -> dict:
         "trusted": [{"id": k, "name": v} for k, v in ba.load_trusted().items()],  # 安心ストア（data/trusted_sellers.csv）
         "refs": refs,
         "kantei": kantei,
-        "winStats": _win_stats(),  # 落札見込み（data/bid_log.csv の結果から。bid_results.win_stats）
+        "winStats": _win_stats(),
+        "memoHist": ba.load_memo_history(),  # 相場メモの履歴（拡張機能の「相場の動き」。data/price_memo_history.csv）  # 落札見込み（data/bid_log.csv の結果から。bid_results.win_stats）
         "cfg": {
             "fx": round(fx, 2), "convLossPct": cfg["fx"]["conversion_loss_pct"],
             "feePct": e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"],
