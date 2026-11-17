@@ -180,6 +180,12 @@ def dashboard() -> None:
     print("\n▶ 数字のグラフ")
     if subprocess.call([sys.executable, str(HERE / "build_dashboard.py"), "--no-open"], cwd=ROOT) != 0:
         print("  ⚠ グラフを作れませんでした（上の表示を Claude に送ってください）")
+    else:
+        try:
+            import ledger_sync
+            ledger_sync.upload_dashboard()  # → 古物台帳「Mac_グラフ」→ Artifacts のグラフが開くたびに読む
+        except Exception as e:  # noqa: BLE001  送れなくても他の更新は続ける
+            print(f"  ⚠ グラフを台帳に送れませんでした（{e}）")
 
 
 def bid_list() -> int | None:

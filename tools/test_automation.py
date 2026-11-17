@@ -1,5 +1,7 @@
 """自動化（暗号化配信・古物台帳・頒布会の添付・自動実行）のテスト. python -m unittest discover -s tools で実行."""
+import csv
 import http.server
+import io
 import json
 import shutil
 import subprocess
@@ -303,6 +305,29 @@ class BidUpload(unittest.TestCase):
             self.assertNotIn("zzz", sent[0])
             with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
                 self.assertIsNone(ls.upload_bids(log=log, post=lambda body: "NO_SHEET:入札結果"))  # 古いスクリプト
+
+
+class DashboardUpload(unittest.TestCase):
+    """数字のグラフの中身（JSON）→ 古物台帳「Mac_グラフ」. 分けて送り、つなげると元に戻る."""
+
+    def test_roundtrip(self):
+        import json
+        import ledger_sync as ls
+        data = {"generated": "2026/11/17 07:00", "x": "1,234", "big": "あ" * 70000, "q": 'a"b\nc'}
+        text = json.dumps(data, ensure_ascii=False)
+        rows = list(csv.reader(io.StringIO(ls.dashboard_csv(text))))
+        self.assertEqual(rows[0], ["part"])
+        self.assertTrue(all(r[0].startswith("j:") and len(r[0]) <= ls.DASH_CHUNK + 2 for r in rows[1:]))
+        self.assertEqual(json.loads("".join(r[0][2:] for r in rows[1:])), data)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "dashboard_data.json"
+            path.write_text(text, encoding="utf-8")
+            sent = []
+            with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
+                self.assertEqual(ls.upload_dashboard(path, post=lambda body: sent.append(body) or "OK:3"), 3)
+                self.assertIsNone(ls.upload_dashboard(path, post=lambda body: "NO_SHEET:Mac_グラフ"))
+            with mock.patch.object(ls.keychain, "get", return_value=None):
+                self.assertIsNone(ls.upload_dashboard(path, post=lambda body: "OK"))
 
 
 class SearchUrlSync(unittest.TestCase):

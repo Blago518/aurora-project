@@ -40,7 +40,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `build_store.py` | 店舗アプリ用: `store/core.js`（拡張機能の判定のコピー）と `data/store_data.json`（相場＋おすすめ機種。iCloud Drive にもコピー）を作る |
 | `build_knowledge.py` | data/ から `knowledge/相場/`・`knowledge/機種/` を自動生成 |
 | `build_knowledge_page.py`・`knowledge_page_template.html` | knowledge_share.md → Artifacts の読むだけのナレッジページ（ニューロン付き） |
-| `build_dashboard.py`・`dashboard_template.html` | eBay API の注文・取引明細・出品中一覧＋古物台帳・管理シート・発送明細 → 数字のグラフ `reports/dashboard.html`（月別売上・利益率・状態の割合など。update_all.py が毎回作る）。2026/8/17 以前の注文は SKU が No. と合っていないので `data/sku_fix.csv` の対応表で直す（候補は `--sku-candidates`） |
+| `build_dashboard.py`・`dashboard_template.html` | eBay API の注文・取引明細・出品中一覧＋古物台帳・管理シート・発送明細 → 数字のグラフ `reports/dashboard.html`（月別売上・利益率・状態の割合など。update_all.py が毎回作り、中身を古物台帳の「Mac_グラフ」シートに送る → Artifacts の「aurora 数字のグラフ」が開くたびに読む）。2026/8/17 以前の注文は SKU が No. と合っていないので `data/sku_fix.csv` の対応表で直す（候補は `--sku-candidates`） |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
 | `test_*.py` | テスト（Python と拡張機能・店舗アプリの判定一致も確認） |
