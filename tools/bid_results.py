@@ -23,6 +23,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 DATA = ROOT / "data"
 LOG = DATA / "bid_log.csv"
+HISTORY = DATA / "bid_history.csv"  # 以前の入札分析シートの入札履歴（ledger_sync.py が古物台帳「共有_過去の入札」から作る）
 REPORT = ROOT / "reports" / "bid_results.md"
 FIELDS = ["auction_id", "title", "max_bid", "pay_max", "usd", "profit_at_max", "end", "trusted", "tentative", "store_tax",
           "ship", "bid_at", "result", "final_price", "profit_final", "checked_at"]
@@ -209,7 +210,8 @@ def win_stats(rows: list[dict]) -> dict[str, list[int]]:
             continue
         won = 1 if res.startswith("落札") else 0
         band = price_band(mb)
-        for k in (f"{band}|{'1' if str(r.get('store_tax')) == '1' else '0'}", f"{band}|*"):
+        st = str(r.get("store_tax") or "")  # 空欄＝ストアか個人か分からない（以前の入札履歴）→ 価格帯だけに数える
+        for k in ([f"{band}|{'1' if st == '1' else '0'}"] if st in ("0", "1") else []) + [f"{band}|*"]:
             v = out.setdefault(k, [0, 0])
             v[0] += won
             v[1] += 1
@@ -227,8 +229,12 @@ def win_odds(stats: dict, max_bid: float, store: bool) -> dict | None:
     return None
 
 
-def load_win_stats(path: Path | None = None) -> dict:
-    return win_stats(_read(path or LOG))
+def load_win_stats(path: Path | None = None, history: Path | None = None) -> dict:
+    """今の入札記録＋以前の入札履歴（同じ出品は今の記録を優先）."""
+    rows = _read(path or LOG)
+    have = {r.get("auction_id") for r in rows}
+    rows += [r for r in _read(history or HISTORY) if r.get("auction_id") not in have]
+    return win_stats(rows)
 
 
 def advice(s: dict) -> list[str]:
