@@ -785,6 +785,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   const SEC_LABEL = { good: "入札候補", weak: "確認してから入札", check: "要確認", bad: "× 見送り", wait: "仮◎○", acc: "付属品など（除外）", "": "相場なし" };
 
   function render() {
+    const ALL = !!(state.allView && pageSeller());  // ［人気ストア］: このストアの全ページの全商品を判定付きで1つの表に
     let root = document.getElementById("yhk");
     if (!root) {
       const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
@@ -854,9 +855,10 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const tip = `eBay検索語: ${i.eq || i.query}（価格+送料の高い順）\n根拠: ${r.title || ""} ${nd(r.price)}（送料別） [${r.source || ""}]` +
         (junk ? `\nジャンク評価 ×${Math.round(DATA.cfg.junkFactor * 100)}%` : "") + `\n送料別の商品代 ${nd(i.usd)}（送料$${SHIP()}込みなら $${i.usd}）`;
       const [left, soon] = remain(i.end);
-      return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${i.mark}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
+      const markHtml = ALL && !c ? '<span class="s">相場なし</span>' : i.mark;
+      return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${markHtml}<div class="s ${soon ? "hot" : ""}">${left}</div>${ALL && c && i.reason ? `<div class="s">${esc(i.reason)}</div>` : ""}</td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">根拠: ${esc(r.title || "")} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}</div>${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
+<div class="s">${r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します"}</div>${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a><div class="s">送料別</div>${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
@@ -883,13 +885,22 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
 <td class="n">${yen(c.profit)}<div class="s">${c.margin != null ? c.margin + "%" : ""}</div>
 <div class="fix" title="sold を見て、売れた商品代（送料を含まない$）がこの額以上なら、そのまま［登録］。低ければ直して［登録］。同じ機種の今後の出品にも効きます">${memoInputs(w.label, `value="${netOf(w.sg)}" class="sug"`, "登録")}</div></td></tr>`;
     };
+    // ［人気ストア］の表: 全商品を終了が近い順に。仮◎○の行は仮の計算で、それ以外は通常の行（×・相場なし・付属品も含む）
+    const allTable = () => {
+      const wmap = new Map(waits.map((w) => [w.i.id, w]));
+      const list = items.slice().sort(byEnd);
+      const cnt = (f) => list.filter(f).length;
+      return `<h4 style="margin:10px 0 4px">人気ストア: 全 ${list.length}件${state.total ? `（このストアの出品 ${state.total}件）` : ""} ― 判定付き・終了が近い順</h4>
+<div class="s" style="margin-bottom:4px">◎○ ${cnt((i) => i.mark === "◎" || i.mark === "○")}件 ・ 仮◎○ ${wmap.size}件 ・ 要確認 ${cnt((i) => i.mark === "要確認" && i.calc)}件 ・ × ${cnt((i) => i.mark === "×")}件 ・ 相場なし ${cnt((i) => !i.calc && !wmap.has(i.id))}件${state.loading ? " ・ 読み込み中（読めた分から表示）" : ""}。相場なしの行は［直す$］に sold の商品代を入れると即判定します</div>
+<table>${head}${list.map((i) => (wmap.has(i.id) && !pin[i.id] ? waitRow(wmap.get(i.id)) : row(i))).join("")}</table>`;
+    };
     const head = `<tr><th>判定</th><th>商品（タイトル→ヤフオク）</th><th title="送料を含まない商品代（net）。金額→Product Research ／ sold→売れた履歴 ／ now→出品中">eBay相場（送料別）</th><th>現在</th><th title="ヤフオクの入札欄にそのまま入れる金額">入札する上限額</th><th title="今の価格のまま落札できたときの利益">利益（今の価格で落札）</th></tr>`;
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ 入札候補 ${good.length}件${weak.length + waits.length + pinnedWaits.length ? ` ・ 確認してから ${weak.length + waits.length + pinnedWaits.length}件` : ""}${accN ? ` ・ 付属品など ${accN}件は除外` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all" title="ヤフオクに負担をかけないよう、一度に読むのは1000件まで">続けて鑑定（次の${Math.min(LOAD_STEP, state.total - ((state.next || 1) - 1))}件・残り${state.total - ((state.next || 1) - 1)}件）</button>` : ""}
-${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
+${pageSeller() ? `<button data-a="store" title="このストアの全ページの全商品を読み込み、判定付きで終了が近い順に1つの表で表示します（×・相場なしも含む）">${ALL ? "通常の表示に戻す" : "人気ストア"}</button>` : ""}${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ eBayの$は送料別（計算では送料$${SHIP()}込みに戻して手数料を計算）${DATA.cfg.junkFactor < 1 ? ` ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価` : ""} ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
-<h4 style="margin:10px 0 4px">入札候補（終了が近い順）― 上限額をそのまま入札欄へ</h4>
+${ALL ? allTable() : `<h4 style="margin:10px 0 4px">入札候補（終了が近い順）― 上限額をそのまま入札欄へ</h4>
 ${good.length ? `<table>${head}${trustRows(good)}${good.filter((i) => !i.trusted).length ? `<tr><td colspan="6" class="tsep chal">チャレンジ枠（その他の出品者） ${good.filter((i) => !i.trusted).length}件 ― 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上</td></tr>` : ""}${good.filter((i) => !i.trusted).map(row).join("")}</table>` : `<div class="s">このページには、確認なしで入札できる出品はありません（下の「確認してから入札」を見てください）。</div>`}
 ${weak.length || waits.length || pinnedWaits.length ? `<h4 style="margin:14px 0 4px">確認してから入札 ${weak.length + waits.length + pinnedWaits.length}件 ― sold を見て、売れた商品代が相場以上なら［直す$］［登録］→ 上の入札候補に上がります</h4>
 <table>${head}${weak.length ? `<tr><td colspan="6" class="tsep">根拠が頒布会リスト（出品価格）・鑑定表（推定）の ◎○ ${weak.length}件 ― 売れた価格ではないので sold で確認</td></tr>${weak.map(row).join("")}` : ""}${waits.length || pinnedWaits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length + pinnedWaits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値（送料無料は−$30）で仮に計算</td></tr>${pinnedWaits.map(row).join("")}${waits.map(waitRow).join("")}` : ""}</table>` : ""}
@@ -903,7 +914,7 @@ ${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式API�
 ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.label)}</td>` : ""}
 <td class="fix">${memoInputs(g.label, `placeholder="$"${suggestUsd(state.browse[g.label]) ? ` class="sug" value="${netOf(suggestUsd(state.browse[g.label]))}"` : ""}`, "登録")}</td></tr>`).join("")}</table>
 <div style="margin-top:6px"><button data-a="memocopy">登録した相場メモをコピー（${Object.keys(load(LS_MEMO, {})).length}件）</button>
-<span class="s">「直す」「登録」した相場は ダウンロード/aurora_price_memo.csv に自動保存されます。Mac で build_store.py か build_extension.py を実行すると data/price_memo.csv に取り込まれ、スマホにも反映されます</span></div></details></div>`;
+<span class="s">「直す」「登録」した相場は ダウンロード/aurora_price_memo.csv に自動保存されます。Mac で build_store.py か build_extension.py を実行すると data/price_memo.csv に取り込まれ、スマホにも反映されます</span></div></details>`}</div>`;
     badges();
     applyFlash();
     if (!state.loading) fetchBrowse(groupList.slice(0, DATA.cfg.browseMaxModels).map((g) => g.label));
@@ -987,6 +998,10 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const a = btn.dataset.a, root = document.getElementById("yhk");
     if (a === "min") { root.classList.toggle("min"); save(LS_OPEN, !root.classList.contains("min")); render(); }
     if (a === "all") loadAll(LOAD_STEP);
+    if (a === "store") {  // 人気ストア: 全ページを読み終えるまで続けて読む（1000件ずつ。途中も読めた分から表示）
+      state.allView = !state.allView; render();
+      if (state.allView && !state.done) loadAll(LOAD_STEP);
+    }
     if (a === "open3") {  // ヤフオク・sold・now を今のタブの右に、この順で開く
       let urls = [];
       try { urls = JSON.parse(btn.dataset.urls || "[]"); } catch (e) { urls = []; }
@@ -1063,6 +1078,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const cur = Number(new URL(location.href).searchParams.get("b") || 1);
     const from = state.next || 1;
     const last = Math.min(state.total || 0, from + Math.min(count, LOAD_STEP) - 1);
+    let failed = false;
     try {
       for (let start = from; start <= last; start += 100) {
         state.next = start + 100;
@@ -1075,9 +1091,11 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
         await new Promise((r) => setTimeout(r, 800));
       }
     } catch (e) {
+      failed = true;
       alert("読み込みに失敗しました: " + e.message);
     } finally {
       state.loading = ""; state.done = (state.next || 1) > (state.total || 0); render();
+      if (state.allView && !state.done && !failed) setTimeout(() => loadAll(LOAD_STEP), 1500);  // 人気ストア: 全ページまで続ける
     }
   }
 
