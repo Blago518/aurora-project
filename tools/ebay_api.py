@@ -466,18 +466,19 @@ def post_order_get(path: str, params: dict | None = None) -> dict:
 def _post_order_search(kind: str, list_key: str, id_key: str, days: int) -> list[dict]:
     fmt = "%Y-%m-%dT%H:%M:%S.000Z"
     end = datetime.now(timezone.utc)
-    out, seen, page = [], set(), 1
-    while page <= 50:
-        d = post_order_get(f"{kind}/search", {"creation_date_range_from": (end - timedelta(days=days)).strftime(fmt),
-                                              "creation_date_range_to": end.strftime(fmt), "limit": 200, "offset": page})
-        fresh = [m for m in d.get(list_key, []) or [] if str(m.get(id_key)) not in seen]
-        if not fresh:
-            break
-        seen.update(str(m.get(id_key)) for m in fresh)
-        out.extend(fresh)
-        if page >= int((d.get("paginationOutput") or {}).get("totalPages") or 1):
-            break
-        page += 1
+    start = end - timedelta(days=days)
+    out, seen = [], set()
+    while start < end:  # 長い期間を1回で頼むと断られることがあるので、90日ずつに分ける
+        w_end = min(start + timedelta(days=90), end)
+        for page in range(1, 51):
+            d = post_order_get(f"{kind}/search", {"creation_date_range_from": start.strftime(fmt),
+                                                  "creation_date_range_to": w_end.strftime(fmt), "limit": 200, "offset": page})
+            fresh = [m for m in d.get(list_key, []) or [] if str(m.get(id_key)) not in seen]
+            seen.update(str(m.get(id_key)) for m in fresh)
+            out.extend(fresh)
+            if not fresh or page >= int((d.get("paginationOutput") or {}).get("totalPages") or 1):
+                break
+        start = w_end
     return out
 
 

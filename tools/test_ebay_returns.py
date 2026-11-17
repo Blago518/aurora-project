@@ -37,6 +37,20 @@ class ReturnsTest(unittest.TestCase):
         self.assertNotIn("11-5", by)
         self.assertIn("在庫のまま", by["11-9"]["verdict"])
 
+    def test_search_splits_windows_and_dedupes(self):
+        calls = []
+
+        def fake(path, params=None):
+            calls.append(params)
+            return {"members": [{"returnId": 1}, {"returnId": len(calls) + 1}], "paginationOutput": {"totalPages": 1}}
+        orig, ea.post_order_get = ea.post_order_get, fake
+        try:
+            got = ea._post_order_search("return", "members", "returnId", 200)
+        finally:
+            ea.post_order_get = orig
+        self.assertEqual(len(calls), 3)  # 200日 → 90日ずつ3回
+        self.assertEqual(sorted(m["returnId"] for m in got), [1, 2, 3, 4])
+
     def test_scrub_removes_personal_fields(self):
         d = ea._scrub({"buyerLoginName": "x", "summary": {"sellerLoginName": "y", "state": "CLOSED",
                                                            "shipTo": {"address": {"city": "z"}}}})
