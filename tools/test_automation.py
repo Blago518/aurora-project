@@ -399,6 +399,10 @@ class EbayMessages(unittest.TestCase):
         self.assertEqual([r["message_id"] for r in rows], ["112", "111"])
         self.assertEqual((rows[1]["replied"], rows[0]["replied"], rows[0]["read"]), (True, False, False))
         self.assertNotIn("buyer_x", json.dumps(rows))
+        self.assertEqual(ebay_api.hide_names("camera_x has sent a question about item #1 - Cap"), "(相手) has sent a question about item #1 - Cap")
+        self.assertEqual(ebay_api.hide_names("Re: shop-92 has sent a question about item #2"), "Re: (相手) has sent a question about item #2")
+        self.assertEqual(ebay_api.hide_names("jose sent a message about Canon"), "(相手) sent a message about Canon")
+        self.assertEqual(ebay_api.hide_names("Order 19-1 has been refunded"), "Order 19-1 has been refunded")
 
     def test_post_sheet(self):
         with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
