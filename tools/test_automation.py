@@ -321,3 +321,14 @@ class SearchUrlSync(unittest.TestCase):
             body = dest.read_text(encoding="utf-8")
             self.assertIn("# コンパクト（Claude が追加）\n" + u2, body)
             self.assertNotIn("example.com", body)
+
+
+class SingleBook(unittest.TestCase):
+    """1冊運用（写し先＝元の台帳）では「古物台帳_詳細」に写して返す."""
+
+    def test_script(self):
+        import ledger_sync as ls
+        s = ls.script_text("k", "BOOKID", "BOOKID")
+        self.assertIn("const DST = BOOK === SRC ? '古物台帳_詳細' : LEDGER;", s)
+        self.assertIn("d = dstBook.getSheetByName(DST)", s)
+        self.assertIn("const name = !p ? DST :", s)

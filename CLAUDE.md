@@ -32,7 +32,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv`。台帳に豪ドル・ポンドのまま記入された販売金額は、eBay の取引レポート（data/ebay_report.csv）の換算レートでドルに直す |
 | `update_all.py` | **全部まとめて最新にする**: ダウンロードフォルダの古物台帳CSV・頒布会xlsx・明細の取り込み → Chatwork 同期 → 相場データ・拡張機能・スマホ用データ・ナレッジを作り直す |
-| `ledger_sync.py` | 古物台帳をスプレッドシートから直接 `data/ledger.csv` に、管理シートの No.・状態・購入日・販売日を `data/kanri.csv` に取り込む。Claude更新版の「意思決定ログ」シート（Claude がクラウドから書く）を `knowledge/意思決定ログ.md` に追記し、入札の記録（data/bid_log.csv）を「入札結果」シートに送る（Apps Script の合言葉付き URL。初回 `setup`、スクリプト更新時 `script`） |
+| `ledger_sync.py` | 古物台帳をスプレッドシートから直接 `data/ledger.csv` に、管理シートの No.・状態・購入日・販売日を `data/kanri.csv` に取り込む。古物台帳の「意思決定ログ」シート（Claude がクラウドから書く）を `knowledge/意思決定ログ.md` に追記し、入札の記録（data/bid_log.csv）を「入札結果」シートに送る（Apps Script の合言葉付き URL。初回 `setup`、スクリプト更新時 `script`、1冊運用への切り替え `single`。1冊運用では元の台帳の「古物台帳」→「古物台帳_詳細」と「写し_〜」を同じ台帳に作る） |
 | `store_publish.py` | スマホ用データを暗号化してシークレット Gist に配信 → iPhone のアプリが開くたびに自動更新（初回 `setup`） |
 | `schedule.py` | `update_all.py` を毎朝＋ログイン時に自動実行（Mac の launchd。`install`・`status`・`uninstall`） |
 | `keychain.py` | トークン・合言葉を Mac のキーチェーンに保存する共通部品 |
