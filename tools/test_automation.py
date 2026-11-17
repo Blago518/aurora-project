@@ -357,3 +357,29 @@ class SingleBook(unittest.TestCase):
         self.assertIn("const DST = BOOK === SRC ? '古物台帳_詳細' : LEDGER;", s)
         self.assertIn("d = dstBook.getSheetByName(DST)", s)
         self.assertIn("const name = !p ? DST :", s)
+
+
+class SheetMemoAndKnowledge(unittest.TestCase):
+    """チャットで決めた相場（共有_相場メモ）・講座の要点（共有_ナレッジ）・未登録機種（Mac_未登録機種）."""
+
+    def test_sheet_memo(self):
+        text = "機種,相場$（送料別）,状態,日付\nNikon FM2,$190,MINT,2026-11-18\n空欄,,,\nCanon AE-1,abc,,\n"
+        self.assertEqual(ls.sheet_memo_rows(text, 40.0), {"Nikon FM2": (230.0, "相場メモ(MINT)")})
+
+    def test_knowledge(self):
+        text = '"ファイル名","本文"\n"狙い目スペック","# 狙い目\n50mm は f/1.2 より明るい"\n"a/b","x"\n'
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(ls, "fetch", return_value=text):
+            self.assertEqual(ls.sync_knowledge("u", "k", root=Path(d)), 2)
+            self.assertIn("f/1.2", (Path(d) / "講座" / "狙い目スペック.md").read_text(encoding="utf-8"))
+            self.assertTrue((Path(d) / "講座" / "a_b.md").exists())  # ファイル名の / は使わない
+            self.assertEqual(ls.sync_knowledge("u", "k", root=Path(d)), 0)  # 変化なし
+
+    def test_upload_unpriced(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "unpriced_models_20261118.csv").write_text(
+                "title,sold_price_usd,source,件数,ヤフオク現在価格の中央値,出品例,eBay販売済みURL\nNikon FM2,,相場メモ,5,12000,例,https://x\n",
+                encoding="utf-8-sig")
+            sent = []
+            with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
+                self.assertEqual(ls.upload_unpriced(Path(d), post=lambda b: sent.append(b) or "OK:1"), 1)
+            self.assertIn("Nikon FM2,5,12000", sent[0])

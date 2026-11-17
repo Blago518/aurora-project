@@ -236,3 +236,17 @@ class ModelKeyGeneration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SweetSpot(unittest.TestCase):
+    """狙い目スペック（単焦点の焦点距離×F値）の印. 判定・上限額は変えない."""
+
+    def test_js(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        cases = {"Nikon Ai-S 50mm f/1.2": True, "Nikon Ai-S 50mm f/1.4": False, "Canon FD 85mm F1.8": True,
+                 "Canon FD 35-70mm f/3.5": False, "Nikon Ai 28mm f/2.8": False, "Nikkor 135mm 1:2": True,
+                 "Canon EF 200mm F2.8L": True, "Olympus 100mm F2.8": False, "レンズ　５０ｍｍ　Ｆ１．２": True, "Nikon F3 ボディ": False}
+        data = bx.build_data(CFG, 150.0)
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(list(cases))}.map((t)=>!!m.sweetSpot(t))))")
+        self.assertEqual(out, list(cases.values()))

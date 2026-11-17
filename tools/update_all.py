@@ -208,6 +208,11 @@ def bid_list() -> int | None:
     html = new[-1].with_suffix(".html")
     print(f"\n📋 入札リスト: ◎○ {len(good)}件（全{len(rows)}件を鑑定）→ {html.relative_to(ROOT)}")
     print("   入札は「上限入札額」をヤフオクの入札欄に入れて放置でOK（自動入札。負けても損はしない）")
+    try:
+        import ledger_sync
+        ledger_sync.upload_unpriced()  # 相場が無かった機種 → 古物台帳「Mac_未登録機種」（夜にクラウドが下調べ）
+    except Exception as e:  # noqa: BLE001  送れなくても入札リストはそのまま
+        print(f"  ⚠ 未登録機種を台帳に送れませんでした（{e}）")
     if sys.platform == "darwin" and html.exists():
         subprocess.call(["open", str(html)])
     return len(good)
