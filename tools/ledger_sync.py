@@ -6,6 +6,8 @@ Apps Script（下の APPS_SCRIPT）は script.google.com の独立したプロ�
     古物台帳: Claude更新版に無い No. の行を足し、ある行は空欄だけ埋める（入っている値・数式は上書きしない。行は消さない）
     管理・ebay売上・J管理・出品情報: Claude更新版の「写し_シート名」に、Mac が使う列だけを毎回写す
     意思決定ログ: Claude更新版の「意思決定ログ」シート（Claude がクラウドから書く）を、knowledge/意思決定ログ.md に追記する
+    検索URL: Claude更新版の「検索URL」シート（Claude がクラウドから書く）の URL を、data/search_urls.txt に足す
+    これから増やすシートは、名前を「共有_〜」（Claude → Mac）・「Mac_〜」（Mac → Claude）にすればスクリプトの貼り替えが要らない
 そのあと Claude更新版の古物台帳を CSV で返す。?sheet=… を付けると写しのシートを返す。購入者の名前・住所の列（Buyer…・Ship to…）は
 スクリプトの側で取り除いてから返す。ほかのシートからは EXTRA_SHEETS の列だけを data/ に保存する（グラフ用）:
     管理      → data/kanri.csv        No.・状態・購入日・販売日・仕入・商品名・仕入元（状態と、古物台帳に無い商品の仕入額）
@@ -55,6 +57,8 @@ DECISION_SHEET = "意思決定ログ"
 DECISION_MD = ROOT / "knowledge" / "意思決定ログ.md"
 # 入札の記録（data/bid_log.csv）→ Claude更新版の「入札結果」シート（ゼニガメが負け方を学ぶ）。金額は自分の入札上限と公開の最終価格だけ
 BID_SHEET = "入札結果"
+# Claude更新版の「検索URL」シート（Claude がクラウドから書く。列: URL・メモ）→ data/search_urls.txt に無い URL を足す（毎朝の入札リスト用）
+SEARCH_SHEET = "検索URL"
 BID_COLUMNS = ["auction_id", "title", "max_bid", "final_price", "result", "end", "usd", "profit_at_max", "profit_final",
                "trusted", "tentative", "store_tax", "ship", "bid_at"]
 SERVICE = "aurora-ledger"
@@ -76,8 +80,10 @@ const EXTRA = __EXTRA__;  // シート名 → Mac が使う列
 const PAIRS = [  // Claude更新版の列（見出しの先頭）← 元の古物台帳の列（見出しの先頭）
   ['管理番号', 'No.'], ['購入日', '購入日'], ['品目', '品目'], ['数量', '数量'], ['仕入元', 'アカウント名'],
   ['仕入合計', '仕入金額'], ['仕入URL', 'ヤフオクURL'], ['販売日', '販売日'], ['販売金額', '販売金額'], ['備考', '備考']];
-const OWN = ['意思決定ログ', '入札結果'];
-const PUT = ['入札結果'];  // Mac から書き込んでよいシート（Claude更新版の中だけ。中身を毎回まるごと置き換える）  // Claude更新版にあるシートをそのまま返す（Claude が書く。Mac が knowledge/ に追記する）
+const OWN = ['意思決定ログ', '入札結果', '検索URL'];  // Claude更新版のこのシートと「共有_」で始まるシートは、そのまま返す
+const PUT = ['入札結果'];  // Mac から書き込んでよいシート（Claude更新版の中だけ。中身を毎回まるごと置き換える）。「Mac_」で始まるシートも可
+const own = (p) => OWN.includes(p) || p.startsWith('共有_');
+const put = (p) => PUT.includes(p) || p.startsWith('Mac_');  // Claude更新版にあるシートをそのまま返す（Claude が書く。Mac が knowledge/ に追記する）
 const DROP = /^(Buyer|Ship to)/;
 const nh = (s) => String(s).normalize('NFKC').replace(/\s+/g, '');
 const colOf = (head, p) => head.findIndex((h) => h === p || h.startsWith(p));
@@ -166,7 +172,7 @@ function doGet(e) {
   const props = PropertiesService.getScriptProperties();
   if (p === '_status') return ContentService.createTextOutput(props.getProperty('last') || '');
   if (!p) props.setProperty('last', new Date().toISOString() + ' ' + syncAll());  // 古物台帳を読むときに、先に元から写す
-  const name = !p ? LEDGER : (p in EXTRA ? '写し_' + p : (OWN.includes(p) ? p : null));
+  const name = !p ? LEDGER : (p in EXTRA ? '写し_' + p : (own(p) ? p : null));
   const sh = name && SpreadsheetApp.openById(BOOK).getSheetByName(name);
   if (!sh) return ContentService.createTextOutput('NO_SHEET:' + p);
   return ContentService.createTextOutput(csvOf(sh.getDataRange().getDisplayValues())).setMimeType(ContentService.MimeType.CSV);
@@ -175,7 +181,7 @@ function doGet(e) {
 function doPost(e) {
   if (!e || !e.parameter || e.parameter.key !== KEY) return ContentService.createTextOutput('forbidden');
   const p = e.parameter.sheet || '';
-  if (!PUT.includes(p)) return ContentService.createTextOutput('NO_SHEET:' + p);
+  if (!put(p)) return ContentService.createTextOutput('NO_SHEET:' + p);
   const rows = Utilities.parseCsv(e.postData.contents || '');
   if (!rows.length) return ContentService.createTextOutput('EMPTY');
   const book = SpreadsheetApp.openById(BOOK);
@@ -263,6 +269,7 @@ def sync(dry_run: bool = False) -> bool | None:
         pass
     sync_extra(url, key, dry_run)
     sync_decisions(url, key, dry_run)
+    sync_search_urls(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
     if old == text:
         print("古物台帳: 変化なし", file=sys.stderr)
@@ -360,6 +367,38 @@ def sync_decisions(url: str, key: str, dry_run: bool = False) -> int | None:
     n = append_decisions(text, dry_run=dry_run)
     if n:
         print(f"意思決定ログ: {n}件を{'追記予定' if dry_run else '追記'} → knowledge/意思決定ログ.md", file=sys.stderr)
+    return n
+
+
+def append_search_urls(text: str, dest: Path | None = None, dry_run: bool = False) -> int:
+    """「検索URL」シートの CSV → data/search_urls.txt に無い URL を「# メモ」付きで末尾に足す. 足した数."""
+    dest = dest or DATA / "search_urls.txt"
+    rows = pick_columns(text, ["URL", "メモ"]) or []
+    have = dest.read_text(encoding="utf-8") if dest.exists() else ""
+    add = []
+    for r in rows:
+        u = r.get("URL", "").strip()
+        if u.startswith("https://auctions.yahoo.co.jp/") and u not in have and u not in "\n".join(add):
+            add.append((f"# {r['メモ'].strip()}（Claude が追加）\n" if r.get("メモ", "").strip() else "") + u)
+    if add and not dry_run:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "a", encoding="utf-8") as f:
+            f.write(("" if not have or have.endswith("\n") else "\n") + "\n".join(add) + "\n")
+    return len(add)
+
+
+def sync_search_urls(url: str, key: str, dry_run: bool = False) -> int | None:
+    """Claude更新版の「検索URL」シート → data/search_urls.txt（シートやスクリプトが無ければ何もしない）."""
+    try:
+        text = fetch(url, key, SEARCH_SHEET)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"検索URL: 読み込めませんでした（{e}）", file=sys.stderr)
+        return None
+    if text.startswith("NO_SHEET:") or "URL" not in text[:200]:
+        return None
+    n = append_search_urls(text, dry_run=dry_run)
+    if n:
+        print(f"検索URL: {n}件を{'追加予定' if dry_run else '追加'} → data/search_urls.txt", file=sys.stderr)
     return n
 
 
