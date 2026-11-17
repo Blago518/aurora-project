@@ -1168,6 +1168,17 @@ def import_extension_memo(downloads: Path | None = None, dest: Path | None = Non
         src = (r.get("source") or "").strip()
         if t and v:
             new[t] = (v, src if src.startswith("相場メモ") else "相場メモ")
+    added, updated = merge_memo(new, dest, "拡張機能で直した")
+    if added or updated:
+        print(f"相場メモを取り込み: 追加 {added}件・更新 {updated}件（{files[-1].name} → {dest.name}）", file=sys.stderr)
+    return added, updated
+
+
+def merge_memo(new: dict, dest: Path | None = None, how: str = "拡張機能で直した") -> tuple[int, int]:
+    """{機種: (送料込み$, source)} を data/price_memo.csv に入れる（同じ機種の相場メモは上書き。前の値は履歴に残す）."""
+    dest = dest or DATA / "price_memo.csv"
+    hist_path = dest.parent / "price_memo_history.csv"
+    new = dict(new)
     rows, fields = [], list(MEMO_FIELDS)
     if dest.exists():
         rd = csv.DictReader(dest.read_text(encoding="utf-8-sig").splitlines())
@@ -1181,15 +1192,16 @@ def import_extension_memo(downloads: Path | None = None, dest: Path | None = Non
             v, src = new[t]
             if _float_or_none(r.get("sold_price_usd")) != v or (r.get("source") or "") != src:
                 # 上書きする前の値と新しい値を履歴に残す（前の日付は memo 欄の「拡張機能で直した 日付」から）
-                od = (r.get("memo") or "").replace("拡張機能で直した", "").strip()
+                od = re.search(r"20\d\d-\d\d-\d\d", r.get("memo") or "")
                 add_memo_history([{"title": t, "sold_price_usd": r.get("sold_price_usd"), "cond": _memo_cond(r.get("source") or ""),
-                                   "date": od if od[:2] == "20" else ""},
+                                   "date": od.group(0) if od else ""},
                                   {"title": t, "sold_price_usd": v, "cond": _memo_cond(src), "date": today}], hist_path)
-                r["sold_price_usd"], r["source"], r["memo"] = f"{v:g}", src, f"拡張機能で直した {today}"
+                r["sold_price_usd"], r["source"], r["memo"] = f"{v:g}", src, f"{how} {today}"
                 updated += 1
             del new[t]
     for t, (v, src) in new.items():
-        rows.append({"title": t, "sold_price_usd": f"{v:g}", "source": src, "memo": f"拡張機能で直した {today}"})
+        rows.append({"title": t, "sold_price_usd": f"{v:g}", "source": src, "memo": f"{how} {today}"})
+        add_memo_history([{"title": t, "sold_price_usd": v, "cond": _memo_cond(src), "date": today}], hist_path)
         added += 1
     if added or updated:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1197,7 +1209,6 @@ def import_extension_memo(downloads: Path | None = None, dest: Path | None = Non
             w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
             w.writeheader()
             w.writerows(rows)
-        print(f"相場メモを取り込み: 追加 {added}件・更新 {updated}件（{files[-1].name} → {dest.name}）", file=sys.stderr)
     return added, updated
 
 

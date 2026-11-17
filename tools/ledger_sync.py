@@ -61,6 +61,9 @@ BID_SHEET = "入札結果"
 SEARCH_SHEET = "検索URL"
 PAST_BIDS_SHEET = "共有_過去の入札"  # 以前の「入札分析」ファイルの入札履歴（自分の入札額・最終落札価格）。Claude が値だけ写した
 PAST_BIDS = DATA / "bid_history.csv"
+MEMO_SHEET = "共有_相場メモ"  # チャットで決めた相場（Claude が書く: 機種・相場$（送料別）・状態・日付）→ data/price_memo.csv
+KNOWLEDGE_SHEET = "共有_ナレッジ"  # 講座資料などの要点（Claude が書く: ファイル名・本文）→ knowledge/講座/〈ファイル名〉.md
+UNPRICED_SHEET = "Mac_未登録機種"  # 毎朝の入札リストで相場が無かった機種（夜にクラウドが下調べする）
 BID_COLUMNS = ["auction_id", "title", "max_bid", "final_price", "result", "end", "usd", "profit_at_max", "profit_final",
                "trusted", "tentative", "store_tax", "ship", "bid_at"]
 SERVICE = "aurora-ledger"
@@ -274,6 +277,8 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_decisions(url, key, dry_run)
     sync_search_urls(url, key, dry_run)
     sync_past_bids(url, key, dry_run)
+    sync_sheet_memo(url, key, dry_run)
+    sync_knowledge(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
     if old == text:
         print("古物台帳: 変化なし", file=sys.stderr)
@@ -404,6 +409,101 @@ def sync_search_urls(url: str, key: str, dry_run: bool = False) -> int | None:
     if n:
         print(f"検索URL: {n}件を{'追加予定' if dry_run else '追加'} → data/search_urls.txt", file=sys.stderr)
     return n
+
+
+def sheet_memo_rows(text: str, ship_usd: float) -> dict:
+    """「共有_相場メモ」の CSV → {機種: (送料込み$, source)}. 相場$ は送料別（net）で書いてあるので送料を足す."""
+    out = {}
+    for r in pick_columns(text, ["機種", "相場$（送料別）", "状態"]) or []:
+        t = (r.get("機種") or "").strip()
+        try:
+            v = float(str(r.get("相場$（送料別）", "")).replace("$", "").replace(",", "").strip())
+        except ValueError:
+            continue
+        if t and v > 0:
+            cond = (r.get("状態") or "").strip()
+            out[t] = (round(v + ship_usd, 2), f"相場メモ({cond})" if cond else "相場メモ")
+    return out
+
+
+def sync_sheet_memo(url: str, key: str, dry_run: bool = False) -> int | None:
+    """古物台帳「共有_相場メモ」→ data/price_memo.csv（同じ機種は上書き。前の値は相場の履歴に残る）."""
+    import appraise as ba
+    try:
+        text = fetch(url, key, MEMO_SHEET)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"相場メモ（シート）: 読み込めませんでした（{e}）", file=sys.stderr)
+        return None
+    if text.startswith("NO_SHEET:") or "機種" not in text[:300]:
+        return None
+    new = sheet_memo_rows(text, float(ba.load_config(None)["shipping"].get("deduction_usd", 0)))
+    if dry_run or not new:
+        return len(new)
+    added, updated = ba.merge_memo(new, how="チャットで登録")
+    if added or updated:
+        print(f"相場メモ（シート）: 追加 {added}件・更新 {updated}件 → data/price_memo.csv", file=sys.stderr)
+    return added + updated
+
+
+def sync_knowledge(url: str, key: str, dry_run: bool = False, root: Path | None = None) -> int | None:
+    """古物台帳「共有_ナレッジ」（ファイル名・本文）→ knowledge/講座/〈ファイル名〉.md（中身が変わったものだけ書き直す）."""
+    import re
+    try:
+        text = fetch(url, key, KNOWLEDGE_SHEET)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"ナレッジ: 読み込めませんでした（{e}）", file=sys.stderr)
+        return None
+    if text.startswith("NO_SHEET:") or "ファイル名" not in text[:300]:
+        return None
+    folder = (root or ROOT / "knowledge") / "講座"
+    n = 0
+    for r in pick_columns(text, ["ファイル名", "本文"]) or []:
+        name = re.sub(r'[\\/:*?"<>|]', "_", (r.get("ファイル名") or "").strip())[:60]
+        body = (r.get("本文") or "").replace("\r\n", "\n").strip() + "\n"
+        if not name or len(body) < 2:
+            continue
+        path = folder / f"{name}.md"
+        if path.exists() and path.read_text(encoding="utf-8") == body:
+            continue
+        n += 1
+        if not dry_run:
+            folder.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+    if n:
+        print(f"ナレッジ: {n}件を{'更新予定' if dry_run else '更新'} → knowledge/講座/", file=sys.stderr)
+    return n
+
+
+def upload_unpriced(reports: Path | None = None, post=None, top: int = 30) -> int | None:
+    """一番新しい reports/unpriced_models_*.csv の上位 → 古物台帳「Mac_未登録機種」（夜にクラウドが相場を下調べする）."""
+    url, key = keychain.get(SERVICE, "url"), keychain.get(SERVICE, "key")
+    files = sorted((reports or ROOT / "reports").glob("unpriced_models_*.csv"))
+    if not url or not key or not files:
+        return None
+    rows = list(csv.DictReader(files[-1].read_text(encoding="utf-8-sig").splitlines()))[:top]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["機種", "件数", "ヤフオク中央値", "出品例", "sold"])
+    for r in rows:
+        w.writerow([r.get("title", ""), r.get("件数", ""), r.get("ヤフオク現在価格の中央値", ""), r.get("出品例", "")[:120],
+                    r.get("eBay販売済みURL", "")])
+    try:
+        if post:
+            res = post(buf.getvalue())
+        else:
+            sep = "&" if "?" in url else "?"
+            req = urllib.request.Request(
+                f"{url}{sep}key={urllib.parse.quote(key)}&sheet={urllib.parse.quote(UNPRICED_SHEET)}",
+                data=buf.getvalue().encode("utf-8"), headers={"Content-Type": "text/csv; charset=utf-8"}, method="POST")
+            with urllib.request.urlopen(req, timeout=60) as r2:
+                res = r2.read().decode("utf-8-sig")
+    except (urllib.error.URLError, OSError) as e:
+        print(f"未登録機種: 送れませんでした（{e}）", file=sys.stderr)
+        return None
+    if not res.startswith("OK"):
+        return None
+    print(f"未登録機種: 上位 {len(rows)}件 → 古物台帳「{UNPRICED_SHEET}」（夜に下調べ）", file=sys.stderr)
+    return len(rows)
 
 
 def past_bids_rows(text: str) -> list[dict]:

@@ -161,7 +161,8 @@ class MemoAutoSave(unittest.TestCase):
             self.assertEqual(ba.import_extension_memo(dl, dest), (1, 0))  # 履歴ファイルを相場メモと取り違えない
             ba.import_extension_memo(dl, dest)
             h = ba.load_memo_history(Path(d) / "price_memo_history.csv")["Nikon FM2"]
-            self.assertEqual([e[0] for e in h], [200, 215, 230])  # 2回取り込んでも重ならない・日付順（不明が先）
+            self.assertEqual([e[0] for e in h][:3], [200, 215, 230])  # 2回取り込んでも重ならない・日付順（不明が先）
+            self.assertTrue(all(e[0] == 230 for e in h[3:]))  # 取り込んだ日の記録（同じ額）
 
     def test_manifest_has_downloads(self):
         import build_extension as bx
