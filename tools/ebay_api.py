@@ -342,6 +342,11 @@ def cmd_listings(_args) -> None:
 MSG_FIELDS = ["message_id", "received", "item_id", "subject", "read", "replied", "type"]
 
 
+def hide_names(subject: str) -> str:
+    """件名の先頭のユーザー名（「xxx has sent a question about…」「xxx sent a message about…」）を伏せる."""
+    return re.sub(r"^((?:Re:\s*)*)\S+(?=\s+(?:has\s+sent|sent)\s+a\s+(?:question|message))", r"\1(相手)", subject.strip())
+
+
 def parse_messages(xml: bytes) -> list[dict]:
     """GetMyMessages（ReturnHeaders）の応答 → 1通1行. 購入者の名前（Sender）は入れない（個人情報を台帳に広げない）."""
     ns = {"e": "urn:ebay:apis:eBLBaseComponents"}
@@ -352,7 +357,7 @@ def parse_messages(xml: bytes) -> list[dict]:
     for m in root.findall(".//e:Messages/e:Message", ns):
         t = lambda k: (m.findtext(f"e:{k}", default="", namespaces=ns) or "").strip()  # noqa: E731
         rows.append({"message_id": t("MessageID"), "received": t("ReceiveDate"), "item_id": t("ItemID"),
-                     "subject": t("Subject")[:120], "read": t("Read").lower() == "true",
+                     "subject": hide_names(t("Subject"))[:120], "read": t("Read").lower() == "true",
                      "replied": t("Replied").lower() == "true", "type": t("MessageType")})
     rows.sort(key=lambda r: r["received"], reverse=True)
     return rows
