@@ -11,6 +11,7 @@
     python3 tools/ebay_api.py orders       # 自分の売上（直近90日。--days 730 で2年）→ reports/ebay_orders_*.csv（金額は currency 列の通貨）
     python3 tools/ebay_api.py listings     # 自分の出品中の一覧（在庫日数順）→ reports/listings_*.csv
     python3 tools/ebay_api.py fees         # 取引明細 → reports/ebay_finances_*.csv、手数料率を通貨ごとに集計
+    python3 tools/ebay_api.py returns      # 返品・キャンセル・返金の状況（商品が返送されたか）→ reports/ebay_returns_*.csv
     python3 tools/ebay_api.py browse "Nikon FM2"   # 出品中の相場（公式 Browse API）
 
 保存しない情報: 購入者の名前・住所・ユーザー名（国だけ保存）。
@@ -418,6 +419,153 @@ def cmd_fees(args) -> None:
     print("広告費（AD_FEE）は上の一覧。率は Claude が注文ごとに計算します。")
 
 
+# ---------------------------------------------------------------------------
+# 返品・キャンセル（Post-Order API）
+# ---------------------------------------------------------------------------
+
+_PRIVATE = re.compile(r"login|address|email|phone|buyer.*name|seller.*name|firstname|lastname|userid", re.I)
+
+
+def _scrub(o):
+    """購入者・出品者の名前・住所・ID を取り除く（生の応答を保存するとき用）."""
+    if isinstance(o, dict):
+        return {k: _scrub(v) for k, v in o.items() if not _PRIVATE.search(k)}
+    if isinstance(o, list):
+        return [_scrub(v) for v in o]
+    return o
+
+
+def _find(o, key: str):
+    """入れ子の中から key を探して最初の値を返す（Post-Order API は場所が深く、版で変わるため）."""
+    if isinstance(o, dict):
+        if key in o and o[key] not in (None, "", {}, []):
+            return o[key]
+        for v in o.values():
+            r = _find(v, key)
+            if r not in (None, "", {}, []):
+                return r
+    elif isinstance(o, list):
+        for v in o:
+            r = _find(v, key)
+            if r not in (None, "", {}, []):
+                return r
+    return None
+
+
+def _date(d) -> str:
+    v = d.get("value") if isinstance(d, dict) else d
+    return str(v or "")[:10]
+
+
+def post_order_get(path: str, params: dict | None = None) -> dict:
+    """Post-Order API は Bearer ではなく `IAF トークン` の形式."""
+    url = f"{API}/post-order/v2/{path}" + ("?" + urllib.parse.urlencode(params) if params else "")
+    return get_json(url, "", {"Authorization": f"IAF {user_token()}", "X-EBAY-C-MARKETPLACE-ID": "EBAY_US"})
+
+
+def _post_order_search(kind: str, list_key: str, id_key: str, days: int) -> list[dict]:
+    fmt = "%Y-%m-%dT%H:%M:%S.000Z"
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    out, seen = [], set()
+    while start < end:  # 長い期間を1回で頼むと断られることがあるので、90日ずつに分ける
+        w_end = min(start + timedelta(days=90), end)
+        for page in range(1, 51):
+            d = post_order_get(f"{kind}/search", {"creation_date_range_from": start.strftime(fmt),
+                                                  "creation_date_range_to": w_end.strftime(fmt), "limit": 200, "offset": page})
+            fresh = [m for m in d.get(list_key, []) or [] if str(m.get(id_key)) not in seen]
+            seen.update(str(m.get(id_key)) for m in fresh)
+            out.extend(fresh)
+            if not fresh or page >= int((d.get("paginationOutput") or {}).get("totalPages") or 1):
+                break
+        start = w_end
+    return out
+
+
+def return_row(summary: dict, detail: dict | None = None) -> dict:
+    """返品1件 → 1行。returned（商品が返送されたか）は返送の追跡から判定する."""
+    full = {"s": summary, "d": detail or {}}
+    back = _find(detail or {}, "returnShipmentInfo") or {}
+    delivery = str(_find(back, "deliveryStatus") or "").upper()
+    refund = _find(summary, "actualRefundAmount") or _find(full, "actualRefundAmount") or {}
+    state = str(summary.get("state") or "").upper()
+    if delivery == "DELIVERED":
+        verdict = "返送あり・到着"
+    elif back:
+        verdict = "返送あり・未着（追跡: " + (delivery or "不明") + "）"
+    elif "CLOSED" in state and _money(refund) > 0:
+        verdict = "返金のみ（返送の記録なし）"
+    elif "CLOSED" in state:
+        verdict = "返金なしで終了"
+    else:
+        verdict = "手続き中"
+    return {"kind": "返品", "id": summary.get("returnId", ""), "order_id": summary.get("orderId", ""),
+            "date": _date(_find(summary, "creationDate")), "state": summary.get("state", ""),
+            "status": summary.get("status", ""), "reason": _find(summary, "reason") or "",
+            "refund": _money(refund), "refund_currency": _cur(refund), "return_tracking": delivery,
+            "verdict": verdict}
+
+
+def cancel_row(c: dict) -> dict:
+    refund = _find(c, "refundAmount") or _find(c, "requestRefundAmount") or {}
+    return {"kind": "キャンセル", "id": c.get("cancelId", ""), "order_id": c.get("orderId") or c.get("legacyOrderId", ""),
+            "date": _date(c.get("cancelRequestDate") or _find(c, "cancelRequestDate")), "state": c.get("cancelState", ""),
+            "status": c.get("cancelStatus", ""), "reason": c.get("cancelReason", ""),
+            "refund": _money(refund), "refund_currency": _cur(refund), "return_tracking": "",
+            "verdict": "キャンセル（発送前の取り消し。在庫のまま）" if "CLOSED" in str(c.get("cancelState", "")).upper()
+            else "キャンセル手続き中"}
+
+
+def join_returns(rows: list[dict], orders: list[dict]) -> list[dict]:
+    """注文（SKU＝管理番号・商品名）を付け、返品もキャンセルも無いのに返金された注文を足す."""
+    by_order: dict[str, dict] = {}
+    for o in orders:
+        by_order.setdefault(o["order_id"], o)
+    out = []
+    for r in rows:
+        o = by_order.get(r["order_id"], {})
+        out.append({**r, "sku": o.get("sku", ""), "title": o.get("title", ""), "order_date": o.get("date", ""),
+                    "payment_status": o.get("payment_status", "")})
+    known = {r["order_id"] for r in rows}
+    for oid, o in by_order.items():
+        if oid not in known and "REFUNDED" in (o.get("payment_status") or ""):
+            part = "一部" if "PARTIALLY" in o["payment_status"] else "全額"
+            out.append({"kind": "返金のみ", "id": "", "order_id": oid, "date": "", "state": "", "status": "", "reason": "",
+                        "refund": "", "refund_currency": "", "return_tracking": "",
+                        "verdict": f"{part}返金（返品・キャンセルの手続きなし。商品は戻っていない見込み）",
+                        "sku": o.get("sku", ""), "title": o.get("title", ""), "order_date": o.get("date", ""),
+                        "payment_status": o["payment_status"]})
+    out.sort(key=lambda r: r["order_date"] or r["date"], reverse=True)
+    return out
+
+
+def cmd_returns(args) -> None:
+    """返品・キャンセル・返金の状況を1つの表にする。廃棄したかどうかは eBay には無い（台帳が正）."""
+    returns = _post_order_search("return", "members", "returnId", args.days)
+    cancels = _post_order_search("cancellation", "cancellations", "cancelId", args.days)
+    rows, raw = [], {"returns": [], "cancellations": _scrub(cancels)}
+    for m in returns:
+        full = post_order_get(f"return/{m.get('returnId')}", {"fieldgroups": "FULL"})
+        raw["returns"].append(_scrub(full))
+        rows.append(return_row(full.get("summary") or m, full.get("detail")))
+    rows += [cancel_row(c) for c in cancels]
+    rows = join_returns(rows, fetch_orders(args.days + 60))  # 返品は注文より後に起きるので注文は長めに取る
+    REPORTS.mkdir(exist_ok=True)
+    out = REPORTS / f"ebay_returns_{datetime.now():%Y%m%d}.csv"
+    cols = ["kind", "sku", "title", "order_date", "date", "verdict", "refund", "refund_currency", "payment_status",
+            "state", "status", "reason", "return_tracking", "order_id", "id"]
+    with open(out, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader(); w.writerows(rows)
+    raw_out = REPORTS / f"ebay_returns_raw_{datetime.now():%Y%m%d}.json"  # 判定を確かめる用（名前・住所は除いてある）
+    raw_out.write_text(json.dumps(raw, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"直近{args.days}日: 返品 {len(returns)}件・キャンセル {len(cancels)}件・手続きなしの返金 "
+          f"{sum(r['kind'] == '返金のみ' for r in rows)}件 → {out}")
+    for r in rows:
+        print(f"  {r['order_date'] or r['date']:<10} {r['sku'] or '?':<5} {r['kind']:<5} {r['verdict']}  {r['title'][:40]}")
+    print("※ 戻った商品を廃棄したか・再出品したかは eBay には無いので、古物台帳の状態欄で管理します。")
+
+
 def browse_search(query: str, limit: int = 50) -> list[dict]:
     """出品中の商品を公式 Browse API で検索（米国サイト、カメラ・レンズのカテゴリのみ）."""
     # カテゴリは1つしか指定できない（eBay の制限）。625＝カメラ・写真全体。付属品単体は下の junk で除く
@@ -464,6 +612,8 @@ def main(argv=None) -> int:
     sub.add_parser("listings", help="自分の出品中の一覧（在庫日数順）").set_defaults(fn=cmd_listings)
     p = sub.add_parser("fees", help="実際の手数料率を集計"); p.add_argument("--days", type=int, default=90)
     p.set_defaults(fn=cmd_fees)
+    p = sub.add_parser("returns", help="返品・キャンセル・返金の状況（商品が返送されたか）"); p.add_argument("--days", type=int, default=120)
+    p.set_defaults(fn=cmd_returns)
     p = sub.add_parser("browse", help="出品中の相場（公式 Browse API）"); p.add_argument("query")
     p.set_defaults(fn=cmd_browse)
     args = ap.parse_args(argv)
