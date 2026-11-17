@@ -971,6 +971,8 @@ def main(argv=None) -> int:
                  read_junk(args.junk), read_monthly_costs(args.monthly_costs), api)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(data), encoding="utf-8")
+    # 同じ中身を JSON でも置く（ledger_sync.upload_dashboard が台帳へ送り、Artifacts のグラフが開くたびに読む）
+    (args.out.parent / "dashboard_data.json").write_text(json.dumps(data, ensure_ascii=False, default=str), encoding="utf-8")
     missing = [COLUMN_LABEL[k] for k, v in cols.items() if not v and not (k == "country" and (data["has_costs"] or data["source"] == "api"))]
     print(f"ダッシュボード: 販売 {data['kpi']['count']}件・在庫 {data['kpi']['stock']}件・出品中 "
           f"{data.get('listings_unique') or 0}件 → {args.out.relative_to(ROOT) if args.out.is_relative_to(ROOT) else args.out}")

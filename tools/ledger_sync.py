@@ -438,6 +438,49 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
     return len(rows)
 
 
+DASH_SHEET = "Mac_グラフ"  # 数字のグラフの中身（Artifacts の「aurora 数字のグラフ」が開くたびに読む）
+DASH_CHUNK = 30000  # 1マスに入る文字数（上限 5万字）より小さく分ける
+
+
+def dashboard_csv(data_json: str) -> str:
+    """グラフの中身（JSON）→ シートに送る CSV. 1行目は見出し、2行目からは「j:」＋最大3万字ずつ（数字や日付に化けないように）."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["part"])
+    for i in range(0, len(data_json), DASH_CHUNK):
+        w.writerow(["j:" + data_json[i:i + DASH_CHUNK]])
+    return buf.getvalue()
+
+
+def upload_dashboard(path: Path | None = None, post=None) -> int | None:
+    """reports/dashboard_data.json → 古物台帳の「Mac_グラフ」シート（まるごと置き換え）. 送った行数. 未設定・失敗は None."""
+    url, key = keychain.get(SERVICE, "url"), keychain.get(SERVICE, "key")
+    path = path or ROOT / "reports" / "dashboard_data.json"
+    if not url or not key or not path.exists():
+        return None
+    body = dashboard_csv(path.read_text(encoding="utf-8"))
+    try:
+        if post:
+            res = post(body)
+        else:
+            sep = "&" if "?" in url else "?"
+            req = urllib.request.Request(
+                f"{url}{sep}key={urllib.parse.quote(key)}&sheet={urllib.parse.quote(DASH_SHEET)}",
+                data=body.encode("utf-8"), headers={"Content-Type": "text/csv; charset=utf-8"}, method="POST")
+            with urllib.request.urlopen(req, timeout=60) as r:
+                res = r.read().decode("utf-8-sig")
+    except (urllib.error.URLError, OSError) as e:
+        print(f"数字のグラフ: 台帳に送れませんでした（{e}）", file=sys.stderr)
+        return None
+    if not res.startswith("OK"):
+        print("数字のグラフ: 台帳に送れませんでした（Apps Script が古いため。python3 tools/ledger_sync.py script で貼り替え）",
+              file=sys.stderr)
+        return None
+    n = body.count("\n") - 1
+    print(f"数字のグラフ: 台帳「{DASH_SHEET}」に送りました → Artifacts のグラフが次に開いたとき最新になります", file=sys.stderr)
+    return n
+
+
 def cmd_single() -> None:
     """Claude更新版をやめて、元の古物台帳1冊で動かす（2026-11-17〜）. 写し先を元の台帳にしてスクリプトを貼り替える."""
     src = keychain.get(SERVICE, "src") or ""
