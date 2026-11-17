@@ -596,7 +596,7 @@ const css = `
 #yhk,#akit{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(1100px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
 background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}#yhk.min,#akit.min{width:auto}#yhk.min .bd,#akit.min .bd{display:none}#yhk .hd,#akit .hd{position:sticky;top:0;background:#0b1728;color:#fff;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}#yhk .hd b,#akit .hd b{font-size:14px}#yhk .hd .sp,#akit .hd .sp{flex:1}#yhk button,#akit button{border:0;border-radius:8px;padding:6px 10px;background:#e8f2f8;color:#14415a;font-weight:700;cursor:pointer;font-size:12px}#yhk .hd button,#akit .hd button{background:#24496a;color:#fff}#yhk .bd,#akit .bd{padding:10px 12px}#yhk table,#akit table{width:100%;border-collapse:collapse}#yhk th,#yhk td,#akit th,#akit td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}#yhk button.bidon,#akit button.bidon{background:#1f7a5c;color:#fff}#yhk tr.seen td,#akit tr.seen td{opacity:.38}#yhk tr.seen td.m,#akit tr.seen td.m{opacity:1}#yhk tr.seen td.m>*:not(.seen-box),#akit tr.seen td.m>*:not(.seen-box){opacity:.38}#yhk label.seen-box,#akit label.seen-box{display:block;margin:0 0 4px;cursor:pointer;font-size:10px;color:#9fb3c8;white-space:nowrap}#yhk label.seen-box input,#akit label.seen-box input{width:16px;height:16px;vertical-align:middle;margin:0 3px 0 0;cursor:pointer}#yhk .pinmove,#akit .pinmove{margin-top:4px;padding:4px 8px;border-radius:6px;background:#fff3cd;color:#6b4e00;font-size:12px;font-weight:700}
 @keyframes yhkflash{0%,100%{background:transparent}30%{background:#ffe08a}}#yhk tr.flash td,#akit tr.flash td{animation:yhkflash 1.2s ease 2}#yhk-toast,#akit-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0b1728;color:#fff;padding:10px 16px;border-radius:10px;
-font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show,#akit-toast.show{opacity:1}#yhk .trustb,#akit .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust,#akit .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal,#akit .tsep.chal{background:#eef3f8;color:#2d4a63}#yhk .tmark,#akit .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}#yhk tr.tent td,#akit tr.tent td{background:#fffaf0}#yhk .tsep,#akit .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}#yhk .fix,#akit .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input,#akit .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select,#akit .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button,#akit .fix button{padding:3px 6px;margin-left:2px}#yhk th,#akit th{font-size:11px;color:#5d7083;font-weight:600}#yhk td:nth-child(2),#akit td:nth-child(2){min-width:240px}#yhk td.n,#akit td.n{text-align:right;white-space:nowrap}#yhk input.sug,#akit input.sug{color:#8a6d1f;font-style:italic}#yhk a,#akit a{color:#0b5d8c;text-decoration:none}#yhk .m,#akit .m{font-size:15px;font-weight:800}#yhk .g,#akit .g{color:#1f7a5c}#yhk .o,#akit .o{color:#1b6387}#yhk .x,#akit .x{color:#a4473a}#yhk .s,#akit .s{font-size:11px;color:#6a7c8e}#yhk details,#akit details{margin-top:10px}#yhk summary,#akit summary{cursor:pointer;font-weight:700}#yhk input,#akit input{width:72px;padding:4px;border:1px solid #c6d3de;border-radius:6px}#yhk a.t,#akit a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}#yhk a.usd,#akit a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}#yhk a.now,#yhk a.pill,#akit a.now,#akit a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}#yhk .okb,#akit .okb{display:inline-block;font-size:10px;font-weight:700;color:#1f6b50;background:#e3f4ec;border-radius:5px;padding:0 5px}#yhk .pills,#akit .pills{display:flex;gap:4px;justify-content:flex-end}#yhk button.open3,#akit button.open3{margin-top:3px;font-size:11px;padding:2px 8px}#yhk a.pill.sold,#akit a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}#yhk td.m,#akit td.m{white-space:nowrap;width:58px}#yhk tr.soon td,#akit tr.soon td{background:#fff6ec}#yhk .hot,#akit .hot{color:#c0392b;font-weight:700}#yhk .flag,#akit .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
+font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show,#akit-toast.show{opacity:1}#yhk .trustb,#akit .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust,#akit .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal,#akit .tsep.chal{background:#eef3f8;color:#2d4a63}#yhk .tmark,#akit .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}#yhk tr.tent td,#akit tr.tent td{background:#fffaf0}#yhk .tsep,#akit .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}#yhk .fix,#akit .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input,#akit .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select,#akit .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button,#akit .fix button{padding:3px 6px;margin-left:2px}#yhk th,#akit th{font-size:11px;color:#5d7083;font-weight:600}#yhk td:nth-child(2),#akit td:nth-child(2){min-width:240px}#yhk td.n,#akit td.n{text-align:right;white-space:nowrap}#yhk input.sug,#akit input.sug{color:#8a6d1f;font-style:italic}#yhk a,#akit a{color:#0b5d8c;text-decoration:none}#yhk .m,#akit .m{font-size:15px;font-weight:800}#yhk .g,#akit .g{color:#1f7a5c}#yhk .o,#akit .o{color:#1b6387}#yhk .x,#akit .x{color:#a4473a}#yhk .s,#akit .s{font-size:11px;color:#6a7c8e}#yhk details,#akit details{margin-top:10px}#yhk summary,#akit summary{cursor:pointer;font-weight:700}#yhk input,#akit input{width:72px;padding:4px;border:1px solid #c6d3de;border-radius:6px}#yhk a.t,#akit a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}#yhk a.usd,#akit a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}#yhk a.now,#yhk a.pill,#akit a.now,#akit a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}#yhk .okb,#akit .okb{display:inline-block;font-size:10px;font-weight:700;color:#1f6b50;background:#e3f4ec;border-radius:5px;padding:0 5px}#yhk .pills,#akit .pills{display:flex;gap:4px;justify-content:flex-end}#yhk button.open3,#akit button.open3{margin-top:3px;font-size:11px;padding:2px 8px}#yhk a.pill.sold,#akit a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}#yhk td.m,#akit td.m{white-space:nowrap;width:58px}#yhk tr.soon td,#akit tr.soon td{background:#fff6ec}#yhk .hot,#akit .hot{color:#c0392b;font-weight:700}#yhk table.hist{width:auto;font-size:11px;border:1px solid #e6ecf2;border-radius:6px}#yhk table.hist td,#yhk table.hist th{padding:2px 8px;white-space:nowrap;min-width:0}#yhk .flag,#akit .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
 .yhk-badge{display:inline-block;margin:2px 0;padding:2px 7px;border-radius:7px;font:700 12px -apple-system,sans-serif;color:#fff}
 .yhk-badge.g{background:#1f7a5c}.yhk-badge.o{background:#1b6387}.yhk-badge.x{background:#9aa6b2}
 @media (prefers-color-scheme:dark){#yhk tr.soon td,#akit tr.soon td{background:#2a2216}#yhk tr.tent td,#akit tr.tent td{background:#1f2129}#yhk .tsep,#akit .tsep{background:#3a2f17;color:#f2d79a}#yhk .tsep.trust,#akit .tsep.trust{background:#173a28;color:#a8e6c1}#yhk .tsep.chal,#akit .tsep.chal{background:#1c2c3c;color:#b9d3ea}#yhk,#akit{background:#152231;color:#e2eaf2}#yhk th,#yhk td,#akit th,#akit td{border-color:#26394b}#yhk a,#akit a{color:#7cc4ee}#yhk button,#akit button{background:#24384c;color:#d6e6f2}#yhk input,#akit input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}}
@@ -958,21 +958,38 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_price_memo_history.csv", csv }, () => void chrome.runtime.lastError); } catch (e) {}
   }
   // その機種の相場の動き（2つ以上の違う値があるときだけ）: 「相場の動き $110(10/5) → $125(11/17) ↑+14%」
-  function memoTrend(k) {
+  function memoHistList(k) {
     const seen = new Set(), list = [];
     for (const e of [...((DATA.memoHist || {})[k] || []).map(([usd, d, cond]) => ({ usd, d, cond })), ...(load(LS_MEMO_HIST, {})[k] || [])]) {
       const key = e.usd + "|" + (e.d || "");
       if (!seen.has(key)) { seen.add(key); list.push(e); }
     }
     list.sort((a, b) => String(a.d || "").localeCompare(String(b.d || "")));
+    return list;
+  }
+  const mdOf = (d) => (d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "以前");
+  // ［履歴］: その機種の相場メモの履歴を全部（新しい順・前回との差つき）
+  function memoHistTable(k) {
+    const list = memoHistList(k);
+    if (!list.length) return "";
+    const rows = list.map((e, i) => {
+      const p = i ? list[i - 1].usd : null, dif = p ? Math.round((e.usd - p) / p * 100) : null;
+      return `<tr><td>${e.d ? esc(e.d) : "（記録前）"}</td><td class="n">${nd(e.usd)}</td><td>${esc(e.cond || "-")}</td><td class="n">${dif == null ? "" : dif > 0 ? `<span class="g">↑ +${dif}%</span>` : dif < 0 ? `<span class="x">↓ ${dif}%</span>` : "→ 0%"}</td></tr>`;
+    }).reverse().join("");
+    return `<table class="hist" style="margin-top:4px"><tr><th>日付</th><th class="n">相場（送料別）</th><th>状態</th><th class="n">前回比</th></tr>${rows}</table>`;
+  }
+  function memoTrend(k) {
+    const list = memoHistList(k);
+    const btn = list.length ? ` <button data-a="hist" data-k="${esc(k)}" style="padding:1px 7px;font-size:11px" title="［直す］［登録］で入れたこの機種の相場の履歴を全部表示">${(state.histOpen || new Set()).has(k) ? "履歴を閉じる" : "履歴"}（${list.length}）</button>` : "";
+    const open = (state.histOpen || new Set()).has(k) ? memoHistTable(k) : "";
     const vals = list.filter((e, i) => i === 0 || e.usd !== list[i - 1].usd);  // 同じ額が続く所は1つに
-    if (vals.length < 2) return "";
+    if (vals.length < 2) return btn ? `<div class="s">${btn}</div>${open}` : "";
     const last = vals[vals.length - 1], prev = vals[vals.length - 2];
     const pct = Math.round((last.usd - prev.usd) / prev.usd * 100);
     const arrow = last.usd > prev.usd ? `<b style="color:#1f7a5c">↑ +${pct}%</b>` : `<b style="color:#a4473a">↓ ${pct}%</b>`;
-    const md = (d) => (d ? `（${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}）` : "（以前）");
+    const md = (d) => `（${mdOf(d)}）`;
     const path = vals.slice(-4).map((e) => `${nd(e.usd)}${md(e.d)}`).join(" → ");
-    return `<div class="s" title="［直す］［登録］で上書きした相場の履歴（送料別の商品代）。上向きなら強気、下向きなら控えめに">相場の動き ${path} ${arrow}</div>`;
+    return `<div class="s" title="［直す］［登録］で上書きした相場の履歴（送料別の商品代）。上向きなら強気、下向きなら控えめに">相場の動き ${path} ${arrow}${btn}</div>${open}`;
   }
   function saveMemoFile() {
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) return;
@@ -1079,6 +1096,11 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       evaluate(state.items, state.fx); render();
       saveMemoFile();
       if (id) showMoved(id);
+    }
+    if (a === "hist") {  // 相場の履歴を開く／閉じる（開いた機種は描き直しても開いたまま）
+      const h = state.histOpen || (state.histOpen = new Set()), k = btn.dataset.k;
+      if (h.has(k)) h.delete(k); else h.add(k);
+      render();
     }
     if (a === "desc") { btn.disabled = true; btn.textContent = "確認中…"; checkDescs([btn.dataset.id]); }
     if (a === "memocopy") {
