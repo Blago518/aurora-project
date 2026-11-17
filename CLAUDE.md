@@ -34,7 +34,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `update_all.py` | **全部まとめて最新にする**: ダウンロードフォルダの古物台帳CSV・頒布会xlsx・明細の取り込み → Chatwork 同期 → 相場データ・拡張機能・スマホ用データ・ナレッジを作り直す |
 | `ledger_sync.py` | 古物台帳をスプレッドシートから直接 `data/ledger.csv` に、管理シートの No.・状態・購入日・販売日を `data/kanri.csv` に取り込む。古物台帳の「意思決定ログ」シート（Claude がクラウドから書く）を `knowledge/意思決定ログ.md` に追記し、入札の記録（data/bid_log.csv）を「入札結果」シートに送り、以前の入札分析シートの入札履歴（「共有_過去の入札」）を data/bid_history.csv に、「共有_相場メモ」（チャットで決めた相場）を data/price_memo.csv に、「共有_ナレッジ」を knowledge/講座/ に取り込み、毎朝の入札リストで相場が無かった機種を「Mac_未登録機種」に送る（夜にクラウドが下調べ。Apps Script の合言葉付き URL。初回 `setup`、スクリプト更新時 `script`、1冊運用への切り替え `single`。1冊運用では元の台帳の「古物台帳」→「古物台帳_詳細」と「写し_〜」を同じ台帳に作る） |
 | `store_publish.py` | スマホ用データを暗号化してシークレット Gist に配信 → iPhone のアプリが開くたびに自動更新（初回 `setup`） |
-| `schedule.py` | `update_all.py` を毎朝＋ログイン時に自動実行（Mac の launchd。`install`・`status`・`uninstall`） |
+| `schedule.py` | `update_all.py` を毎朝＋ログイン時に自動実行（Mac の launchd。`install`・`status`・`uninstall`）。`install-messages` で eBay の受信メッセージの見出し（返信済みか）を1時間ごとに古物台帳「Mac_メッセージ」へ（`ebay_api.py messages --upload`。Claude は使わない） |
 | `keychain.py` | トークン・合言葉を Mac のキーチェーンに保存する共通部品 |
 | `chatwork_sync.py` | Chatwork の販売報告（日報チャット）を公式 API で `data/chatwork_sales.csv` に、添付の頒布会リスト（xlsx）を `data/hanpukai_*.xlsx` に取り込む（初回 `setup`） |
 | `build_store.py` | 店舗アプリ用: `store/core.js`（拡張機能の判定のコピー）と `data/store_data.json`（相場＋おすすめ機種。iCloud Drive にもコピー）を作る |

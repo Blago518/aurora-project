@@ -339,6 +339,52 @@ def cmd_listings(_args) -> None:
         print(f"  {r['days_listed']:>4}日  {r['price']:>8} {r['currency']:<3} {r['site'][:9]:<9}  ウォッチ{r['watchers']:>3}  {r['title'][:60]}")
 
 
+MSG_FIELDS = ["message_id", "received", "item_id", "subject", "read", "replied", "type"]
+
+
+def parse_messages(xml: bytes) -> list[dict]:
+    """GetMyMessages（ReturnHeaders）の応答 → 1通1行. 購入者の名前（Sender）は入れない（個人情報を台帳に広げない）."""
+    ns = {"e": "urn:ebay:apis:eBLBaseComponents"}
+    root = ET.fromstring(xml)
+    if root.findtext("e:Ack", namespaces=ns) not in ("Success", "Warning"):
+        raise SystemExit("eBay API エラー: " + (root.findtext(".//e:LongMessage", namespaces=ns) or "不明"))
+    rows = []
+    for m in root.findall(".//e:Messages/e:Message", ns):
+        t = lambda k: (m.findtext(f"e:{k}", default="", namespaces=ns) or "").strip()  # noqa: E731
+        rows.append({"message_id": t("MessageID"), "received": t("ReceiveDate"), "item_id": t("ItemID"),
+                     "subject": t("Subject")[:120], "read": t("Read").lower() == "true",
+                     "replied": t("Replied").lower() == "true", "type": t("MessageType")})
+    rows.sort(key=lambda r: r["received"], reverse=True)
+    return rows
+
+
+def cmd_messages(args) -> None:
+    """受信トレイの直近のメッセージ（見出しだけ）→ reports/ebay_messages.csv。--upload で古物台帳「Mac_メッセージ」へ（ゴースが返信済みかを見る）."""
+    now = datetime.now(timezone.utc)
+    body = f"""<?xml version="1.0" encoding="utf-8"?>
+<GetMyMessagesRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <DetailLevel>ReturnHeaders</DetailLevel>
+  <FolderID>0</FolderID>
+  <StartTime>{(now - timedelta(days=args.days)).strftime('%Y-%m-%dT%H:%M:%S.000Z')}</StartTime>
+  <EndTime>{now.strftime('%Y-%m-%dT%H:%M:%S.000Z')}</EndTime>
+</GetMyMessagesRequest>"""
+    req = urllib.request.Request(f"{API}/ws/api.dll", data=body.encode(), headers={
+        "X-EBAY-API-CALL-NAME": "GetMyMessages", "X-EBAY-API-SITEID": "0",
+        "X-EBAY-API-COMPATIBILITY-LEVEL": "1193", "X-EBAY-API-IAF-TOKEN": user_token(),
+        "Content-Type": "text/xml"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        rows = parse_messages(r.read())
+    REPORTS.mkdir(exist_ok=True)
+    out = REPORTS / "ebay_messages.csv"
+    with open(out, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=MSG_FIELDS)
+        w.writeheader(); w.writerows(rows)
+    print(f"メッセージ {len(rows)}通（返信済み {sum(r['replied'] for r in rows)}通・未読 {sum(not r['read'] for r in rows)}通）→ {out}")
+    if args.upload:
+        import ledger_sync
+        ledger_sync.post_sheet(ledger_sync.MESSAGES_SHEET, out.read_text(encoding="utf-8-sig"))
+
+
 def _refs(t: dict) -> str:
     return " ".join(f"{r.get('referenceType', '')}:{r.get('referenceId', '')}" for r in t.get("references", []) or [])
 
@@ -614,6 +660,9 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_fees)
     p = sub.add_parser("returns", help="返品・キャンセル・返金の状況（商品が返送されたか）"); p.add_argument("--days", type=int, default=120)
     p.set_defaults(fn=cmd_returns)
+    p = sub.add_parser("messages", help="受信したメッセージの見出し（返信済みか）"); p.add_argument("--days", type=int, default=7)
+    p.add_argument("--upload", action="store_true", help="古物台帳「Mac_メッセージ」に送る")
+    p.set_defaults(fn=cmd_messages)
     p = sub.add_parser("browse", help="出品中の相場（公式 Browse API）"); p.add_argument("query")
     p.set_defaults(fn=cmd_browse)
     args = ap.parse_args(argv)
