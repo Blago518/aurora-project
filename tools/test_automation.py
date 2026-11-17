@@ -383,3 +383,29 @@ class SheetMemoAndKnowledge(unittest.TestCase):
             with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
                 self.assertEqual(ls.upload_unpriced(Path(d), post=lambda b: sent.append(b) or "OK:1"), 1)
             self.assertIn("Nikon FM2,5,12000", sent[0])
+
+
+class EbayMessages(unittest.TestCase):
+    """eBay の受信メッセージ（見出し）→ 1通1行。購入者の名前は入れない."""
+
+    def test_parse(self):
+        import ebay_api
+        xml = b"""<?xml version="1.0"?><GetMyMessagesResponse xmlns="urn:ebay:apis:eBLBaseComponents"><Ack>Success</Ack>
+<Messages><Message><Sender>buyer_x</Sender><Subject>Question about item</Subject><MessageID>111</MessageID>
+<ReceiveDate>2026-11-17T03:00:00.000Z</ReceiveDate><ItemID>3775</ItemID><Read>true</Read><Replied>true</Replied><MessageType>AskSellerQuestion</MessageType></Message>
+<Message><Sender>buyer_y</Sender><Subject>Hi</Subject><MessageID>112</MessageID><ReceiveDate>2026-11-17T05:00:00.000Z</ReceiveDate><ItemID>3776</ItemID><Read>false</Read></Message>
+</Messages></GetMyMessagesResponse>"""
+        rows = ebay_api.parse_messages(xml)
+        self.assertEqual([r["message_id"] for r in rows], ["112", "111"])
+        self.assertEqual((rows[1]["replied"], rows[0]["replied"], rows[0]["read"]), (True, False, False))
+        self.assertNotIn("buyer_x", json.dumps(rows))
+
+    def test_post_sheet(self):
+        with mock.patch.object(ls.keychain, "get", side_effect=lambda s, k: "v"):
+            self.assertTrue(ls.post_sheet("Mac_メッセージ", "a\n1\n", post=lambda b: "OK:1"))
+            self.assertFalse(ls.post_sheet("Mac_メッセージ", "a\n1\n", post=lambda b: "NO_SHEET:x"))
+
+    def test_msg_plist(self):
+        p = schedule.msg_plist()
+        self.assertEqual(p["StartInterval"], 3600)
+        self.assertIn("--upload", p["ProgramArguments"])

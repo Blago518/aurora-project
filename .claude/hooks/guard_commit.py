@@ -19,6 +19,9 @@ SECRET_PATTERNS = [
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     r"script\.google\.com/macros/s/[A-Za-z0-9_-]{20,}",
     r"docs\.google\.com/spreadsheets/d/[A-Za-z0-9_-]{20,}",
+    r"(?<![A-Za-z0-9_-])1[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])",  # スプレッドシートID（URL の外に書いたもの）
+    r"sk-ant-[A-Za-z0-9_-]{20,}", r"\bsk-[A-Za-z0-9]{32,}", r"\bAKIA[0-9A-Z]{16}\b",
+    r"v\^1\.1#i\^1#",  # eBay のトークン
 ]
 
 
@@ -67,6 +70,17 @@ def main():
             if m:
                 block(f"ステージした変更にトークン・秘密のURLらしい文字列があります（{m.group(0)[:12]}…）。"
                       "キーチェーン（tools/keychain.py）に移してください。")
+        # プログラム（tools/・store/）を含むコミットは、テストが通ってから
+        staged = git(root, "diff", "--cached", "--name-only").split()
+        if any(f.startswith(("tools/", "store/")) for f in staged):
+            try:
+                r = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tools", "-q"],
+                                   cwd=root, capture_output=True, text=True, timeout=170)
+            except subprocess.TimeoutExpired:
+                block("コミット前のテストが時間切れ（170秒）になりました。")
+            if r.returncode != 0:
+                tail = "\n".join((r.stdout + r.stderr).splitlines()[-30:])
+                block("テストが通らないのでコミットを止めました。直してからもう一度コミットしてください。\n" + tail)
 
 
 if __name__ == "__main__":

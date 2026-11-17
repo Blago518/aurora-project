@@ -61,6 +61,40 @@ def install(hour: int, minute: int) -> None:
 ※ 初回に「python3 がダウンロードフォルダ／iCloud Drive にアクセスしようとしています」と出たら［許可］を押してください。""")
 
 
+MSG_LABEL = "com.aurora.ebay-messages"
+MSG_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{MSG_LABEL}.plist"
+
+
+def msg_plist() -> dict:
+    """1時間ごとに eBay の受信メッセージの見出し（返信済みか）を古物台帳へ（Claude は使わない。eBay API は無料）."""
+    return {
+        "Label": MSG_LABEL,
+        "ProgramArguments": [sys.executable, str(HERE / "ebay_api.py"), "messages", "--upload"],
+        "WorkingDirectory": str(ROOT),
+        "StartInterval": 3600,
+        "RunAtLoad": True,
+        "StandardOutPath": str(ROOT / "reports" / "ebay_messages.log"),
+        "StandardErrorPath": str(ROOT / "reports" / "ebay_messages.log"),
+        "EnvironmentVariables": {"PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                                 "PYTHONIOENCODING": "utf-8"},
+    }
+
+
+def install_messages() -> None:
+    if sys.platform != "darwin":
+        print("Mac でだけ使えます。")
+        sys.exit(1)
+    (ROOT / "reports").mkdir(exist_ok=True)
+    MSG_PLIST.parent.mkdir(parents=True, exist_ok=True)
+    domain = f"gui/{os.getuid()}"
+    _launchctl("bootout", domain, str(MSG_PLIST))
+    with open(MSG_PLIST, "wb") as f:
+        plistlib.dump(msg_plist(), f)
+    if _launchctl("bootstrap", domain, str(MSG_PLIST)) != 0:
+        _launchctl("load", "-w", str(MSG_PLIST))
+    print("eBay のメッセージ確認を設定しました: 1時間ごと（Mac が起きている間）。結果: reports/ebay_messages.log")
+
+
 def uninstall() -> None:
     _launchctl("bootout", f"gui/{os.getuid()}", str(PLIST))
     if PLIST.exists():
@@ -82,11 +116,18 @@ def status() -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="update_all.py の自動実行（launchd）")
-    ap.add_argument("cmd", choices=["install", "uninstall", "status", "run"])
+    ap.add_argument("cmd", choices=["install", "uninstall", "status", "run", "install-messages", "uninstall-messages"])
     ap.add_argument("--hour", type=int, default=8)
     ap.add_argument("--minute", type=int, default=40)  # 2026-11-15 ユーザー指定 8:40
     a = ap.parse_args(argv)
-    if a.cmd == "install":
+    if a.cmd == "install-messages":
+        install_messages()
+    elif a.cmd == "uninstall-messages":
+        _launchctl("bootout", f"gui/{os.getuid()}", str(MSG_PLIST))
+        if MSG_PLIST.exists():
+            MSG_PLIST.unlink()
+        print("eBay のメッセージ確認をやめました。")
+    elif a.cmd == "install":
         install(a.hour, a.minute)
     elif a.cmd == "uninstall":
         uninstall()

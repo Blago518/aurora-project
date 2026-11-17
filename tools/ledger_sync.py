@@ -63,7 +63,8 @@ PAST_BIDS_SHEET = "共有_過去の入札"  # 以前の「入札分析」ファ�
 PAST_BIDS = DATA / "bid_history.csv"
 MEMO_SHEET = "共有_相場メモ"  # チャットで決めた相場（Claude が書く: 機種・相場$（送料別）・状態・日付）→ data/price_memo.csv
 KNOWLEDGE_SHEET = "共有_ナレッジ"  # 講座資料などの要点（Claude が書く: ファイル名・本文）→ knowledge/講座/〈ファイル名〉.md
-UNPRICED_SHEET = "Mac_未登録機種"  # 毎朝の入札リストで相場が無かった機種（夜にクラウドが下調べする）
+UNPRICED_SHEET = "Mac_未登録機種"
+MESSAGES_SHEET = "Mac_メッセージ"  # eBay の受信メッセージの見出しと返信済みか（ebay_api.py messages --upload。毎時）  # 毎朝の入札リストで相場が無かった機種（夜にクラウドが下調べする）
 BID_COLUMNS = ["auction_id", "title", "max_bid", "final_price", "result", "end", "usd", "profit_at_max", "profit_final",
                "trusted", "tentative", "store_tax", "ship", "bid_at"]
 SERVICE = "aurora-ledger"
@@ -589,6 +590,27 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
 
 DASH_SHEET = "Mac_グラフ"  # 数字のグラフの中身（Artifacts の「aurora 数字のグラフ」が開くたびに読む）
 DASH_CHUNK = 30000  # 1マスに入る文字数（上限 5万字）より小さく分ける
+
+
+def post_sheet(sheet: str, body: str, post=None) -> bool:
+    """CSV の中身 → 古物台帳の「Mac_〜」シート（まるごと置き換え）. 送れたら True."""
+    url, key = keychain.get(SERVICE, "url"), keychain.get(SERVICE, "key")
+    if not url or not key:
+        return False
+    try:
+        if post:
+            res = post(body)
+        else:
+            sep = "&" if "?" in url else "?"
+            req = urllib.request.Request(
+                f"{url}{sep}key={urllib.parse.quote(key)}&sheet={urllib.parse.quote(sheet)}",
+                data=body.encode("utf-8"), headers={"Content-Type": "text/csv; charset=utf-8"}, method="POST")
+            with urllib.request.urlopen(req, timeout=60) as r:
+                res = r.read().decode("utf-8-sig")
+    except (urllib.error.URLError, OSError) as e:
+        print(f"{sheet}: 送れませんでした（{e}）", file=sys.stderr)
+        return False
+    return res.startswith("OK")
 
 
 def dashboard_csv(data_json: str) -> str:
