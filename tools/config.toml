@@ -49,9 +49,9 @@ include_consumption_tax_refund = false
 consumption_tax_pct = 10.0
 
 [judge]
-# 入札判断の基準（2026-11-16 ユーザー決定: 全体統一。利益 2,500円以上 かつ 利益率（売上に対する割合）10%以上）
-min_profit_jpy = 2500
-min_margin_pct = 10.0
+# 入札判断の基準（全体統一。2026-11-17 ユーザー決定: 落札を増やすため 利益 2,000円以上 かつ 利益率（売上に対する割合）8%以上に下げた。前は 2,500円・10%）
+min_profit_jpy = 2000
+min_margin_pct = 8.0
 # 想定販売価格に使うeBay販売済み価格の分位（0.5=中央値。保守的にするなら 0.4 など）
 sold_price_quantile = 0.5
 # ジャンク表記の出品は想定販売価格をこの割合で見る（1.0で割引なし）。中判など動くことが多い品が多ければ上げる
@@ -59,9 +59,9 @@ junk_price_factor = 1.0  # 2026-11-16 ユーザー指定: ジャンクも割り�
 # 状態の補正: 過去データの状態とこの出品の状態が1ランク違うごとに、販売価格を何ドル動かすか（0で補正しない）
 # ランク: Unused > TOP MINT > MINT > Almost MINT > Near MINT > Exc+5 > … > Exc（2026-11-15 ユーザー指定。［直す］で選べるのは Exc+5 まで）。出品の状態はヤフオクの商品名の日本語（美品など）から。表記なしは Near MINT
 condition_step_usd = 10
-# 安心枠（フォロー中のストア＝安心ストア）の基準。2026-11-16 ユーザー決定で全体統一（緩めない）
-trusted_min_profit_jpy = 2500
-trusted_min_margin_pct = 10.0
+# 安心枠（フォロー中のストア＝安心ストア）の基準。全体統一（[judge] と同じ値にする）
+trusted_min_profit_jpy = 2000
+trusted_min_margin_pct = 8.0
 # eBay 出品中の最安値から仮の相場を出すとき、送料無料の出品は出品額からこの額（USD）を引いた額を商品代（送料別）とみなす。
 # 送料を別に取っている出品は出品額（商品代）をそのまま使う（2026-11-16 ユーザー決定）
 active_free_ship_deduction_usd = 30.0
