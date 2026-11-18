@@ -852,15 +852,28 @@ def ebay_search_query(query: str, title: str = "") -> str:
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表"]
 
 
-def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
-    """売れ筋: 実際に売れた記録（自分の販売実績・Chatwork 実績）で、その時の仕入値から見て入札基準以上の利益が出ていた機種.
-    利益 = (売値 − eBay手数料) × 為替 × (1 − 円転ロス) − 送料（入札判断と同じ一律額）− 梱包 − 仕入値（2026-11-18 ユーザー決定: 売れた機種を優先）"""
+def is_sold_record(row: dict) -> bool:
+    """販売履歴として扱う記録: 自分の販売実績・Chatwork 販売実績・頒布会リスト（2026-11-18 ユーザー決定: 頒布会も売れたものとみなす）.
+    相場メモ（手で入れた相場）・鑑定表（推定）は販売履歴ではない."""
     src = row.get("source") or "自分の販売実績"
-    if "販売実績" not in src or src.startswith("相場メモ"):
+    return src.startswith("頒布会") or ("販売実績" in src and not src.startswith("相場メモ"))
+
+
+# 根拠の強さ「確認不要」になる source_tier の上限（0=自分 1=Chatwork 2=頒布会。2026-11-18 から頒布会も売れた記録として確認不要）
+SURE_TIER = 2
+
+
+def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
+    """売れ筋: 販売履歴のある機種（自分の古物台帳・Chatwork の他の人の事例・頒布会。頒布会も売れたものとみなす。
+    2026-11-18 ユーザー決定）. 仕入値が分かる記録は、その時の仕入値から見て入札基準以上の利益が出ていたものだけ.
+    利益 = (売値 − eBay手数料) × 為替 × (1 − 円転ロス) − 送料（入札判断と同じ一律額）− 梱包 − 仕入値"""
+    if not is_sold_record(row):
         return False
     price, cost = row.get("_price"), _float_or_none(row.get("purchase_jpy"))
-    if not price or not cost:
+    if not price:
         return False
+    if not cost:
+        return True  # 仕入値が分からない販売履歴（頒布会・Chatwork の一部）は、売れた機種として扱う
     e, j = cfg["ebay"], cfg["judge"]
     fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
     fees = price * fee_pct / 100 + e["per_order_fee_usd"]
@@ -873,7 +886,9 @@ def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
 # 「メーカー（英語か日本語のどちらか）」＋「型の語（28mm・T2・D7100 など）」で探し、照合は今までどおり相場データで行う
 def _hit_profit(row: dict, cfg: dict, fx: float) -> float:
     e = cfg["ebay"]
-    price, cost = float(row["_price"]), float(_float_or_none(row.get("purchase_jpy")) or 0)
+    price, cost = float(row["_price"]), _float_or_none(row.get("purchase_jpy"))
+    if not cost:  # 仕入値が分からない販売履歴は、売値の1割を利益の目安にして並べる
+        return price * fx * 0.1
     fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
     net = (price - price * fee_pct / 100 - e["per_order_fee_usd"]) * fx * (1 - cfg["fx"]["conversion_loss_pct"] / 100)
     return net - cfg["shipping"]["deduction_usd"] * fx - int(cfg["shipping"]["packing_jpy"]) - cost
@@ -1620,7 +1635,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "判定": mark,
                 "枠": "安心" if it.trusted else "チャレンジ",
                 # 確認不要＝根拠が 自分の販売実績・Chatwork実績・自分で登録した相場（または手入力）。頒布会リスト・鑑定表（推定）は確認してから
-                "根拠の強さ": "確認不要" if (it.ebay_price_usd is not None or (it.history_matches and source_tier(it.history_matches[0]) <= 1))
+                "根拠の強さ": "確認不要" if (it.ebay_price_usd is not None or (it.history_matches and source_tier(it.history_matches[0]) <= SURE_TIER))
                 else "確認してから" if it.expected_price_usd is not None else "",
                 "国内送料": it.domestic_shipping_jpy,
                 "国内送料の根拠": ("出品ページ" if "送料は出品ページ" in it.fetch_note else "検索結果")

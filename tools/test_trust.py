@@ -259,8 +259,9 @@ class BidPriority(unittest.TestCase):
         own = {"source": "自分の販売実績", "_price": 249.99, "purchase_jpy": "8000"}
         self.assertTrue(ba.sold_hit(own, CFG, 150.0))
         self.assertFalse(ba.sold_hit({**own, "purchase_jpy": "34000"}, CFG, 150.0))  # 仕入が高くて利益が出ていない
-        self.assertFalse(ba.sold_hit({**own, "source": "頒布会リスト"}, CFG, 150.0))  # 売れた記録ではない
-        self.assertFalse(ba.sold_hit({**own, "purchase_jpy": ""}, CFG, 150.0))
+        self.assertTrue(ba.sold_hit({**own, "source": "頒布会リスト", "purchase_jpy": ""}, CFG, 150.0))  # 頒布会も売れた記録（仕入値なし）
+        self.assertFalse(ba.sold_hit({**own, "source": "相場メモ(MINT)"}, CFG, 150.0))  # 相場メモは販売履歴ではない
+        self.assertTrue(ba.sold_hit({**own, "purchase_jpy": ""}, CFG, 150.0))  # 仕入値が分からない販売履歴も売れた機種
 
     def test_priority_python(self):
         self.assertEqual(ba.bid_priority(250, True), 0)
