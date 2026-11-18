@@ -281,9 +281,11 @@
   function judge(it) {
     const c = it.calc;
     if (!c) return ["要確認", "相場なし"];
-    const pre = it.flags.includes("ジャンク") ? "ジャンク・" : "";
-    if (it.flags.some((f) => f === "付属品のみ?" || f === "アダプター等" || f === "セット品"))
+    let pre = it.flags.includes("ジャンク") ? "ジャンク・" : "";
+    const isSet = !!(it.setParts && it.setParts.length >= 2);  // まとめ売りで中身を2点以上当てたもの
+    if (it.flags.includes("アダプター等") || (!isSet && it.flags.some((f) => f === "付属品のみ?" || f === "セット品")))
       return ["要確認", pre + it.flags.filter((f) => f !== "ジャンク").join("・") + "の可能性"];
+    if (isSet) pre += `まとめ売り${it.setParts.length}点・`;
     const opt = opticalWords(it.title || "");
     if (opt.length) return ["×", pre + "光学難（" + opt.join("・") + "）は見送り"];
     if (it.flags.includes("光学難あり") && OTHER_DEFECT_RE.test(it.title || "")) return ["要確認", pre + "難あり（方針では避ける）"];
@@ -566,6 +568,43 @@
   }
 
   // ------------------------------------------------------------------ 鑑定
+  // ---- まとめ売り（appraise.py の set_part_titles・set_value と同じ。2026-11-18）: 中身ごとに相場を当てて合計する
+  const SET_SPLIT_RE = /\s*(?:[＋+、,／/＆&]|\sと\s)\s*/;
+  function brandOf(title) {
+    const t = String(title || "").normalize("NFKC");
+    for (const [ja, en] of C.brandsJa) if (t.includes(ja)) return en;
+    for (const w of t.match(/[A-Za-z]+/g) || []) {
+      const lw = w.toLowerCase();
+      if (C.brandsEn[lw] && !["OM", "Carl"].includes(C.brandsEn[lw])) return C.brandsEn[lw];
+      if (C.lensLines[lw] && C.lensLines[lw] !== "Zeiss") return C.lensLines[lw];
+    }
+    return "";
+  }
+  function modelWord(title) {
+    for (const tok of titleToQuery(title, 12).split(" ").filter(Boolean)) {
+      const tl = tok.toLowerCase().replace(/^[.,]+|[.,]+$/g, "");
+      if (/^\d+(?:-\d+)?mm$/.test(tl)) return tl;
+      if (/\d/.test(tl) && /[a-z]/.test(tl) && !/^f(?:\/\d+(?:\.\d+)?|\d+\.\d+)$/.test(tl) && !/^\d+(?:\.\d+)?(?:mp|x)$/.test(tl)) return tok;
+    }
+    return "";
+  }
+  function setPartTitles(title) {
+    const t = String(title || "").normalize("NFKC"), b0 = brandOf(t), out = [];
+    for (let seg of t.split(SET_SPLIT_RE)) {
+      seg = seg.trim();
+      if (!seg || !modelWord(seg)) continue;
+      const f = detectFlags(seg);
+      if (f.includes("付属品のみ?") || f.includes("アダプター等")) continue;
+      if (b0 && !brandOf(seg)) seg = b0 + " " + seg;
+      out.push(seg);
+    }
+    return out.length >= 2 ? out : [];
+  }
+  function setValue(parts, fx) {
+    const extra = SHIP() + DATA.cfg.perOrderUsd + DATA.cfg.packing / fx;
+    return Math.round((parts.reduce((a, p) => a + p.usd, 0) - (parts.length - 1) * extra) * 100) / 100;
+  }
+
   function evaluate(items, fx) {
     const refs = allRefs();
     const memoPool = refs.filter(isMemo), otherPool = refs.filter((r) => !isMemo(r));
@@ -575,6 +614,23 @@
       it.flags = detectFlags(it.title);
       it.query = titleToQuery(it.title);
       it.eq = ebaySearchQuery(it.query, it.title);  // eBay のリンク用（型と除外語入り）
+      it.setParts = [];
+      if (it.flags.includes("セット品")) {
+        for (const seg of setPartTitles(it.title)) {
+          const ms = matchPreferMemo(titleToQuery(seg) + " " + seg, memoPool, otherPool);
+          if (ms.length) it.setParts.push({ label: seg, usd: Math.round(median(ms.map((r) => r.price)) * 100) / 100, ref: ms[0] });
+        }
+        if (it.setParts.length >= 2) {
+          it.flags = it.flags.filter((f) => f !== "付属品のみ?");
+          it.refs = [it.setParts[0].ref];
+          it.usd = setValue(it.setParts, fx);
+          if (it.ship0 === undefined) it.ship0 = it.ship;
+          it.calc = calculate(it, it.usd, fx);
+          [it.mark, it.reason] = judge(it);
+          continue;
+        }
+        it.setParts = [];
+      }
       let m = matchPreferMemo(it.query + " " + it.title, memoPool, otherPool);
       if (!m.length) m = matchKantei(it.title);
       it.refs = m;
@@ -612,6 +668,11 @@
     return [endStr(e), false];
   };
   const srcLabel = (r) => (r.source || "").replace(/\(.*$/, "");
+  // まとめ売りの内訳（中身ごとの相場・送料別）。2点目からは送料・1注文の手数料・梱包を引いて合計している
+  const setLine = (i) => (i.setParts && i.setParts.length >= 2
+    ? `まとめ売り ${i.setParts.length}点: ` + i.setParts.map((p) => `${esc(p.label)} ${nd(p.usd)}`).join(" ＋ ") +
+      `（相場が分かった中身だけ。2点目からは送料$${SHIP()}・手数料・梱包を引いて合計）`
+    : "");
   // 売れ筋＝根拠の販売実績で利益が出ていた機種（build_extension.py が appraise.sold_hit で付ける）。$99以下は下に回す（2026-11-18）
   const LOW_PRICE_USD = 99;
   const soldHit = (i) => !!(i.refs && i.refs[0] && i.refs[0].hit && !isMemo(i.refs[0]));
@@ -920,7 +981,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const markHtml = ALL && !c ? '<span class="s">相場なし</span>' : i.mark;
       return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${markHtml}<div class="s ${soon ? "hot" : ""}">${left}</div>${ALL && c && i.reason ? `<div class="s">${esc(i.reason)}</div>` : ""}</td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">${r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します"}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
+<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a><div class="s">送料別</div>${soldLine(r)}${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>

@@ -251,9 +251,11 @@ function makeCore(DATA) {
   function judge(it) {
     const c = it.calc;
     if (!c) return ["要確認", "相場なし"];
-    const pre = it.flags.includes("ジャンク") ? "ジャンク・" : "";
-    if (it.flags.some((f) => f === "付属品のみ?" || f === "アダプター等" || f === "セット品"))
+    let pre = it.flags.includes("ジャンク") ? "ジャンク・" : "";
+    const isSet = !!(it.setParts && it.setParts.length >= 2);  // まとめ売りで中身を2点以上当てたもの
+    if (it.flags.includes("アダプター等") || (!isSet && it.flags.some((f) => f === "付属品のみ?" || f === "セット品")))
       return ["要確認", pre + it.flags.filter((f) => f !== "ジャンク").join("・") + "の可能性"];
+    if (isSet) pre += `まとめ売り${it.setParts.length}点・`;
     const opt = opticalWords(it.title || "");
     if (opt.length) return ["×", pre + "光学難（" + opt.join("・") + "）は見送り"];
     if (it.flags.includes("光学難あり") && OTHER_DEFECT_RE.test(it.title || "")) return ["要確認", pre + "難あり（方針では避ける）"];
