@@ -805,9 +805,29 @@ def read_sales(path: Path | None) -> list[dict]:
         if price is None:
             continue
         row["_price"] = price + (_float_or_none(row.get("shipping_charged_usd")) or 0)
+        if str(row.get("source") or "").startswith("Chatwork"):
+            row["_price"] = chatwork_gross(row["_price"])
         row["_tokens"] = _tokens(row.get("ebay_query") or row.get("title") or "")
         rows.append(row)
     return rows
+
+
+def chatwork_gross(price: float, cfg: dict | None = None) -> float:
+    """Chatwork（スクールの販売報告）の販売価格は、だいたい送料 $30 込み（スクールの方針）. 商品代＝価格 − $30 とし、
+    うちが売るときの送料（入札判断の一律額 $40）を乗せた額を、送料込みの売値として扱う（2026-11-18 ユーザー決定）.
+    例: 報告 $169 → 商品代 $139（送料別）→ 送料込み $179."""
+    sh = (cfg or _base_cfg())["shipping"]
+    return round(price - float(sh.get("chatwork_included_usd", 30.0)) + float(sh["deduction_usd"]), 2)
+
+
+_BASE_CFG: dict | None = None
+
+
+def _base_cfg() -> dict:
+    global _BASE_CFG
+    if _BASE_CFG is None:
+        _BASE_CFG = load_config(None)
+    return _BASE_CFG
 
 
 ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)

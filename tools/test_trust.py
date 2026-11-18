@@ -323,3 +323,19 @@ class LostAndStale(unittest.TestCase):
                             encoding="utf-8")
             got = [m["title"] for m in ba.stale_memos(memo, hist)]
             self.assertEqual(got, ["C T2", "A 50mm"])  # 日付不明が先、最近直した B は出さない
+
+
+class ChatworkShipping(unittest.TestCase):
+    """Chatwork の報告額は送料 $30 込み → 商品代＝報告額−$30、送料込みの売値＝商品代＋$40（2026-11-18）."""
+
+    def test_gross(self):
+        self.assertEqual(ba.chatwork_gross(169.0, CFG), 179.0)
+
+    def test_read_sales(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "cw.csv"
+            p.write_text("date,title,ebay_query,sold_price_usd,shipping_charged_usd,purchase_jpy,ebay_url,source\n"
+                         "2026-11-01,Nikon F3 HP,,169,0,11000,,Chatwork販売実績(店)\n"
+                         "2026-11-01,Nikon FM2,,169,0,11000,,自分の販売実績\n", encoding="utf-8")
+            rows = ba.read_sales(p)
+            self.assertEqual([r["_price"] for r in rows], [179.0, 169.0])  # 自分の販売実績はそのまま

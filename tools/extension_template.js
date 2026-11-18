@@ -616,10 +616,17 @@
   const LOW_PRICE_USD = 99;
   const soldHit = (i) => !!(i.refs && i.refs[0] && i.refs[0].hit && !isMemo(i.refs[0]));
   const bidPrio = (i) => (i.usd != null && i.usd <= LOW_PRICE_USD ? 2 : 0) + (soldHit(i) ? 0 : 1);
-  // 根拠が実際に売れた記録（自分の販売実績・Chatwork）なら、その売値（送料込み＝eBayStock・取引明細の合計）も並べる。
-  // 相場メモ・頒布会（出品価格）は売値ではないので出さない
-  const soldLine = (r) => (r && r.price != null && /販売実績|^頒布会/.test(r.source || "") && !isMemo(r)
-    ? `<div class="s" title="根拠の実際の売値（送料込み）。eBayStock・eBayの取引明細の合計と同じ。上の送料別は、ここから送料$${SHIP()}を引いた額">売値 $${Number(r.price).toFixed(2).replace(/\.00$/, "")}（送料込み）</div>` : "");
+  // 根拠が販売履歴（自分・Chatwork・頒布会）なら、元の売値も並べる（自分の分は eBayStock・取引明細の合計と同じ）。
+  // Chatwork は報告額（送料$30込み）に戻して出す（appraise.chatwork_gross の逆。2026-11-18）。相場メモは出さない
+  const money = (v) => "$" + Number(v).toFixed(2).replace(/\.00$/, "");
+  const soldLine = (r) => {
+    if (!r || r.price == null || isMemo(r) || !/販売実績|^頒布会/.test(r.source || "")) return "";
+    if (/^Chatwork/.test(r.source || "")) {
+      const cw = Number(DATA.cfg.chatworkShipUsd || 30);
+      return `<div class="s" title="Chatwork の報告額（スクールの方針で送料$${cw}込み）。商品代＝報告額−$${cw}。うちは送料$${SHIP()}で出品する前提で計算">報告 ${money(r.price - SHIP() + cw)}（送料$${cw}込み）</div>`;
+    }
+    return `<div class="s" title="根拠の実際の売値（送料込み）。eBayStock・eBayの取引明細の合計と同じ。上の送料別は、ここから送料$${SHIP()}を引いた額">売値 ${money(r.price)}（送料込み）</div>`;
+  };
 
 const css = `
 #yhk,#akit{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(1100px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
