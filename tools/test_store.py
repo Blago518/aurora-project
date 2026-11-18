@@ -426,3 +426,31 @@ class SetListing(unittest.TestCase):
             out = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout)
         py = [[it.expected_price_usd, ba.judge(it)[0], len(it.set_parts)] for it in self._python()]
         self.assertEqual(out, py)
+
+
+class FNumberOrBody(unittest.TestCase):
+    """「F2」は F値かボディの型番か、書き方全体から判断する（2026-11-18 ユーザー指摘）. Python と JS で同じ."""
+
+    CASES = {"Nikon F2 フォトミック ボディ": "F2", "Nikon F3 HP": "F3", "ニコン Nikon F2": "F2",
+             "Nikon Ai Nikkor 35mm F2": "35mm", "Nikkor 35 F2 レンズ": "", "Canon FD 50mm F1.4": "50mm",
+             "Olympus 21mm f2 Zuiko": "21mm", "Contax T2 チタン": "T2", "ニコン ニッコール 105 F2.5": ""}
+
+    def test_python(self):
+        self.assertEqual({t: ba._model_word(t) for t in self.CASES}, self.CASES)
+        self.assertTrue(ba.is_f_number("F2", "Nikkor 35 F2"))
+        self.assertFalse(ba.is_f_number("F2", "Nikon F2 ボディ"))
+        self.assertTrue(ba.is_f_number("f/2", "Nikon F2 ボディ"))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(CFG, 150.0)
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"global.localStorage={{getItem(){{return null}},setItem(){{}}}};const m=require({json.dumps(str(js))});"
+                    f"console.log(JSON.stringify({json.dumps(list(self.CASES), ensure_ascii=False)}.map((t)=>m.modelWord(t))))")
+            out = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out, list(self.CASES.values()))

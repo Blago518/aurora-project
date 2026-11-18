@@ -580,11 +580,19 @@
     }
     return "";
   }
+  // F値か（appraise.py の is_f_number と同じ）: f/2・f1.4・1:2 は常に F値。「F2」「F3」は同じ文にレンズの書き方があれば F値、無ければボディの型番
+  const LENS_HINT_RE = /\d\s*mm|レンズ|lens|単焦点|ズーム|zoom|nikkor|ニッコール|zuiko|ズイコー|takumar|タクマー|rokkor|ロッコール|sekor|serenar|hexanon|ヘキサノン|planar|プラナー|sonnar|ゾナー|distagon|ディスタゴン|summicron|ズミクロン|summilux|ズミルックス|elmarit|エルマリート|elmar|tessar|テッサー|xenar|biogon|macro|マクロ|1\s*:\s*\d/i;
+  function isFNumber(tok, text) {
+    const tl = tok.toLowerCase().replace(/^[.,]+|[.,]+$/g, "");
+    if (/^(?:f(?:\/\d+(?:\.\d+)?|\d+\.\d+)|1:\d+(?:\.\d+)?)$/.test(tl)) return true;
+    if (/^f\d{1,2}$/.test(tl)) return LENS_HINT_RE.test(String(text || "").normalize("NFKC"));
+    return false;
+  }
   function modelWord(title) {
     for (const tok of titleToQuery(title, 12).split(" ").filter(Boolean)) {
       const tl = tok.toLowerCase().replace(/^[.,]+|[.,]+$/g, "");
       if (/^\d+(?:-\d+)?mm$/.test(tl)) return tl;
-      if (/\d/.test(tl) && /[a-z]/.test(tl) && !/^f(?:\/\d+(?:\.\d+)?|\d+\.\d+)$/.test(tl) && !/^\d+(?:\.\d+)?(?:mp|x)$/.test(tl)) return tok;
+      if (/\d/.test(tl) && /[a-z]/.test(tl) && !isFNumber(tok, title) && !/^\d+(?:\.\d+)?(?:mp|x)$/.test(tl)) return tok;
     }
     return "";
   }
@@ -1058,7 +1066,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { sweetSpot, bidPrio, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
+    module.exports = { sweetSpot, bidPrio, isFNumber, modelWord, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
     return;
   }
 

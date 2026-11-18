@@ -929,14 +929,31 @@ def _brand_of(title: str) -> str:
     return ""
 
 
+# レンズの書き方（これがある部分の「F2」「f1.4」は F値。無い部分の「F2」「F3」はボディの型番。2026-11-18 ユーザー指摘）
+LENS_HINT_RE = re.compile(r"\d\s*mm|レンズ|lens|単焦点|ズーム|zoom|nikkor|ニッコール|zuiko|ズイコー|takumar|タクマー|rokkor|ロッコール|"
+                          r"sekor|serenar|hexanon|ヘキサノン|planar|プラナー|sonnar|ゾナー|distagon|ディスタゴン|summicron|ズミクロン|"
+                          r"summilux|ズミルックス|elmarit|エルマリート|elmar|tessar|テッサー|xenar|biogon|macro|マクロ|1\s*:\s*\d", re.I)
+
+
+def is_f_number(tok: str, text: str) -> bool:
+    """tok が F値か. f/2・f1.4・f2.8・1:2 は常に F値。「F2」「F3」のような整数だけの語は、同じ文にレンズの書き方
+    （焦点距離・レンズ・Nikkor など）があれば F値、無ければボディの型番（Nikon F2・F3）とみなす. 拡張機能の isFNumber と同じ."""
+    tl = tok.lower().strip(".,")
+    if re.fullmatch(r"f(?:/\d+(?:\.\d+)?|\d+\.\d+)|1:\d+(?:\.\d+)?", tl):
+        return True
+    if re.fullmatch(r"f\d{1,2}", tl):
+        return bool(LENS_HINT_RE.search(unicodedata.normalize("NFKC", text or "")))
+    return False
+
+
 def _model_word(title: str) -> str:
-    """型の語: 焦点距離（28mm・80-200mm）か型番（T2・D7100・A-1・XA2）。F値・数字だけの語は使わない."""
+    """型の語: 焦点距離（28mm・80-200mm）か型番（T2・D7100・A-1・XA2・ボディの F2/F3）。F値・数字だけの語は使わない.
+    F値かどうかは、その部分の書き方全体から判断する（is_f_number）."""
     for tok in title_to_query(title, max_tokens=12).split():
         tl = tok.lower().strip(".,")
         if re.fullmatch(r"\d+(?:-\d+)?mm", tl):
             return tl
-        # F値（f/2・f1.4・f2.8）は型の語にしない。ただし「F3」「F2」のような小数点も / も無い語はボディの型番として使う
-        if re.search(r"\d", tl) and re.search(r"[a-z]", tl) and not re.fullmatch(r"f(?:/\d+(?:\.\d+)?|\d+\.\d+)", tl) \
+        if re.search(r"\d", tl) and re.search(r"[a-z]", tl) and not is_f_number(tok, title) \
                 and not re.fullmatch(r"\d+(?:\.\d+)?(?:mp|x)", tl):
             return tok
     return ""
