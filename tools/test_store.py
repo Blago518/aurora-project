@@ -378,3 +378,51 @@ class OpticalSkip(unittest.TestCase):
         self.assertEqual(ba.judge(it)[0], "×")
         it.title = "Nikon Ai 50mm f1.4 カビ・クモリなし"
         self.assertEqual(ba.judge(it)[0], "◎")
+
+
+class SetListing(unittest.TestCase):
+    """まとめ売り（2026-11-18）: 中身ごとに相場を当てて合計する. Python と JS で同じ."""
+
+    SALES = [("Nikon F3 HP Body", "自分の販売実績", 450.0),
+             ("Nikon Ai-S Nikkor 50mm f/1.4", "自分の販売実績", 160.0),
+             ("Nikon Ai Nikkor 28mm f/2.8", "自分の販売実績", 120.0)]
+    TITLES = ["ニコン Nikon F3 HP + Ai-S 50mm F1.4 + Ai 28mm F2.8 まとめ セット",
+              "ニコン レンズ 3本 まとめ セット",                       # 中身が分からない → 要確認のまま
+              "Nikon F3 HP ボディ"]                                      # セットではない
+
+    def _python(self):
+        sales = [{"title": t, "source": s, "_price": pr, "_tokens": ba._tokens(t)} for t, s, pr in self.SALES]
+        items = [ba.Item(url=f"u{i}", title=t, current_price_jpy=5000, domestic_shipping_jpy=800, prefilled=True)
+                 for i, t in enumerate(self.TITLES)]
+        ba.analyze(items, sales, CFG, 150.0, True, 0, [])
+        return items
+
+    def test_python(self):
+        items = self._python()
+        self.assertEqual(len(items[0].set_parts), 3)
+        extra = CFG["shipping"]["deduction_usd"] + CFG["ebay"]["per_order_fee_usd"] + CFG["shipping"]["packing_jpy"] / 150.0
+        self.assertAlmostEqual(items[0].expected_price_usd, round(450 + 160 + 120 - 2 * extra, 2), places=2)
+        self.assertNotEqual(ba.judge(items[0])[0], "要確認")
+        self.assertIn("まとめ売り3点", ba.judge(items[0])[1])
+        self.assertEqual(items[1].set_parts, [])
+        self.assertEqual(ba.judge(items[1])[0], "要確認")
+        self.assertEqual(items[2].set_parts, [])
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(CFG, 150.0)
+        data["kantei"] = []
+        data["refs"] = [{"title": t, "price": pr, "tier": 0, "source": s, "tokens": sorted(ba._tokens(t)), "acc": False}
+                        for t, s, pr in self.SALES]
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"global.localStorage={{getItem(){{return null}},setItem(){{}}}};const m=require({json.dumps(str(js))});"
+                    f"const it={json.dumps(self.TITLES, ensure_ascii=False)}.map((t,i)=>({{id:'x'+i,title:t,price:5000,ship:800,bids:0,end:''}}));"
+                    "m.evaluate(it,150);console.log(JSON.stringify(it.map(i=>[i.usd,i.mark,(i.setParts||[]).length])))")
+            out = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout)
+        py = [[it.expected_price_usd, ba.judge(it)[0], len(it.set_parts)] for it in self._python()]
+        self.assertEqual(out, py)

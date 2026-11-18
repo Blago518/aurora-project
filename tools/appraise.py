@@ -110,6 +110,7 @@ class Item:
     price_source: str = ""
     calc: dict = field(default_factory=dict)
     sold_hit: bool = False  # 売れ筋（根拠の販売実績で利益が出ていた機種）
+    set_parts: list = field(default_factory=list)  # まとめ売りの中身 [(中身, 相場$送料込み)]（2点以上のときだけ）
     seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
@@ -934,7 +935,8 @@ def _model_word(title: str) -> str:
         tl = tok.lower().strip(".,")
         if re.fullmatch(r"\d+(?:-\d+)?mm", tl):
             return tl
-        if re.search(r"\d", tl) and re.search(r"[a-z]", tl) and not re.fullmatch(r"f/?\d+(?:\.\d+)?", tl) \
+        # F値（f/2・f1.4・f2.8）は型の語にしない。ただし「F3」「F2」のような小数点も / も無い語はボディの型番として使う
+        if re.search(r"\d", tl) and re.search(r"[a-z]", tl) and not re.fullmatch(r"f(?:/\d+(?:\.\d+)?|\d+\.\d+)", tl) \
                 and not re.fullmatch(r"\d+(?:\.\d+)?(?:mp|x)", tl):
             return tok
     return ""
@@ -959,6 +961,35 @@ def _model_url(brand: str, word: str) -> str:
     q = urllib.parse.urlencode({"va": word, "vo": " ".join([brand] + ja), "auccat": "23636", "aucminprice": "1000",
                                 "s1": "end", "o1": "a", "n": "100"})
     return f"https://auctions.yahoo.co.jp/search/search?{q}"
+
+
+# まとめ売り（2026-11-18 ユーザー決定）: 「Nikon F3 + 50mm f1.4 + 28mm f2.8」のようなセット出品を、中身ごとに相場に当てて合計する。
+# 区切り（＋ + 、 , ／ / ＆ & 「と」）で分け、型の語（焦点距離・型番）がある部分だけを中身とみなす。メーカーが無い部分は商品名の最初のメーカーを付ける。
+# 相場が見つかった中身だけを足し（見つからない中身は $0 ＝保守的）、2点以上見つかったときだけ判定する。
+# 中身は別々に売る前提なので、2点目からは送料（一律）・1注文の手数料・梱包をそれぞれ引く。拡張機能の setParts と同じ
+SET_SPLIT_RE = re.compile(r"\s*(?:[＋+、,／/＆&]|\sと\s)\s*")
+
+
+def set_part_titles(title: str) -> list[str]:
+    t = unicodedata.normalize("NFKC", title or "")
+    b0 = _brand_of(t)
+    out = []
+    for seg in SET_SPLIT_RE.split(t):
+        seg = seg.strip()
+        if not seg or not _model_word(seg):
+            continue
+        if {"付属品のみ?", "アダプター等"} & set(detect_flags(seg)):
+            continue
+        if b0 and not _brand_of(seg):
+            seg = f"{b0} {seg}"
+        out.append(seg)
+    return out if len(out) >= 2 else []
+
+
+def set_value(parts: list[tuple[str, float]], cfg: dict, fx: float) -> float:
+    """中身の相場（送料込み）の合計から、2点目以降の送料・1注文の手数料・梱包を引いた額（送料込みの売値として calculate に渡す）."""
+    extra = cfg["shipping"]["deduction_usd"] + cfg["ebay"]["per_order_fee_usd"] + int(cfg["shipping"]["packing_jpy"]) / fx
+    return round(sum(pr for _, pr in parts) - (len(parts) - 1) * extra, 2)
 
 
 def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30,
@@ -1265,8 +1296,10 @@ def judge(item: Item) -> tuple[str, str]:
     else:
         prefix = ""
     now = item.current_price_jpy
-    if {"付属品のみ?", "アダプター等", "セット品"} & set(item.flags):
+    if "アダプター等" in item.flags or (not item.set_parts and {"付属品のみ?", "セット品"} & set(item.flags)):
         return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
+    if item.set_parts:
+        prefix += f"まとめ売り{len(item.set_parts)}点。"
     opt = optical_skip_words(item.title, item.desc_hits)
     if opt:  # 光学難は見送り（修理しない方針。実績は平均赤字）
         return "×", prefix + "光学難（" + "・".join(opt) + "）は見送り"
@@ -1622,6 +1655,20 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
         if not item.ebay_query:
             item.fetch_note += "検索語を作れません（title か ebay_query を入力） "
             continue
+
+        if "セット品" in item.flags:  # まとめ売りは中身ごとに相場を当てて合計する
+            parts = []
+            for seg in set_part_titles(item.title):
+                ms = match_prefer_memo(f"{title_to_query(seg)} {seg}", memo, others)
+                if ms:
+                    parts.append((seg, round(statistics.median(m["_price"] for m in ms), 2)))
+            if len(parts) >= 2:
+                item.set_parts = parts
+                item.flags = [f for f in item.flags if f != "付属品のみ?"]  # 中身を当てたので付属品だけの出品ではない
+                item.expected_price_usd = set_value(parts, cfg, fx)
+                item.price_source = f"まとめ売り {len(parts)}点の合計（" + " ＋ ".join(f"{seg} ${pr:g}" for seg, pr in parts) + "）"
+                item.calc = calculate(item, cfg, fx)
+                continue
 
         # 照合はタイトル全体（検索語は7語に絞っているため）
         item.history_matches = match_prefer_memo(f"{item.ebay_query} {item.title}", memo, others)
