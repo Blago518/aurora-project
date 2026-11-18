@@ -75,6 +75,9 @@ def build_data(cfg: dict, fx: float) -> dict:
         },
         "consts": {
             "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN,
+            # 型の語（modelWord・isFNumber・setPartTitles。appraise.py と同じ表）
+            "lensWords": ba.LENS_WORDS, "bodyCodeSkip": sorted(ba.BODY_CODE_SKIP), "bodyCodeOk": sorted(ba.BODY_CODE_OK),
+            "filmFormatAfter": ba.FILM_FORMAT_AFTER.pattern,
             "lensLines": ba.LENS_LINES, "lensMakers": sorted(ba.LENS_MAKERS), "noise": sorted(ba.NOISE_TOKENS), "thirdParty": sorted(ba.THIRD_PARTY),
             "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS),
             "premium": sorted(ba.PREMIUM_VARIANTS), "accessoryRe": ba.ACCESSORY_RE.pattern,
