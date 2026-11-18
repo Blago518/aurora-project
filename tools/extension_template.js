@@ -591,6 +591,10 @@
     return [endStr(e), false];
   };
   const srcLabel = (r) => (r.source || "").replace(/\(.*$/, "");
+  // 売れ筋＝根拠の販売実績で利益が出ていた機種（build_extension.py が appraise.sold_hit で付ける）。$99以下は下に回す（2026-11-18）
+  const LOW_PRICE_USD = 99;
+  const soldHit = (i) => !!(i.refs && i.refs[0] && i.refs[0].hit && !isMemo(i.refs[0]));
+  const bidPrio = (i) => (i.usd != null && i.usd <= LOW_PRICE_USD ? 2 : 0) + (soldHit(i) ? 0 : 1);
   // 根拠が実際に売れた記録（自分の販売実績・Chatwork）なら、その売値（送料込み＝eBayStock・取引明細の合計）も並べる。
   // 相場メモ・頒布会（出品価格）は売値ではないので出さない
   const soldLine = (r) => (r && r.price != null && /販売実績/.test(r.source || "") && !isMemo(r)
@@ -824,7 +828,9 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const pin = state.pin || (state.pin = {});
     const secOf = (i) => pin[i.id] || naturalSec(i, isAcc, sure);
     const byEnd = (a, b) => (a.end < b.end ? -1 : 1);
-    const good = items.filter((i) => secOf(i) === "good").sort(byEnd), weak = items.filter((i) => secOf(i) === "weak").sort(byEnd);
+    // 入札候補の並び（appraise.py の bid_priority と同じ）: 売れ筋・売値$99超を上に、同じ順位の中は終了が近い順
+    const byPrio = (a, b) => bidPrio(a) - bidPrio(b) || byEnd(a, b);
+    const good = items.filter((i) => secOf(i) === "good").sort(byPrio), weak = items.filter((i) => secOf(i) === "weak").sort(byPrio);
     const check = items.filter((i) => secOf(i) === "check");
     const bad = items.filter((i) => secOf(i) === "bad");
     const pinnedWaits = items.filter((i) => secOf(i) === "wait" && i.calc);  // 仮◎○の行で［登録］した物
@@ -874,7 +880,8 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";
       const junk = i.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 && i.lrank == null;
       const sw = sweetSpot(i.title);
-      const flags = (sw ? `<span class="flag sweet" title="${esc("狙い目スペック: " + sw + "（講座資料。判定・上限額は変えていません）")}">狙い目</span>` : "") +
+      const flags = (soldHit(i) ? `<span class="flag sweet" title="売れ筋: この機種は自分（またはChatwork）の販売実績で、入札基準以上の利益が出ていました。入札候補の上に並べています（判定・上限額は変えていません）">売れ筋</span>` : "") +
+        (sw ? `<span class="flag sweet" title="${esc("狙い目スペック: " + sw + "（講座資料。判定・上限額は変えていません）")}">狙い目</span>` : "") +
         i.flags.filter((f) => !["動作品", "美品"].includes(f)).map((f) => `<span class="flag">${esc(f)}</span>`).join("");
       const tip = `eBay検索語: ${i.eq || i.query}（価格+送料の高い順）\n根拠: ${r.title || ""} ${nd(r.price)}（送料別） [${r.source || ""}]` +
         (junk ? `\nジャンク評価 ×${Math.round(DATA.cfg.junkFactor * 100)}%` : "") + `\n送料別の商品代 ${nd(i.usd)}（送料$${SHIP()}込みなら $${i.usd}）`;
@@ -959,7 +966,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { sweetSpot, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
+    module.exports = { sweetSpot, bidPrio, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
     return;
   }
 

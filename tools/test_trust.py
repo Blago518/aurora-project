@@ -250,3 +250,29 @@ class SweetSpot(unittest.TestCase):
         data = bx.build_data(CFG, 150.0)
         out = run_js(data, f"console.log(JSON.stringify({json.dumps(list(cases))}.map((t)=>!!m.sweetSpot(t))))")
         self.assertEqual(out, list(cases.values()))
+
+
+class BidPriority(unittest.TestCase):
+    """入札候補の並び（2026-11-18）: 売れ筋・売値$99超を上に. Python（bid_priority・sold_hit）と拡張機能（bidPrio）で同じ."""
+
+    def test_sold_hit(self):
+        own = {"source": "自分の販売実績", "_price": 249.99, "purchase_jpy": "8000"}
+        self.assertTrue(ba.sold_hit(own, CFG, 150.0))
+        self.assertFalse(ba.sold_hit({**own, "purchase_jpy": "34000"}, CFG, 150.0))  # 仕入が高くて利益が出ていない
+        self.assertFalse(ba.sold_hit({**own, "source": "頒布会リスト"}, CFG, 150.0))  # 売れた記録ではない
+        self.assertFalse(ba.sold_hit({**own, "purchase_jpy": ""}, CFG, 150.0))
+
+    def test_priority_python(self):
+        self.assertEqual(ba.bid_priority(250, True), 0)
+        self.assertEqual(ba.bid_priority(250, False), 1)
+        self.assertEqual(ba.bid_priority(99, True), 2)
+        self.assertEqual(ba.bid_priority(60, False), 3)
+
+    def test_priority_js(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        cases = [(250, True), (250, False), (99, True), (60, False)]
+        items = [{"usd": u, "refs": [{"hit": h, "source": "自分の販売実績"}]} for u, h in cases]
+        data = bx.build_data(CFG, 150.0)
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(items)}.map((i)=>m.bidPrio(i))))")
+        self.assertEqual(out, [ba.bid_priority(u, h) for u, h in cases])

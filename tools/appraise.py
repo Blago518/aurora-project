@@ -109,6 +109,7 @@ class Item:
     expected_price_usd: float | None = None
     price_source: str = ""
     calc: dict = field(default_factory=dict)
+    sold_hit: bool = False  # 売れ筋（根拠の販売実績で利益が出ていた機種）
     seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
@@ -812,6 +813,32 @@ def ebay_search_query(query: str, title: str = "") -> str:
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表"]
 
 
+def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
+    """売れ筋: 実際に売れた記録（自分の販売実績・Chatwork 実績）で、その時の仕入値から見て入札基準以上の利益が出ていた機種.
+    利益 = (売値 − eBay手数料) × 為替 × (1 − 円転ロス) − 送料（入札判断と同じ一律額）− 梱包 − 仕入値（2026-11-18 ユーザー決定: 売れた機種を優先）"""
+    src = row.get("source") or "自分の販売実績"
+    if "販売実績" not in src or src.startswith("相場メモ"):
+        return False
+    price, cost = row.get("_price"), _float_or_none(row.get("purchase_jpy"))
+    if not price or not cost:
+        return False
+    e, j = cfg["ebay"], cfg["judge"]
+    fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
+    fees = price * fee_pct / 100 + e["per_order_fee_usd"]
+    net = (price - fees) * fx * (1 - cfg["fx"]["conversion_loss_pct"] / 100)
+    profit = net - cfg["shipping"]["deduction_usd"] * fx - int(cfg["shipping"]["packing_jpy"]) - cost
+    return profit >= j["min_profit_jpy"] and profit / (price * fx) * 100 >= j["min_margin_pct"]
+
+
+# 入札候補の並び（2026-11-18 ユーザー決定）: 売値（送料込み）が $99 以下の候補は下に回す（実績では1件あたりの利益が小さい）
+LOW_PRICE_USD = 99.0
+
+
+def bid_priority(price_usd: float | None, hit: bool) -> int:
+    """小さいほど上: 0=売れ筋で$99超 1=$99超 2=売れ筋で$99以下 3=$99以下. 同じ順位の中は終了が近い順."""
+    return (2 if price_usd is not None and price_usd <= LOW_PRICE_USD else 0) + (0 if hit else 1)
+
+
 def source_tier(row: dict) -> int:
     src = row.get("source") or "自分の販売実績"
     if src.startswith("Chatwork"):
@@ -1099,6 +1126,7 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
             item.expected_price_usd = round(item.expected_price_usd * factor, 2)
             item.price_source += f" ×ジャンク{int(factor * 100)}%"
     item.calc = calculate(item, cfg, fx)
+    item.sold_hit = bool(item.history_matches) and item.ebay_price_usd is None and sold_hit(item.history_matches[0], cfg, fx)
 
 
 MEMO_DOWNLOAD = "aurora_price_memo.csv"  # 拡張機能が「直す」「登録」のたびに ダウンロード/ に上書き保存する
@@ -1446,6 +1474,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                     + f" [{m.get('source', '自分の販売実績')}]"
                     for m in it.history_matches[:5]),
                 "想定販売価格USD": it.expected_price_usd,
+                "売れ筋": "売れ筋" if it.sold_hit else "",
                 "価格の根拠": it.price_source,
                 "Net販売価格USD": c.get("net_sale_usd"),
                 "仕入価格(現在+国内送料)": c.get("purchase_jpy"),
@@ -1466,8 +1495,9 @@ def rows_for_output(items: list[Item]) -> list[dict]:
             }
         )
     order = {"◎": 0, "○": 1, "要確認": 2, "×": 3}
-    # ◎○は終了が近い順（入札の段取り順）、それ以外は余裕の大きい順
+    # ◎○は 売れ筋・$99超 を上に（bid_priority）、同じ順位の中は終了が近い順（入札の段取り順）。それ以外は余裕の大きい順
     rows.sort(key=lambda r: (order[r["判定"]],
+                             bid_priority(r["想定販売価格USD"], bool(r["売れ筋"])) if r["判定"] in ("◎", "○") else 0,
                              r["終了"] if r["判定"] in ("◎", "○") else "",
                              -(r["上限までの余裕"] or -10**9)))
     return rows
