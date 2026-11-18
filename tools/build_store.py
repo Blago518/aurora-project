@@ -30,7 +30,7 @@ ROOT = HERE.parent
 CORE_JS = ROOT / "store" / "core.js"
 ICLOUD = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "aurora"
 CORE_START, CORE_END = "  // @core-start", "  // @core-end"
-REC_SOURCES = ("reference_prices.csv", "chatwork_sales.csv")  # おすすめは実際の販売（相場メモは除く）
+REC_SOURCES = ("reference_prices.csv", "chatwork_sales.csv")  # おすすめは販売履歴（自分・Chatwork・頒布会。相場メモは除く）
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +127,8 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
         tier = ba.source_tier(r)
         rec = {"title": r.get("title", ""), "usd": round(r["_price"], 2), "junk": "ジャンク" in flags,
                "date": r.get("date", ""), "purchase": ba._float_or_none(r.get("purchase_jpy")), "tier": tier}
-        (g["sales"] if tier <= 1 else g["lists"]).append(rec)
+        # 販売履歴＝自分・Chatwork・頒布会（2026-11-18 ユーザー決定: 頒布会も売れたものとみなす。appraise.SURE_TIER）
+        (g["sales"] if tier <= ba.SURE_TIER else g["lists"]).append(rec)
 
     out = []
     for g in groups.values():
@@ -145,7 +146,7 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
         out.append({
             "label": g["label"], "brand": g["brand"], "kind": g["kind"],
             "sales": n, "lists": len(g["lists"]), "usd": usd,
-            "basis": "販売実績" if good else "頒布会リスト（出品価格）",
+            "basis": (["販売実績", "Chatwork実績", "頒布会"][min(s["tier"] for s in good)] if good else "鑑定表（推定）"),
             "maxBuy": calc["max_bid_jpy"], "breakeven": calc["breakeven_bid_jpy"],
             "profit": profit, "profitN": len(profits),
             "score": profit * n if profit is not None and profit > 0 else None,
