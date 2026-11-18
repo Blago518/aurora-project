@@ -259,13 +259,34 @@
     return out;
   }
 
+  // 光学難（2026-11-18 ユーザー決定・おまかせ）: カビ・クモリ・バルサム等がはっきり書かれた出品は × で見送る（実績は平均赤字）。
+  // 「カビ・クモリなし」「クモリ：無」のような打ち消しは除く（appraise.py の optical_title_words と同じ）。傷・ヤケは要確認のまま
+  const OPTICAL_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)/g;
+  const OTHER_DEFECT_RE = /ヤケ|傷あり|キズあり|拭き傷/;
+  const OPT_NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)/;
+  function opticalWords(text) {
+    const out = [];
+    for (const m of String(text || "").matchAll(OPTICAL_RE)) {
+      const w = m[1], rest = text.slice(m.index, m.index + 60);
+      const kv = rest.slice(w.length).match(/^\s*[：:]\s*([^\s　、。|｜]+)/);
+      if (kv) { if (/^(なし|無し|ナシ|無|ない|-|ー|×)/.test(kv[1])) continue; }
+      else {
+        const cut = rest.search(/[。\n】|｜]/);
+        if (OPT_NEG_RE.test(cut < 0 ? rest : rest.slice(0, cut))) continue;
+      }
+      if (!out.includes(w)) out.push(w);
+    }
+    return out;
+  }
   function judge(it) {
     const c = it.calc;
     if (!c) return ["要確認", "相場なし"];
     const pre = it.flags.includes("ジャンク") ? "ジャンク・" : "";
     if (it.flags.some((f) => f === "付属品のみ?" || f === "アダプター等" || f === "セット品"))
       return ["要確認", pre + it.flags.filter((f) => f !== "ジャンク").join("・") + "の可能性"];
-    if (it.flags.includes("光学難あり")) return ["要確認", pre + "光学難あり（方針では避ける）"];
+    const opt = opticalWords(it.title || "");
+    if (opt.length) return ["×", pre + "光学難（" + opt.join("・") + "）は見送り"];
+    if (it.flags.includes("光学難あり") && OTHER_DEFECT_RE.test(it.title || "")) return ["要確認", pre + "難あり（方針では避ける）"];
     if (c.maxBid <= 0) return ["×", pre + "基準を満たす入札額なし"];
     if (it.price == null) return ["要確認", pre + "現在価格不明"];
     if (c.bidNow <= c.maxBid * 0.8) return ["◎", pre + "余裕あり"];
@@ -323,7 +344,7 @@
     const w = h && h[2].match(/^[^\s)]+/);
     return w ? w[0] : "";
   }
-  // 状態の補正（appraise.py の condition_adjusted と同じ）: 過去データの価格を、この出品の状態に合わせて1ランク step ドルずつ動かす
+  // 状態の補正（appraise.py の condition_adjusted と同じ）: 過去データの価格を、この出品の状態に合わせて1ランク step %ずつ動かす（2026-11-18 から割合。実績から推定）
   function listingRank(title) {
     const t = String(title || "").normalize("NFKC");
     for (const [re, r] of LISTING_COND) if (re.test(t)) return r;
@@ -338,14 +359,14 @@
     const t = String(title || "").normalize("NFKC");
     const hit = (C.listingCondRules || []).find(([p]) => new RegExp(p).test(t));
     const word = hit ? t.match(new RegExp(hit[0]))[0] : "表記なし";
-    return `この出品は${hit ? "「" + word + "」" : "表記なし"}＝${RANK_LABEL[listingRank(title)]}で補正（1ランク$${DATA.cfg.condStep}）`;
+    return `この出品は${hit ? "「" + word + "」" : "表記なし"}＝${RANK_LABEL[listingRank(title)]}で補正（1ランク${DATA.cfg.condStep}%）`;
   }
   function conditionAdjusted(refs, title, flags, rank) {
     const step = Number(DATA.cfg.condStep || 0);
     const lr = flags.includes("ジャンク") || !step ? null : rank != null ? rank : listingRank(title);
     return refs.map((r) => {
       const rr = (C.condRank || {})[conditionOf(r)];
-      return lr != null && rr != null ? Math.round(Math.max(r.price + step * (lr - rr), 0) * 100) / 100 : r.price;
+      return lr != null && rr != null ? Math.round(Math.max(r.price * Math.pow(1 + step / 100, lr - rr), 0) * 100) / 100 : r.price;
     });
   }
   // @core-end
@@ -591,6 +612,10 @@
     return [endStr(e), false];
   };
   const srcLabel = (r) => (r.source || "").replace(/\(.*$/, "");
+  // 売れ筋＝根拠の販売実績で利益が出ていた機種（build_extension.py が appraise.sold_hit で付ける）。$99以下は下に回す（2026-11-18）
+  const LOW_PRICE_USD = 99;
+  const soldHit = (i) => !!(i.refs && i.refs[0] && i.refs[0].hit && !isMemo(i.refs[0]));
+  const bidPrio = (i) => (i.usd != null && i.usd <= LOW_PRICE_USD ? 2 : 0) + (soldHit(i) ? 0 : 1);
   // 根拠が実際に売れた記録（自分の販売実績・Chatwork）なら、その売値（送料込み＝eBayStock・取引明細の合計）も並べる。
   // 相場メモ・頒布会（出品価格）は売値ではないので出さない
   const soldLine = (r) => (r && r.price != null && /販売実績/.test(r.source || "") && !isMemo(r)
@@ -773,7 +798,10 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     for (const i of items) {
       const d = state.desc[i.id];
       if (d && d.hits && d.hits.length && (i.mark === "◎" || i.mark === "○")) {
-        i.mark = "要確認"; i.reason = "説明文に " + d.hits.map((h) => h.word).join("・");
+        const opt = d.hits.map((h) => h.word).filter((w) => /^(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)$/.test(w));
+        // 説明文の光学難は見送り（appraise.py の judge と同じ）。それ以外の難（傷・ヤケ・動作未確認など）は要確認
+        if (opt.length) { i.mark = "×"; i.reason = "説明文に光学難（" + opt.join("・") + "）は見送り"; }
+        else { i.mark = "要確認"; i.reason = "説明文に " + d.hits.map((h) => h.word).join("・"); }
       }
     }
   }
@@ -824,7 +852,9 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const pin = state.pin || (state.pin = {});
     const secOf = (i) => pin[i.id] || naturalSec(i, isAcc, sure);
     const byEnd = (a, b) => (a.end < b.end ? -1 : 1);
-    const good = items.filter((i) => secOf(i) === "good").sort(byEnd), weak = items.filter((i) => secOf(i) === "weak").sort(byEnd);
+    // 入札候補の並び（appraise.py の bid_priority と同じ）: 売れ筋・売値$99超を上に、同じ順位の中は終了が近い順
+    const byPrio = (a, b) => bidPrio(a) - bidPrio(b) || byEnd(a, b);
+    const good = items.filter((i) => secOf(i) === "good").sort(byPrio), weak = items.filter((i) => secOf(i) === "weak").sort(byPrio);
     const check = items.filter((i) => secOf(i) === "check");
     const bad = items.filter((i) => secOf(i) === "bad");
     const pinnedWaits = items.filter((i) => secOf(i) === "wait" && i.calc);  // 仮◎○の行で［登録］した物
@@ -874,7 +904,8 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";
       const junk = i.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 && i.lrank == null;
       const sw = sweetSpot(i.title);
-      const flags = (sw ? `<span class="flag sweet" title="${esc("狙い目スペック: " + sw + "（講座資料。判定・上限額は変えていません）")}">狙い目</span>` : "") +
+      const flags = (soldHit(i) ? `<span class="flag sweet" title="売れ筋: この機種は自分（またはChatwork）の販売実績で、入札基準以上の利益が出ていました。入札候補の上に並べています（判定・上限額は変えていません）">売れ筋</span>` : "") +
+        (sw ? `<span class="flag sweet" title="${esc("狙い目スペック: " + sw + "（講座資料。判定・上限額は変えていません）")}">狙い目</span>` : "") +
         i.flags.filter((f) => !["動作品", "美品"].includes(f)).map((f) => `<span class="flag">${esc(f)}</span>`).join("");
       const tip = `eBay検索語: ${i.eq || i.query}（価格+送料の高い順）\n根拠: ${r.title || ""} ${nd(r.price)}（送料別） [${r.source || ""}]` +
         (junk ? `\nジャンク評価 ×${Math.round(DATA.cfg.junkFactor * 100)}%` : "") + `\n送料別の商品代 ${nd(i.usd)}（送料$${SHIP()}込みなら $${i.usd}）`;
@@ -959,7 +990,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { sweetSpot, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
+    module.exports = { sweetSpot, bidPrio, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
     return;
   }
 

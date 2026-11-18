@@ -235,18 +235,18 @@ class MemoCondition(unittest.TestCase):
 
 
 class ConditionAdjust(unittest.TestCase):
-    """状態の補正（1ランク $10）: 過去データの状態とこの出品の状態の差で販売価格を動かす。Python と JS で同じ."""
+    """状態の補正（1ランク 8%。相場データが少ないときの値）: 過去データの状態とこの出品の状態の差で販売価格を動かす。Python と JS で同じ."""
 
     SALES = [("Olympus 35mm F2", "相場メモ(Near MINT)", 139.99),        # Near MINT = 7
              ("[MINT] Nikon FM2 Black", "Chatwork販売実績(キタムラ)", 250.0),  # MINT = 9
              ("Nikon FM2 Black Exc+++", "自分の販売実績", 210.0),             # Exc+3 = 4
              ("Canon AE-1 Program", "自分の販売実績", 120.0)]                 # 状態なし＝補正しない
     TITLES = {"オリンパス OM ZUIKO 35mm F2 美品": 139.99,           # 美品=Near MINT → 差0
-              "オリンパス OM ZUIKO 35mm F2 極上": 159.99,           # 極上=MINT → +2（間に Almost MINT）
-              "オリンパス OM ZUIKO 35mm F2 動作品": 129.99,         # 動作品=Exc+5 → -1
+              "オリンパス OM ZUIKO 35mm F2 極上": 163.28,           # 極上=MINT → +2ランク（139.99×1.08²）
+              "オリンパス OM ZUIKO 35mm F2 動作品": 129.62,         # 動作品=Exc+5 → -1ランク（139.99÷1.08）
               "オリンパス OM ZUIKO 35mm F2": 139.99,               # 表記なし=Near MINT
               "オリンパス OM ZUIKO 35mm F2 MINT": 139.99,          # 英語の格付けは使わない
-              "ニコン Nikon FM2 ブラック 未使用に近い": 270.0,        # TOP MINT=10: 自分の実績 Exc+3($210)+6ランク（Chatwork より優先）
+              "ニコン Nikon FM2 ブラック 未使用に近い": 333.24,       # TOP MINT=10: 自分の実績 Exc+3($210)×1.08⁶（Chatwork より優先）
               "ニコン Nikon FM2 ブラック ジャンク": 210.0,           # ジャンクは状態の補正をせず、割引もしない（junk_price_factor = 1.0）
               "キヤノン Canon AE-1 Program 美品": 120.0}
 
@@ -337,3 +337,44 @@ class ShopList(unittest.TestCase):
                     self.assertIn(k, sh, sh["name"])
                 lat, lng = map(float, sh["ll"].split(","))
                 self.assertTrue(35.3 < lat < 35.8 and 139.4 < lng < 139.8, sh["name"])
+
+
+class ConditionStepEstimate(unittest.TestCase):
+    """状態1ランクの補正%を、同じ機種で状態の違う売れた記録から推定する（2026-11-18）."""
+
+    def test_estimate(self):
+        rows = []
+        for i, base in enumerate([100, 200, 300, 150, 250, 400]):
+            toks = {f"model{i}", "50mm"}
+            rows.append({"title": "[MINT] x", "source": "自分の販売実績", "_price": base * 1.1 ** 2, "_tokens": toks})
+            rows.append({"title": "[Near MINT] x", "source": "自分の販売実績", "_price": base, "_tokens": toks})
+        pct, n = ba.estimate_condition_step_pct(rows, 8.0)
+        self.assertEqual(n, 6)
+        self.assertAlmostEqual(pct, 10.0, places=1)
+
+    def test_fallback_and_clamp(self):
+        self.assertEqual(ba.estimate_condition_step_pct([], 8.0), (8.0, 0))
+        rows = []
+        for i in range(5):
+            toks = {f"m{i}", "x"}
+            rows += [{"title": "[MINT] a", "source": "自分の販売実績", "_price": 400, "_tokens": toks},
+                     {"title": "[Near MINT] a", "source": "自分の販売実績", "_price": 100, "_tokens": toks}]
+        self.assertEqual(ba.estimate_condition_step_pct(rows, 8.0)[0], 15.0)  # 上限 15%
+
+
+class OpticalSkip(unittest.TestCase):
+    """光学難（カビ・クモリ・バルサム）ははっきり書かれていれば ×。打ち消し（〜なし）は除く. Python と JS で同じ."""
+
+    CASES = {"Nikon Ai 50mm f1.4 カビあり": ["カビ"], "Canon FD 50mm カビ・クモリなし 美品": [],
+             "Pentax 55mm クモリ：無": [], "Olympus 50mm 薄クモリ": ["クモリ"], "Minolta 58mm バルサム切れ": ["バルサム"],
+             "Nikon F3 傷あり": [], "Leica 50mm 少ないカビ": ["カビ"]}
+
+    def test_python(self):
+        self.assertEqual([ba.optical_title_words(t) for t in self.CASES], list(self.CASES.values()))
+
+    def test_judge(self):
+        it = ba.Item(url="u", title="Nikon Ai 50mm f1.4 カビあり", current_price_jpy=1000, prefilled=True)
+        it.calc = {"max_bid_jpy": 10000, "bid_now": 1000}
+        self.assertEqual(ba.judge(it)[0], "×")
+        it.title = "Nikon Ai 50mm f1.4 カビ・クモリなし"
+        self.assertEqual(ba.judge(it)[0], "◎")

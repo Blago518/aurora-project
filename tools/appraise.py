@@ -109,6 +109,7 @@ class Item:
     expected_price_usd: float | None = None
     price_source: str = ""
     calc: dict = field(default_factory=dict)
+    sold_hit: bool = False  # 売れ筋（根拠の販売実績で利益が出ていた機種）
     seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
@@ -571,14 +572,53 @@ def listing_rank(title: str) -> int:
 
 
 def condition_adjusted(matches: list[dict], title: str, flags: list[str], step: float) -> list[float]:
-    """過去データの価格を、この出品の状態に合わせて 1ランク step ドルずつ補正する（ジャンクの出品は補正しない）."""
+    """過去データの価格を、この出品の状態に合わせて 1ランク step %ずつ補正する（ジャンクの出品は補正しない）.
+    2026-11-18 ユーザー決定（おまかせ）: 1ランク $10 の固定額 → 価格に対する割合（実績から推定。estimate_condition_step_pct）."""
     lr = None if "ジャンク" in flags or not step else listing_rank(title)
     out = []
     for m in matches:
         rr = COND_RANK.get(condition_of(m))
         p = m["_price"]
-        out.append(round(max(p + step * (lr - rr), 0), 2) if lr is not None and rr is not None else p)
+        out.append(round(max(p * (1 + step / 100) ** (lr - rr), 0), 2) if lr is not None and rr is not None else p)
     return out
+
+
+def estimate_condition_step_pct(rows: list[dict], fallback: float, lo: float = 3.0, hi: float = 15.0,
+                                min_pairs: int = 5) -> tuple[float, int]:
+    """実際に売れた記録（自分・Chatwork の販売実績）から、状態1ランクで価格が何%変わるかを推定する.
+    同じ機種（照合の語が同じ）で状態の違う2件ずつを比べ、1ランクあたりの比の中央値。足りなければ fallback.
+    戻り値: (%, 比べた組の数)."""
+    import math
+    groups: dict[frozenset, list[tuple[int, float]]] = {}
+    for r in rows:
+        src = r.get("source") or "自分の販売実績"
+        if "販売実績" not in src or not r.get("_price"):
+            continue
+        rank = COND_RANK.get(condition_of(r))
+        toks = r.get("_tokens")
+        if rank is None or not toks or len(toks) < 2:
+            continue
+        groups.setdefault(frozenset(toks), []).append((rank, float(r["_price"])))
+    logs = []
+    for vals in groups.values():
+        for i in range(len(vals)):
+            for k in range(i + 1, len(vals)):
+                (ra, pa), (rb, pb) = vals[i], vals[k]
+                if ra != rb and pa > 0 and pb > 0:
+                    logs.append(math.log(pa / pb) / (ra - rb))
+    if len(logs) < min_pairs:
+        return fallback, len(logs)
+    pct = (math.exp(statistics.median(logs)) - 1) * 100
+    return round(min(max(pct, lo), hi), 1), len(logs)
+
+
+def condition_step_pct(cfg: dict, rows: list[dict]) -> float:
+    """設定（[judge] condition_step_pct。condition_step_auto=true なら実績から推定）."""
+    j = cfg["judge"]
+    base = float(j.get("condition_step_pct", 0) or 0)
+    if not base or not j.get("condition_step_auto", True):
+        return base
+    return estimate_condition_step_pct(rows, base)[0]
 
 
 def detect_flags(title: str) -> list[str]:
@@ -812,6 +852,91 @@ def ebay_search_query(query: str, title: str = "") -> str:
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表"]
 
 
+def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
+    """売れ筋: 実際に売れた記録（自分の販売実績・Chatwork 実績）で、その時の仕入値から見て入札基準以上の利益が出ていた機種.
+    利益 = (売値 − eBay手数料) × 為替 × (1 − 円転ロス) − 送料（入札判断と同じ一律額）− 梱包 − 仕入値（2026-11-18 ユーザー決定: 売れた機種を優先）"""
+    src = row.get("source") or "自分の販売実績"
+    if "販売実績" not in src or src.startswith("相場メモ"):
+        return False
+    price, cost = row.get("_price"), _float_or_none(row.get("purchase_jpy"))
+    if not price or not cost:
+        return False
+    e, j = cfg["ebay"], cfg["judge"]
+    fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
+    fees = price * fee_pct / 100 + e["per_order_fee_usd"]
+    net = (price - fees) * fx * (1 - cfg["fx"]["conversion_loss_pct"] / 100)
+    profit = net - cfg["shipping"]["deduction_usd"] * fx - int(cfg["shipping"]["packing_jpy"]) - cost
+    return profit >= j["min_profit_jpy"] and profit / (price * fx) * 100 >= j["min_margin_pct"]
+
+
+# 売れ筋の機種を名指しで探す検索（2026-11-18 ユーザー決定）: 販売実績で利益が出ていた機種ごとに、ヤフオクの検索URLを毎回自動で作る。
+# 「メーカー（英語か日本語のどちらか）」＋「型の語（28mm・T2・D7100 など）」で探し、照合は今までどおり相場データで行う
+def _hit_profit(row: dict, cfg: dict, fx: float) -> float:
+    e = cfg["ebay"]
+    price, cost = float(row["_price"]), float(_float_or_none(row.get("purchase_jpy")) or 0)
+    fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
+    net = (price - price * fee_pct / 100 - e["per_order_fee_usd"]) * fx * (1 - cfg["fx"]["conversion_loss_pct"] / 100)
+    return net - cfg["shipping"]["deduction_usd"] * fx - int(cfg["shipping"]["packing_jpy"]) - cost
+
+
+def _brand_of(title: str) -> str:
+    t = unicodedata.normalize("NFKC", title or "")
+    for ja, en in BRANDS_JA:
+        if ja in t:
+            return en
+    for w in re.findall(r"[A-Za-z]+", t):
+        lw = w.lower()
+        if lw in BRANDS_EN and BRANDS_EN[lw] not in ("OM", "Carl"):
+            return BRANDS_EN[lw]
+        if lw in LENS_LINES and LENS_LINES[lw] != "Zeiss":
+            return LENS_LINES[lw]
+    return ""
+
+
+def _model_word(title: str) -> str:
+    """型の語: 焦点距離（28mm・80-200mm）か型番（T2・D7100・A-1・XA2）。F値・数字だけの語は使わない."""
+    for tok in title_to_query(title, max_tokens=12).split():
+        tl = tok.lower().strip(".,")
+        if re.fullmatch(r"\d+(?:-\d+)?mm", tl):
+            return tl
+        if re.search(r"\d", tl) and re.search(r"[a-z]", tl) and not re.fullmatch(r"f/?\d+(?:\.\d+)?", tl) \
+                and not re.fullmatch(r"\d+(?:\.\d+)?(?:mp|x)", tl):
+            return tok
+    return ""
+
+
+def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30) -> list[tuple[str, str]]:
+    """売れ筋（sold_hit）の機種ごとの検索URL. 利益の大きい順に limit 本. 戻り値: [(URL, 機種の説明)]."""
+    best: dict[tuple[str, str], float] = {}
+    for r in sales:
+        if not sold_hit(r, cfg, fx):
+            continue
+        brand, word = _brand_of(r.get("title", "")), _model_word(r.get("title", ""))
+        if not brand or not word:
+            continue
+        k = (brand, word)
+        best[k] = max(best.get(k, -1e9), _hit_profit(r, cfg, fx))
+    ja = {}
+    for j, en in BRANDS_JA:
+        ja.setdefault(en, []).append(j)
+    out = []
+    for (brand, word), _ in sorted(best.items(), key=lambda kv: -kv[1])[:limit]:
+        vo = " ".join([brand] + ja.get(brand, []))
+        q = urllib.parse.urlencode({"va": word, "vo": vo, "auccat": "23636", "aucminprice": "1000",
+                                    "s1": "end", "o1": "a", "n": "100"})
+        out.append((f"https://auctions.yahoo.co.jp/search/search?{q}", f"{brand} {word}"))
+    return out
+
+
+# 入札候補の並び（2026-11-18 ユーザー決定）: 売値（送料込み）が $99 以下の候補は下に回す（実績では1件あたりの利益が小さい）
+LOW_PRICE_USD = 99.0
+
+
+def bid_priority(price_usd: float | None, hit: bool) -> int:
+    """小さいほど上: 0=売れ筋で$99超 1=$99超 2=売れ筋で$99以下 3=$99以下. 同じ順位の中は終了が近い順."""
+    return (2 if price_usd is not None and price_usd <= LOW_PRICE_USD else 0) + (0 if hit else 1)
+
+
 def source_tier(row: dict) -> int:
     src = row.get("source") or "自分の販売実績"
     if src.startswith("Chatwork"):
@@ -1043,6 +1168,40 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
     return out
 
 
+# 光学難（2026-11-18 ユーザー決定・おまかせ）: カビ・クモリ・バルサムなどがはっきり書かれた出品は × で見送る（実績は平均赤字）。
+# 「カビ・クモリなし」のような打ち消しは desc_hits の規則で除く。傷・ヤケなどその他の難は今までどおり要確認
+OPTICAL_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)")
+OTHER_DEFECT_RE = re.compile(r"ヤケ|傷あり|キズあり|拭き傷")
+_OPT_NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
+
+
+def optical_title_words(text: str) -> list[str]:
+    """商品名などの短い文から、打ち消されていない光学難の語（「カビ・クモリなし」「クモリ：無」は除く）. 拡張機能の opticalWords と同じ."""
+    out = []
+    for m in OPTICAL_RE.finditer(text or ""):
+        w, rest = m.group(1), text[m.start():m.start() + 60]
+        kv = re.match(r"^\s*[：:]\s*([^\s　、。|｜]+)", rest[len(w):])
+        if kv:
+            if re.match(r"^(なし|無し|ナシ|無|ない|-|ー|×)", kv.group(1)):
+                continue
+        else:
+            cut = re.search(r"[。\n】|｜]", rest)
+            if _OPT_NEG_RE.search(rest[:cut.start()] if cut else rest):
+                continue
+        if w not in out:
+            out.append(w)
+    return out
+
+
+def optical_skip_words(title: str, hits: list[dict] | None = None) -> list[str]:
+    """商品名と説明文（desc_hits の結果）にある、打ち消されていない光学難の語."""
+    out = optical_title_words(title)
+    for h in hits or []:
+        if OPTICAL_RE.fullmatch(h["word"]) and h["word"] not in out:
+            out.append(h["word"])
+    return out
+
+
 def judge(item: Item) -> tuple[str, str]:
     c = item.calc
     if not c:
@@ -1054,10 +1213,13 @@ def judge(item: Item) -> tuple[str, str]:
     now = item.current_price_jpy
     if {"付属品のみ?", "アダプター等", "セット品"} & set(item.flags):
         return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
-    if item.desc_hits:  # 説明文にカビ・クモリ等（拡張機能の説明文チェックと同じ規則）
+    opt = optical_skip_words(item.title, item.desc_hits)
+    if opt:  # 光学難は見送り（修理しない方針。実績は平均赤字）
+        return "×", prefix + "光学難（" + "・".join(opt) + "）は見送り"
+    if item.desc_hits:  # 説明文に傷・ヤケ等（拡張機能の説明文チェックと同じ規則）
         return "要確認", prefix + "説明文に " + "・".join(h["word"] for h in item.desc_hits) + "（方針では避ける）"
-    if "光学難あり" in item.flags:  # 方針: 修理しないので光学難（カビ・クモリ等）は避ける
-        return "要確認", prefix + "光学難あり（方針では避ける）。写真で程度を確認してください"
+    if "光学難あり" in item.flags and OTHER_DEFECT_RE.search(item.title or ""):  # 傷あり・ヤケ等。「カビ・クモリなし」は除く
+        return "要確認", prefix + "難あり（方針では避ける）。写真で程度を確認してください"
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
     now = c.get("bid_now")
@@ -1085,7 +1247,7 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
     if item.ebay_price_usd is not None:
         item.expected_price_usd, item.price_source = item.ebay_price_usd, "手入力"
     elif item.history_matches:
-        step = float(cfg["judge"].get("condition_step_usd", 0) or 0)
+        step = float(cfg["judge"].get("_condition_step_pct", cfg["judge"].get("condition_step_pct", 0)) or 0)
         ps = condition_adjusted(item.history_matches, item.title, item.flags, step)
         item.expected_price_usd = round(statistics.median(ps), 2)
         src = str(item.history_matches[0].get("source", ""))
@@ -1099,6 +1261,7 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
             item.expected_price_usd = round(item.expected_price_usd * factor, 2)
             item.price_source += f" ×ジャンク{int(factor * 100)}%"
     item.calc = calculate(item, cfg, fx)
+    item.sold_hit = bool(item.history_matches) and item.ebay_price_usd is None and sold_hit(item.history_matches[0], cfg, fx)
 
 
 MEMO_DOWNLOAD = "aurora_price_memo.csv"  # 拡張機能が「直す」「登録」のたびに ダウンロード/ に上書き保存する
@@ -1369,6 +1532,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
     memo = [s for s in sales if is_memo(s)]
     others = [s for s in sales if not is_memo(s)]
     set_known_models([s.get("title") for s in sales] + [k.get("title") for k in (kantei or [])])
+    cfg["judge"]["_condition_step_pct"] = condition_step_pct(cfg, others)  # 状態1ランクの補正（%）を実績から
     for i, item in enumerate(items, 1):
         if not item.prefilled:
             print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)
@@ -1446,6 +1610,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                     + f" [{m.get('source', '自分の販売実績')}]"
                     for m in it.history_matches[:5]),
                 "想定販売価格USD": it.expected_price_usd,
+                "売れ筋": "売れ筋" if it.sold_hit else "",
                 "価格の根拠": it.price_source,
                 "Net販売価格USD": c.get("net_sale_usd"),
                 "仕入価格(現在+国内送料)": c.get("purchase_jpy"),
@@ -1466,8 +1631,9 @@ def rows_for_output(items: list[Item]) -> list[dict]:
             }
         )
     order = {"◎": 0, "○": 1, "要確認": 2, "×": 3}
-    # ◎○は終了が近い順（入札の段取り順）、それ以外は余裕の大きい順
+    # ◎○は 売れ筋・$99超 を上に（bid_priority）、同じ順位の中は終了が近い順（入札の段取り順）。それ以外は余裕の大きい順
     rows.sort(key=lambda r: (order[r["判定"]],
+                             bid_priority(r["想定販売価格USD"], bool(r["売れ筋"])) if r["判定"] in ("◎", "○") else 0,
                              r["終了"] if r["判定"] in ("◎", "○") else "",
                              -(r["上限までの余裕"] or -10**9)))
     return rows
@@ -1685,6 +1851,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
     ap.add_argument("--offline", action="store_true", help="通信しない（手入力値と販売実績のみで計算）")
     ap.add_argument("--delay", type=float, default=1.5, help="通信の間隔（秒）")
+    ap.add_argument("--hit-searches", type=int, default=0,
+                    help="売れ筋（販売実績で利益が出ていた機種）を名指しで探す検索を、利益の大きい順に何本足すか（1本100件。0で足さない）")
     ap.add_argument("--max-per-search", type=int, default=2000, help="検索URL1つあたりに調べる出品数（上から。100件ごとに1回アクセス）")
     ap.add_argument("--out", type=Path, default=ROOT / "reports", help="出力フォルダ（省略時は reports/）")
     args = ap.parse_args(argv)
@@ -1700,12 +1868,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"為替は設定値を使用: 1USD = {fx:.2f}円", file=sys.stderr)
 
     items = read_items(args.input)
+    if args.sales is None:
+        import_extension_memo()
+        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
+                      if p.exists()]
+    sales = [row for p in args.sales for row in read_sales(p)]
     if not args.offline:
         text = args.input.read_text(encoding="utf-8-sig", errors="replace")
         known = {it.auction_id for it in items}
-        for su in find_search_urls(text):
+        searches = [(su, args.max_per_search) for su in find_search_urls(text)]
+        if args.hit_searches:
+            hits = hit_search_urls(sales, cfg, fx, args.hit_searches)
+            print(f"売れ筋の機種の検索: {len(hits)}本（{', '.join(lbl for _, lbl in hits[:8])}{' …' if len(hits) > 8 else ''}）",
+                  file=sys.stderr)
+            searches += [(u, 100) for u, _ in hits]  # 1本100件（終了が近い順の1ページ）
+        for su, lim in searches:
             try:
-                got = fetch_listing(su, args.max_per_search, args.delay)
+                got = fetch_listing(su, lim, args.delay)
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
                 print(f"検索URLを開けません({e.__class__.__name__}): {su}", file=sys.stderr)
                 continue
@@ -1720,13 +1899,8 @@ def main(argv: list[str] | None = None) -> int:
     if not items:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1
-    if args.sales is None:
-        import_extension_memo()
-        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
-                      if p.exists()]
     if args.kantei is None:
         args.kantei = next(iter(sorted(DATA.glob("kantei_bookmarklet.*"))), None)
-    sales = [row for p in args.sales for row in read_sales(p)]
     print(f"販売実績・相場: {len(sales)}件（{', '.join(p.name for p in args.sales) or 'なし'}）", file=sys.stderr)
     kantei = read_kantei_table(args.kantei) if args.kantei else []
     if args.kantei:

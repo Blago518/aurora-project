@@ -250,3 +250,50 @@ class SweetSpot(unittest.TestCase):
         data = bx.build_data(CFG, 150.0)
         out = run_js(data, f"console.log(JSON.stringify({json.dumps(list(cases))}.map((t)=>!!m.sweetSpot(t))))")
         self.assertEqual(out, list(cases.values()))
+
+
+class BidPriority(unittest.TestCase):
+    """入札候補の並び（2026-11-18）: 売れ筋・売値$99超を上に. Python（bid_priority・sold_hit）と拡張機能（bidPrio）で同じ."""
+
+    def test_sold_hit(self):
+        own = {"source": "自分の販売実績", "_price": 249.99, "purchase_jpy": "8000"}
+        self.assertTrue(ba.sold_hit(own, CFG, 150.0))
+        self.assertFalse(ba.sold_hit({**own, "purchase_jpy": "34000"}, CFG, 150.0))  # 仕入が高くて利益が出ていない
+        self.assertFalse(ba.sold_hit({**own, "source": "頒布会リスト"}, CFG, 150.0))  # 売れた記録ではない
+        self.assertFalse(ba.sold_hit({**own, "purchase_jpy": ""}, CFG, 150.0))
+
+    def test_priority_python(self):
+        self.assertEqual(ba.bid_priority(250, True), 0)
+        self.assertEqual(ba.bid_priority(250, False), 1)
+        self.assertEqual(ba.bid_priority(99, True), 2)
+        self.assertEqual(ba.bid_priority(60, False), 3)
+
+    def test_priority_js(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        cases = [(250, True), (250, False), (99, True), (60, False)]
+        items = [{"usd": u, "refs": [{"hit": h, "source": "自分の販売実績"}]} for u, h in cases]
+        data = bx.build_data(CFG, 150.0)
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(items)}.map((i)=>m.bidPrio(i))))")
+        self.assertEqual(out, [ba.bid_priority(u, h) for u, h in cases])
+
+
+class HitSearches(unittest.TestCase):
+    """売れ筋の機種を名指しで探す検索URL（2026-11-18）."""
+
+    def test_urls(self):
+        rows = [{"title": "[Near MINT] Nikon Ai Nikkor 28mm f/2 MF Lens From JAPAN", "source": "自分の販売実績",
+                 "_price": 249.99, "purchase_jpy": "8000"},
+                {"title": "[MINT] Contax T2 Titanium Film Camera", "source": "Chatwork販売実績(店)",
+                 "_price": 900.0, "purchase_jpy": "60000"},
+                {"title": "[MINT] Canon EF 50mm f/1.8 II", "source": "自分の販売実績", "_price": 74.99, "purchase_jpy": "9000"}]
+        got = ba.hit_search_urls(rows, CFG, 150.0)
+        labels = [lbl for _, lbl in got]
+        self.assertEqual(labels[0], "Contax T2")   # 利益の大きい順
+        self.assertIn("Nikon 28mm", labels)
+        self.assertNotIn("Canon 50mm", labels)       # 利益が出ていない機種は探さない
+        import urllib.parse as up
+        q = up.parse_qs(up.urlparse(got[0][0]).query)
+        self.assertEqual(q["va"], ["T2"])
+        self.assertIn("コンタックス", q["vo"][0])
+        self.assertEqual(q["auccat"], ["23636"])
