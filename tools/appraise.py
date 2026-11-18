@@ -805,9 +805,29 @@ def read_sales(path: Path | None) -> list[dict]:
         if price is None:
             continue
         row["_price"] = price + (_float_or_none(row.get("shipping_charged_usd")) or 0)
+        if str(row.get("source") or "").startswith("Chatwork"):
+            row["_price"] = chatwork_gross(row["_price"])
         row["_tokens"] = _tokens(row.get("ebay_query") or row.get("title") or "")
         rows.append(row)
     return rows
+
+
+def chatwork_gross(price: float, cfg: dict | None = None) -> float:
+    """Chatwork（スクールの販売報告）の販売価格は、だいたい送料 $30 込み（スクールの方針）. 商品代＝価格 − $30 とし、
+    うちが売るときの送料（入札判断の一律額 $40）を乗せた額を、送料込みの売値として扱う（2026-11-18 ユーザー決定）.
+    例: 報告 $169 → 商品代 $139（送料別）→ 送料込み $179."""
+    sh = (cfg or _base_cfg())["shipping"]
+    return round(price - float(sh.get("chatwork_included_usd", 30.0)) + float(sh["deduction_usd"]), 2)
+
+
+_BASE_CFG: dict | None = None
+
+
+def _base_cfg() -> dict:
+    global _BASE_CFG
+    if _BASE_CFG is None:
+        _BASE_CFG = load_config(None)
+    return _BASE_CFG
 
 
 ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)
@@ -852,15 +872,28 @@ def ebay_search_query(query: str, title: str = "") -> str:
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表"]
 
 
-def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
-    """売れ筋: 実際に売れた記録（自分の販売実績・Chatwork 実績）で、その時の仕入値から見て入札基準以上の利益が出ていた機種.
-    利益 = (売値 − eBay手数料) × 為替 × (1 − 円転ロス) − 送料（入札判断と同じ一律額）− 梱包 − 仕入値（2026-11-18 ユーザー決定: 売れた機種を優先）"""
+def is_sold_record(row: dict) -> bool:
+    """販売履歴として扱う記録: 自分の販売実績・Chatwork 販売実績・頒布会リスト（2026-11-18 ユーザー決定: 頒布会も売れたものとみなす）.
+    相場メモ（手で入れた相場）・鑑定表（推定）は販売履歴ではない."""
     src = row.get("source") or "自分の販売実績"
-    if "販売実績" not in src or src.startswith("相場メモ"):
+    return src.startswith("頒布会") or ("販売実績" in src and not src.startswith("相場メモ"))
+
+
+# 根拠の強さ「確認不要」になる source_tier の上限（0=自分 1=Chatwork 2=頒布会。2026-11-18 から頒布会も売れた記録として確認不要）
+SURE_TIER = 2
+
+
+def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
+    """売れ筋: 販売履歴のある機種（自分の古物台帳・Chatwork の他の人の事例・頒布会。頒布会も売れたものとみなす。
+    2026-11-18 ユーザー決定）. 仕入値が分かる記録は、その時の仕入値から見て入札基準以上の利益が出ていたものだけ.
+    利益 = (売値 − eBay手数料) × 為替 × (1 − 円転ロス) − 送料（入札判断と同じ一律額）− 梱包 − 仕入値"""
+    if not is_sold_record(row):
         return False
     price, cost = row.get("_price"), _float_or_none(row.get("purchase_jpy"))
-    if not price or not cost:
+    if not price:
         return False
+    if not cost:
+        return True  # 仕入値が分からない販売履歴（頒布会・Chatwork の一部）は、売れた機種として扱う
     e, j = cfg["ebay"], cfg["judge"]
     fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
     fees = price * fee_pct / 100 + e["per_order_fee_usd"]
@@ -873,7 +906,9 @@ def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
 # 「メーカー（英語か日本語のどちらか）」＋「型の語（28mm・T2・D7100 など）」で探し、照合は今までどおり相場データで行う
 def _hit_profit(row: dict, cfg: dict, fx: float) -> float:
     e = cfg["ebay"]
-    price, cost = float(row["_price"]), float(_float_or_none(row.get("purchase_jpy")) or 0)
+    price, cost = float(row["_price"]), _float_or_none(row.get("purchase_jpy"))
+    if not cost:  # 仕入値が分からない販売履歴は、売値の1割を利益の目安にして並べる
+        return price * fx * 0.1
     fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
     net = (price - price * fee_pct / 100 - e["per_order_fee_usd"]) * fx * (1 - cfg["fx"]["conversion_loss_pct"] / 100)
     return net - cfg["shipping"]["deduction_usd"] * fx - int(cfg["shipping"]["packing_jpy"]) - cost
@@ -905,7 +940,29 @@ def _model_word(title: str) -> str:
     return ""
 
 
-def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30) -> list[tuple[str, str]]:
+def lost_models(bid_rows: list[dict], days: int = 60) -> list[tuple[str, str]]:
+    """競り負けた入札（入札の記録の「負け」「落札失敗」）の機種 [(メーカー, 型の語)]. 新しい順・重複なし（2026-11-18 ユーザー決定）."""
+    from datetime import date, timedelta
+    since = (date.today() - timedelta(days=days)).isoformat()
+    out: list[tuple[str, str]] = []
+    for r in sorted(bid_rows, key=lambda r: r.get("end") or r.get("bid_at") or "", reverse=True):
+        if (r.get("result") or "") not in ("負け", "落札失敗") or (r.get("end") or r.get("bid_at") or "9")[:10] < since:
+            continue
+        k = (_brand_of(r.get("title", "")), _model_word(r.get("title", "")))
+        if all(k) and k not in out:
+            out.append(k)
+    return out
+
+
+def _model_url(brand: str, word: str) -> str:
+    ja = [j for j, en in BRANDS_JA if en == brand]
+    q = urllib.parse.urlencode({"va": word, "vo": " ".join([brand] + ja), "auccat": "23636", "aucminprice": "1000",
+                                "s1": "end", "o1": "a", "n": "100"})
+    return f"https://auctions.yahoo.co.jp/search/search?{q}"
+
+
+def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30,
+                    lost: list[tuple[str, str]] | None = None, lost_limit: int = 20) -> list[tuple[str, str]]:
     """売れ筋（sold_hit）の機種ごとの検索URL. 利益の大きい順に limit 本. 戻り値: [(URL, 機種の説明)]."""
     best: dict[tuple[str, str], float] = {}
     for r in sales:
@@ -916,15 +973,12 @@ def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30) ->
             continue
         k = (brand, word)
         best[k] = max(best.get(k, -1e9), _hit_profit(r, cfg, fx))
-    ja = {}
-    for j, en in BRANDS_JA:
-        ja.setdefault(en, []).append(j)
-    out = []
-    for (brand, word), _ in sorted(best.items(), key=lambda kv: -kv[1])[:limit]:
-        vo = " ".join([brand] + ja.get(brand, []))
-        q = urllib.parse.urlencode({"va": word, "vo": vo, "auccat": "23636", "aucminprice": "1000",
-                                    "s1": "end", "o1": "a", "n": "100"})
-        out.append((f"https://auctions.yahoo.co.jp/search/search?{q}", f"{brand} {word}"))
+    keys = [k for k, _ in sorted(best.items(), key=lambda kv: -kv[1])[:limit]]
+    out = [(_model_url(b, w), f"{b} {w}") for b, w in keys]
+    for b, w in (lost or [])[:lost_limit]:  # 競り負けた機種（同じ機種はまた出品される）
+        if (b, w) not in keys:
+            keys.append((b, w))
+            out.append((_model_url(b, w), f"{b} {w}（負けた機種）"))
     return out
 
 
@@ -1295,6 +1349,29 @@ def add_memo_history(entries: list[dict], dest: Path | None = None) -> int:
     return len(add)
 
 
+def stale_memos(memo_path: Path | None = None, hist_path: Path | None = None, days: int = 90,
+                limit: int = 10) -> list[dict]:
+    """見直したい相場メモ（最後に直した日が days 日より前、または日付が分からないもの）. 古い順に limit 件.
+    毎朝 Mac が「Mac_未登録機種」に足し、夜の下調べで新しい相場の候補を出す（2026-11-18 ユーザー決定）."""
+    from datetime import date, timedelta
+    memo_path = memo_path or DATA / "price_memo.csv"
+    if not memo_path.exists():
+        return []
+    hist = load_memo_history(hist_path)
+    cut = (date.today() - timedelta(days=days)).isoformat()
+    out = []
+    for r in csv.DictReader(memo_path.read_text(encoding="utf-8-sig").splitlines()):
+        t = (r.get("title") or "").strip()
+        v = _float_or_none(r.get("sold_price_usd"))
+        if not t or v is None:
+            continue
+        dates = [h[1] for h in hist.get(t, []) if h[1]]
+        last = max(dates) if dates else ""
+        if not last or last[:10] < cut:
+            out.append({"title": t, "usd": v, "date": last})
+    return sorted(out, key=lambda r: r["date"])[:limit]
+
+
 def load_memo_history(path: Path | None = None) -> dict[str, list]:
     """{機種: [[usd, 日付, 状態], ...]}（日付順。日付不明が先）. 拡張機能の「相場の動き」に使う."""
     path = path or DATA / "price_memo_history.csv"
@@ -1578,7 +1655,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "判定": mark,
                 "枠": "安心" if it.trusted else "チャレンジ",
                 # 確認不要＝根拠が 自分の販売実績・Chatwork実績・自分で登録した相場（または手入力）。頒布会リスト・鑑定表（推定）は確認してから
-                "根拠の強さ": "確認不要" if (it.ebay_price_usd is not None or (it.history_matches and source_tier(it.history_matches[0]) <= 1))
+                "根拠の強さ": "確認不要" if (it.ebay_price_usd is not None or (it.history_matches and source_tier(it.history_matches[0]) <= SURE_TIER))
                 else "確認してから" if it.expected_price_usd is not None else "",
                 "国内送料": it.domestic_shipping_jpy,
                 "国内送料の根拠": ("出品ページ" if "送料は出品ページ" in it.fetch_note else "検索結果")
@@ -1878,8 +1955,12 @@ def main(argv: list[str] | None = None) -> int:
         known = {it.auction_id for it in items}
         searches = [(su, args.max_per_search) for su in find_search_urls(text)]
         if args.hit_searches:
-            hits = hit_search_urls(sales, cfg, fx, args.hit_searches)
-            print(f"売れ筋の機種の検索: {len(hits)}本（{', '.join(lbl for _, lbl in hits[:8])}{' …' if len(hits) > 8 else ''}）",
+            bid_rows = []
+            for bp in (DATA / "bid_log.csv", DATA / "bid_history.csv"):
+                if bp.exists():
+                    bid_rows += list(csv.DictReader(bp.read_text(encoding="utf-8-sig").splitlines()))
+            hits = hit_search_urls(sales, cfg, fx, args.hit_searches, lost_models(bid_rows))
+            print(f"売れ筋・負けた機種の検索: {len(hits)}本（{', '.join(lbl for _, lbl in hits[:8])}{' …' if len(hits) > 8 else ''}）",
                   file=sys.stderr)
             searches += [(u, 100) for u, _ in hits]  # 1本100件（終了が近い順の1ページ）
         for su, lim in searches:

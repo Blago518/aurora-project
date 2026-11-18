@@ -259,8 +259,9 @@ class BidPriority(unittest.TestCase):
         own = {"source": "自分の販売実績", "_price": 249.99, "purchase_jpy": "8000"}
         self.assertTrue(ba.sold_hit(own, CFG, 150.0))
         self.assertFalse(ba.sold_hit({**own, "purchase_jpy": "34000"}, CFG, 150.0))  # 仕入が高くて利益が出ていない
-        self.assertFalse(ba.sold_hit({**own, "source": "頒布会リスト"}, CFG, 150.0))  # 売れた記録ではない
-        self.assertFalse(ba.sold_hit({**own, "purchase_jpy": ""}, CFG, 150.0))
+        self.assertTrue(ba.sold_hit({**own, "source": "頒布会リスト", "purchase_jpy": ""}, CFG, 150.0))  # 頒布会も売れた記録（仕入値なし）
+        self.assertFalse(ba.sold_hit({**own, "source": "相場メモ(MINT)"}, CFG, 150.0))  # 相場メモは販売履歴ではない
+        self.assertTrue(ba.sold_hit({**own, "purchase_jpy": ""}, CFG, 150.0))  # 仕入値が分からない販売履歴も売れた機種
 
     def test_priority_python(self):
         self.assertEqual(ba.bid_priority(250, True), 0)
@@ -297,3 +298,44 @@ class HitSearches(unittest.TestCase):
         self.assertEqual(q["va"], ["T2"])
         self.assertIn("コンタックス", q["vo"][0])
         self.assertEqual(q["auccat"], ["23636"])
+
+
+class LostAndStale(unittest.TestCase):
+    """負けた機種の検索と、古い相場メモの見直し（2026-11-18）."""
+
+    def test_lost_models(self):
+        from datetime import date
+        today = date.today().isoformat()
+        rows = [{"title": "CONTAX Carl Zeiss Distagon T 35mm F2.8 AEJ コンタックス", "result": "負け", "end": today},
+                {"title": "Nikon AF-S 70-200mm f/2.8G ED", "result": "落札(見込み)", "end": today},
+                {"title": "ニコン Nikon F3 HP ボディ", "result": "落札失敗", "end": "2020-01-01"}]
+        self.assertEqual(ba.lost_models(rows), [("Contax", "35mm")])
+        urls = ba.hit_search_urls([], CFG, 150.0, lost=ba.lost_models(rows))
+        self.assertEqual([lbl for _, lbl in urls], ["Contax 35mm（負けた機種）"])
+
+    def test_stale_memos(self):
+        with tempfile.TemporaryDirectory() as d:
+            memo, hist = Path(d) / "m.csv", Path(d) / "h.csv"
+            memo.write_text("title,sold_price_usd,source,memo\nA 50mm,140,相場メモ,\nB 28mm,120,相場メモ,\nC T2,900,相場メモ,\n",
+                            encoding="utf-8")
+            from datetime import date
+            hist.write_text(f"title,sold_price_usd,cond,date\nA 50mm,140,,2025-01-01\nB 28mm,120,,{date.today().isoformat()}\n",
+                            encoding="utf-8")
+            got = [m["title"] for m in ba.stale_memos(memo, hist)]
+            self.assertEqual(got, ["C T2", "A 50mm"])  # 日付不明が先、最近直した B は出さない
+
+
+class ChatworkShipping(unittest.TestCase):
+    """Chatwork の報告額は送料 $30 込み → 商品代＝報告額−$30、送料込みの売値＝商品代＋$40（2026-11-18）."""
+
+    def test_gross(self):
+        self.assertEqual(ba.chatwork_gross(169.0, CFG), 179.0)
+
+    def test_read_sales(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "cw.csv"
+            p.write_text("date,title,ebay_query,sold_price_usd,shipping_charged_usd,purchase_jpy,ebay_url,source\n"
+                         "2026-11-01,Nikon F3 HP,,169,0,11000,,Chatwork販売実績(店)\n"
+                         "2026-11-01,Nikon FM2,,169,0,11000,,自分の販売実績\n", encoding="utf-8")
+            rows = ba.read_sales(p)
+            self.assertEqual([r["_price"] for r in rows], [179.0, 169.0])  # 自分の販売実績はそのまま

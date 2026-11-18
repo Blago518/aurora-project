@@ -616,10 +616,17 @@
   const LOW_PRICE_USD = 99;
   const soldHit = (i) => !!(i.refs && i.refs[0] && i.refs[0].hit && !isMemo(i.refs[0]));
   const bidPrio = (i) => (i.usd != null && i.usd <= LOW_PRICE_USD ? 2 : 0) + (soldHit(i) ? 0 : 1);
-  // 根拠が実際に売れた記録（自分の販売実績・Chatwork）なら、その売値（送料込み＝eBayStock・取引明細の合計）も並べる。
-  // 相場メモ・頒布会（出品価格）は売値ではないので出さない
-  const soldLine = (r) => (r && r.price != null && /販売実績/.test(r.source || "") && !isMemo(r)
-    ? `<div class="s" title="根拠の実際の売値（送料込み）。eBayStock・eBayの取引明細の合計と同じ。上の送料別は、ここから送料$${SHIP()}を引いた額">売値 $${Number(r.price).toFixed(2).replace(/\.00$/, "")}（送料込み）</div>` : "");
+  // 根拠が販売履歴（自分・Chatwork・頒布会）なら、元の売値も並べる（自分の分は eBayStock・取引明細の合計と同じ）。
+  // Chatwork は報告額（送料$30込み）に戻して出す（appraise.chatwork_gross の逆。2026-11-18）。相場メモは出さない
+  const money = (v) => "$" + Number(v).toFixed(2).replace(/\.00$/, "");
+  const soldLine = (r) => {
+    if (!r || r.price == null || isMemo(r) || !/販売実績|^頒布会/.test(r.source || "")) return "";
+    if (/^Chatwork/.test(r.source || "")) {
+      const cw = Number(DATA.cfg.chatworkShipUsd || 30);
+      return `<div class="s" title="Chatwork の報告額（スクールの方針で送料$${cw}込み）。商品代＝報告額−$${cw}。うちは送料$${SHIP()}で出品する前提で計算">報告 ${money(r.price - SHIP() + cw)}（送料$${cw}込み）</div>`;
+    }
+    return `<div class="s" title="根拠の実際の売値（送料込み）。eBayStock・eBayの取引明細の合計と同じ。上の送料別は、ここから送料$${SHIP()}を引いた額">売値 ${money(r.price)}（送料込み）</div>`;
+  };
 
 const css = `
 #yhk,#akit{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(1100px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
@@ -848,7 +855,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const isAcc = (i) => i.flags.some((f) => f === "付属品のみ?" || f === "アダプター等");
     const accN = items.filter(isAcc).length;
     // 確認不要＝根拠が 自分の販売実績・Chatwork実績・自分で登録した相場（tier 0〜1）。頒布会リスト・鑑定表（推定）は確認してから
-    const sure = (i) => !!(i.refs && i.refs.length && i.refs[0].tier <= 1);
+    const sure = (i) => !!(i.refs && i.refs.length && i.refs[0].tier <= 2);  // 2026-11-18: 頒布会も売れた記録（appraise.SURE_TIER）
     const pin = state.pin || (state.pin = {});
     const secOf = (i) => pin[i.id] || naturalSec(i, isAcc, sure);
     const byEnd = (a, b) => (a.end < b.end ? -1 : 1);
@@ -1143,7 +1150,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       const id = link ? (link.getAttribute("href").match(/auction\/([^/?#]+)/) || [])[1] : "";
       const it0 = id && state.items.find((x) => x.id === id);
       if (it0) {
-        const sure0 = (i) => !!(i.refs && i.refs.length && i.refs[0].tier <= 1);
+        const sure0 = (i) => !!(i.refs && i.refs.length && i.refs[0].tier <= 2);
         const isAcc0 = (i) => i.flags.some((f) => f === "付属品のみ?" || f === "アダプター等");
         (state.pin || (state.pin = {}))[id] = state.pin[id] || naturalSec(it0, isAcc0, sure0);
         setListCond(id, sel ? sel.value : "");
@@ -1296,12 +1303,12 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     }
     const rank = (i) => (i.acc ? 9 : i.mark === "◎" ? 0 : i.mark === "○" ? 1 : i.mark === "要確認" && i.calc ? 2 : i.calc ? 3 : 4);
     const list = all.sort((a, b) => rank(a) - rank(b) || (b.calc && b.calc.profit || 0) - (a.calc && a.calc.profit || 0));
-    const buy = list.filter((i) => rank(i) <= 1).length, buyWeak = list.filter((i) => rank(i) <= 1 && (i.tent || (i.refs[0] && i.refs[0].tier >= 2))).length;
+    const buy = list.filter((i) => rank(i) <= 1).length, buyWeak = list.filter((i) => rank(i) <= 1 && (i.tent || (i.refs[0] && i.refs[0].tier >= 3))).length;
     const tier = (r) => (r == null ? "" : ["自分の販売実績", "Chatwork実績", "頒布会リスト（出品価格）", "鑑定表（推定）"][r] || "");
     const row = (i) => {
       const c = i.acc ? null : i.calc, r = i.refs[0] || {}, e = ebay(i.q);
       const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";
-      const weak = c && (i.tent || r.tier >= 2);  // 根拠が仮・頒布会リスト・鑑定表 → sold で確認してから
+      const weak = c && (i.tent || r.tier >= 3);  // 根拠が仮・鑑定表 → sold で確認してから（頒布会は 2026-11-18 から売れた記録）
       return `<tr class="${rank(i) >= 3 ? "kdim" : ""}"><td class="m ${cls}">${i.acc ? "除外" : i.calc ? `${i.tent ? '<span class="tmark">仮</span>' : ""}${esc(i.mark)}` : "－"}</td>
 <td><a class="t" href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.name)}</a>${weak && rank(i) <= 1 ? '<span class="flag">sold で確認してから</span>' : ""}${i.flags.filter((f) => !["動作品", "美品"].includes(f)).map((f) => `<span class="flag">${esc(f)}</span>`).join("")}
 <div class="s">${i.acc ? "付属品・アダプターなどのため対象外"
