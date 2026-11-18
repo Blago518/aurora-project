@@ -572,14 +572,53 @@ def listing_rank(title: str) -> int:
 
 
 def condition_adjusted(matches: list[dict], title: str, flags: list[str], step: float) -> list[float]:
-    """過去データの価格を、この出品の状態に合わせて 1ランク step ドルずつ補正する（ジャンクの出品は補正しない）."""
+    """過去データの価格を、この出品の状態に合わせて 1ランク step %ずつ補正する（ジャンクの出品は補正しない）.
+    2026-11-18 ユーザー決定（おまかせ）: 1ランク $10 の固定額 → 価格に対する割合（実績から推定。estimate_condition_step_pct）."""
     lr = None if "ジャンク" in flags or not step else listing_rank(title)
     out = []
     for m in matches:
         rr = COND_RANK.get(condition_of(m))
         p = m["_price"]
-        out.append(round(max(p + step * (lr - rr), 0), 2) if lr is not None and rr is not None else p)
+        out.append(round(max(p * (1 + step / 100) ** (lr - rr), 0), 2) if lr is not None and rr is not None else p)
     return out
+
+
+def estimate_condition_step_pct(rows: list[dict], fallback: float, lo: float = 3.0, hi: float = 15.0,
+                                min_pairs: int = 5) -> tuple[float, int]:
+    """実際に売れた記録（自分・Chatwork の販売実績）から、状態1ランクで価格が何%変わるかを推定する.
+    同じ機種（照合の語が同じ）で状態の違う2件ずつを比べ、1ランクあたりの比の中央値。足りなければ fallback.
+    戻り値: (%, 比べた組の数)."""
+    import math
+    groups: dict[frozenset, list[tuple[int, float]]] = {}
+    for r in rows:
+        src = r.get("source") or "自分の販売実績"
+        if "販売実績" not in src or not r.get("_price"):
+            continue
+        rank = COND_RANK.get(condition_of(r))
+        toks = r.get("_tokens")
+        if rank is None or not toks or len(toks) < 2:
+            continue
+        groups.setdefault(frozenset(toks), []).append((rank, float(r["_price"])))
+    logs = []
+    for vals in groups.values():
+        for i in range(len(vals)):
+            for k in range(i + 1, len(vals)):
+                (ra, pa), (rb, pb) = vals[i], vals[k]
+                if ra != rb and pa > 0 and pb > 0:
+                    logs.append(math.log(pa / pb) / (ra - rb))
+    if len(logs) < min_pairs:
+        return fallback, len(logs)
+    pct = (math.exp(statistics.median(logs)) - 1) * 100
+    return round(min(max(pct, lo), hi), 1), len(logs)
+
+
+def condition_step_pct(cfg: dict, rows: list[dict]) -> float:
+    """設定（[judge] condition_step_pct。condition_step_auto=true なら実績から推定）."""
+    j = cfg["judge"]
+    base = float(j.get("condition_step_pct", 0) or 0)
+    if not base or not j.get("condition_step_auto", True):
+        return base
+    return estimate_condition_step_pct(rows, base)[0]
 
 
 def detect_flags(title: str) -> list[str]:
@@ -1070,6 +1109,40 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
     return out
 
 
+# 光学難（2026-11-18 ユーザー決定・おまかせ）: カビ・クモリ・バルサムなどがはっきり書かれた出品は × で見送る（実績は平均赤字）。
+# 「カビ・クモリなし」のような打ち消しは desc_hits の規則で除く。傷・ヤケなどその他の難は今までどおり要確認
+OPTICAL_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)")
+OTHER_DEFECT_RE = re.compile(r"ヤケ|傷あり|キズあり|拭き傷")
+_OPT_NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
+
+
+def optical_title_words(text: str) -> list[str]:
+    """商品名などの短い文から、打ち消されていない光学難の語（「カビ・クモリなし」「クモリ：無」は除く）. 拡張機能の opticalWords と同じ."""
+    out = []
+    for m in OPTICAL_RE.finditer(text or ""):
+        w, rest = m.group(1), text[m.start():m.start() + 60]
+        kv = re.match(r"^\s*[：:]\s*([^\s　、。|｜]+)", rest[len(w):])
+        if kv:
+            if re.match(r"^(なし|無し|ナシ|無|ない|-|ー|×)", kv.group(1)):
+                continue
+        else:
+            cut = re.search(r"[。\n】|｜]", rest)
+            if _OPT_NEG_RE.search(rest[:cut.start()] if cut else rest):
+                continue
+        if w not in out:
+            out.append(w)
+    return out
+
+
+def optical_skip_words(title: str, hits: list[dict] | None = None) -> list[str]:
+    """商品名と説明文（desc_hits の結果）にある、打ち消されていない光学難の語."""
+    out = optical_title_words(title)
+    for h in hits or []:
+        if OPTICAL_RE.fullmatch(h["word"]) and h["word"] not in out:
+            out.append(h["word"])
+    return out
+
+
 def judge(item: Item) -> tuple[str, str]:
     c = item.calc
     if not c:
@@ -1081,10 +1154,13 @@ def judge(item: Item) -> tuple[str, str]:
     now = item.current_price_jpy
     if {"付属品のみ?", "アダプター等", "セット品"} & set(item.flags):
         return "要確認", prefix + "付属品だけの出品の可能性。本体か商品ページで確認してください"
-    if item.desc_hits:  # 説明文にカビ・クモリ等（拡張機能の説明文チェックと同じ規則）
+    opt = optical_skip_words(item.title, item.desc_hits)
+    if opt:  # 光学難は見送り（修理しない方針。実績は平均赤字）
+        return "×", prefix + "光学難（" + "・".join(opt) + "）は見送り"
+    if item.desc_hits:  # 説明文に傷・ヤケ等（拡張機能の説明文チェックと同じ規則）
         return "要確認", prefix + "説明文に " + "・".join(h["word"] for h in item.desc_hits) + "（方針では避ける）"
-    if "光学難あり" in item.flags:  # 方針: 修理しないので光学難（カビ・クモリ等）は避ける
-        return "要確認", prefix + "光学難あり（方針では避ける）。写真で程度を確認してください"
+    if "光学難あり" in item.flags and OTHER_DEFECT_RE.search(item.title or ""):  # 傷あり・ヤケ等。「カビ・クモリなし」は除く
+        return "要確認", prefix + "難あり（方針では避ける）。写真で程度を確認してください"
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
     now = c.get("bid_now")
@@ -1112,7 +1188,7 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
     if item.ebay_price_usd is not None:
         item.expected_price_usd, item.price_source = item.ebay_price_usd, "手入力"
     elif item.history_matches:
-        step = float(cfg["judge"].get("condition_step_usd", 0) or 0)
+        step = float(cfg["judge"].get("_condition_step_pct", cfg["judge"].get("condition_step_pct", 0)) or 0)
         ps = condition_adjusted(item.history_matches, item.title, item.flags, step)
         item.expected_price_usd = round(statistics.median(ps), 2)
         src = str(item.history_matches[0].get("source", ""))
@@ -1397,6 +1473,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
     memo = [s for s in sales if is_memo(s)]
     others = [s for s in sales if not is_memo(s)]
     set_known_models([s.get("title") for s in sales] + [k.get("title") for k in (kantei or [])])
+    cfg["judge"]["_condition_step_pct"] = condition_step_pct(cfg, others)  # 状態1ランクの補正（%）を実績から
     for i, item in enumerate(items, 1):
         if not item.prefilled:
             print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)

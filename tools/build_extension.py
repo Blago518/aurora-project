@@ -26,12 +26,13 @@ SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv")
 
 
 def build_data(cfg: dict, fx: float) -> dict:
-    refs = []
+    refs, rows = [], []
     for name in SOURCES:
         p = ROOT / "data" / name
         if not p.exists():
             continue
         for r in ba.read_sales(p):
+            rows.append(r)
             refs.append({
                 "title": r.get("title", ""), "price": round(r["_price"], 2), "tier": ba.source_tier(r),
                 "source": r.get("source") or "自分の販売実績", "tokens": sorted(r["_tokens"]),
@@ -64,7 +65,8 @@ def build_data(cfg: dict, fx: float) -> dict:
             "trustedMinProfit": j.get("trusted_min_profit_jpy", j["min_profit_jpy"]),
             "trustedMinMarginPct": j.get("trusted_min_margin_pct", j["min_margin_pct"]),
             "junkFactor": j.get("junk_price_factor", 1.0),
-            "condStep": j.get("condition_step_usd", 0),
+            # 状態1ランクの補正（%）。実績から推定（appraise.condition_step_pct。相場メモは使わない）
+            "condStep": ba.condition_step_pct(cfg, [r for r in rows if not ba.is_memo(r)]),
             "activeMinCount": j.get("active_min_count", 5),
             "browse": False,  # eBay のキーがあれば main() で True にする
             "autoMaxItems": min(cfg.get("extension", {}).get("auto_max_items", 1000), 1000),  # 一度に読むのは1000件まで

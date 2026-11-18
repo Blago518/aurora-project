@@ -58,7 +58,10 @@ sold_price_quantile = 0.5
 junk_price_factor = 1.0  # 2026-11-16 ユーザー指定: ジャンクも割り引かない（7割評価をやめた）
 # 状態の補正: 過去データの状態とこの出品の状態が1ランク違うごとに、販売価格を何ドル動かすか（0で補正しない）
 # ランク: Unused > TOP MINT > MINT > Almost MINT > Near MINT > Exc+5 > … > Exc（2026-11-15 ユーザー指定。［直す］で選べるのは Exc+5 まで）。出品の状態はヤフオクの商品名の日本語（美品など）から。表記なしは Near MINT
-condition_step_usd = 10
+# 2026-11-18 ユーザー決定（おまかせ）: 固定額（1ランク $10）をやめ、価格に対する割合にした。実績（自分・Chatwork の販売実績のうち、
+# 同じ機種で状態の違う組）から1ランクあたりの%を毎回推定する（3〜15%の範囲。組が5つ未満なら下の値）
+condition_step_pct = 8.0
+condition_step_auto = true
 # 安心枠（フォロー中のストア＝安心ストア）の基準。全体統一（[judge] と同じ値にする）
 trusted_min_profit_jpy = 2000
 trusted_min_margin_pct = 8.0
