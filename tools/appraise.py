@@ -869,6 +869,65 @@ def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
     return profit >= j["min_profit_jpy"] and profit / (price * fx) * 100 >= j["min_margin_pct"]
 
 
+# 売れ筋の機種を名指しで探す検索（2026-11-18 ユーザー決定）: 販売実績で利益が出ていた機種ごとに、ヤフオクの検索URLを毎回自動で作る。
+# 「メーカー（英語か日本語のどちらか）」＋「型の語（28mm・T2・D7100 など）」で探し、照合は今までどおり相場データで行う
+def _hit_profit(row: dict, cfg: dict, fx: float) -> float:
+    e = cfg["ebay"]
+    price, cost = float(row["_price"]), float(_float_or_none(row.get("purchase_jpy")) or 0)
+    fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
+    net = (price - price * fee_pct / 100 - e["per_order_fee_usd"]) * fx * (1 - cfg["fx"]["conversion_loss_pct"] / 100)
+    return net - cfg["shipping"]["deduction_usd"] * fx - int(cfg["shipping"]["packing_jpy"]) - cost
+
+
+def _brand_of(title: str) -> str:
+    t = unicodedata.normalize("NFKC", title or "")
+    for ja, en in BRANDS_JA:
+        if ja in t:
+            return en
+    for w in re.findall(r"[A-Za-z]+", t):
+        lw = w.lower()
+        if lw in BRANDS_EN and BRANDS_EN[lw] not in ("OM", "Carl"):
+            return BRANDS_EN[lw]
+        if lw in LENS_LINES and LENS_LINES[lw] != "Zeiss":
+            return LENS_LINES[lw]
+    return ""
+
+
+def _model_word(title: str) -> str:
+    """型の語: 焦点距離（28mm・80-200mm）か型番（T2・D7100・A-1・XA2）。F値・数字だけの語は使わない."""
+    for tok in title_to_query(title, max_tokens=12).split():
+        tl = tok.lower().strip(".,")
+        if re.fullmatch(r"\d+(?:-\d+)?mm", tl):
+            return tl
+        if re.search(r"\d", tl) and re.search(r"[a-z]", tl) and not re.fullmatch(r"f/?\d+(?:\.\d+)?", tl) \
+                and not re.fullmatch(r"\d+(?:\.\d+)?(?:mp|x)", tl):
+            return tok
+    return ""
+
+
+def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30) -> list[tuple[str, str]]:
+    """売れ筋（sold_hit）の機種ごとの検索URL. 利益の大きい順に limit 本. 戻り値: [(URL, 機種の説明)]."""
+    best: dict[tuple[str, str], float] = {}
+    for r in sales:
+        if not sold_hit(r, cfg, fx):
+            continue
+        brand, word = _brand_of(r.get("title", "")), _model_word(r.get("title", ""))
+        if not brand or not word:
+            continue
+        k = (brand, word)
+        best[k] = max(best.get(k, -1e9), _hit_profit(r, cfg, fx))
+    ja = {}
+    for j, en in BRANDS_JA:
+        ja.setdefault(en, []).append(j)
+    out = []
+    for (brand, word), _ in sorted(best.items(), key=lambda kv: -kv[1])[:limit]:
+        vo = " ".join([brand] + ja.get(brand, []))
+        q = urllib.parse.urlencode({"va": word, "vo": vo, "auccat": "23636", "aucminprice": "1000",
+                                    "s1": "end", "o1": "a", "n": "100"})
+        out.append((f"https://auctions.yahoo.co.jp/search/search?{q}", f"{brand} {word}"))
+    return out
+
+
 # 入札候補の並び（2026-11-18 ユーザー決定）: 売値（送料込み）が $99 以下の候補は下に回す（実績では1件あたりの利益が小さい）
 LOW_PRICE_USD = 99.0
 
@@ -1792,6 +1851,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
     ap.add_argument("--offline", action="store_true", help="通信しない（手入力値と販売実績のみで計算）")
     ap.add_argument("--delay", type=float, default=1.5, help="通信の間隔（秒）")
+    ap.add_argument("--hit-searches", type=int, default=0,
+                    help="売れ筋（販売実績で利益が出ていた機種）を名指しで探す検索を、利益の大きい順に何本足すか（1本100件。0で足さない）")
     ap.add_argument("--max-per-search", type=int, default=2000, help="検索URL1つあたりに調べる出品数（上から。100件ごとに1回アクセス）")
     ap.add_argument("--out", type=Path, default=ROOT / "reports", help="出力フォルダ（省略時は reports/）")
     args = ap.parse_args(argv)
@@ -1807,12 +1868,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"為替は設定値を使用: 1USD = {fx:.2f}円", file=sys.stderr)
 
     items = read_items(args.input)
+    if args.sales is None:
+        import_extension_memo()
+        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
+                      if p.exists()]
+    sales = [row for p in args.sales for row in read_sales(p)]
     if not args.offline:
         text = args.input.read_text(encoding="utf-8-sig", errors="replace")
         known = {it.auction_id for it in items}
-        for su in find_search_urls(text):
+        searches = [(su, args.max_per_search) for su in find_search_urls(text)]
+        if args.hit_searches:
+            hits = hit_search_urls(sales, cfg, fx, args.hit_searches)
+            print(f"売れ筋の機種の検索: {len(hits)}本（{', '.join(lbl for _, lbl in hits[:8])}{' …' if len(hits) > 8 else ''}）",
+                  file=sys.stderr)
+            searches += [(u, 100) for u, _ in hits]  # 1本100件（終了が近い順の1ページ）
+        for su, lim in searches:
             try:
-                got = fetch_listing(su, args.max_per_search, args.delay)
+                got = fetch_listing(su, lim, args.delay)
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
                 print(f"検索URLを開けません({e.__class__.__name__}): {su}", file=sys.stderr)
                 continue
@@ -1827,13 +1899,8 @@ def main(argv: list[str] | None = None) -> int:
     if not items:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
         return 1
-    if args.sales is None:
-        import_extension_memo()
-        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
-                      if p.exists()]
     if args.kantei is None:
         args.kantei = next(iter(sorted(DATA.glob("kantei_bookmarklet.*"))), None)
-    sales = [row for p in args.sales for row in read_sales(p)]
     print(f"販売実績・相場: {len(sales)}件（{', '.join(p.name for p in args.sales) or 'なし'}）", file=sys.stderr)
     kantei = read_kantei_table(args.kantei) if args.kantei else []
     if args.kantei:

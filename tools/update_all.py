@@ -197,7 +197,8 @@ def bid_list() -> int | None:
         return None
     reports = ROOT / "reports"
     before = set(reports.glob("bid_report_*.csv")) if reports.exists() else set()
-    if not run("appraise.py", "--max-per-search", "500"):
+    # 売れ筋の機種を名指しで探す検索を30本足す（2026-11-18 ユーザー決定。販売履歴のある機種を入札リストに多く出す）
+    if not run("appraise.py", "--max-per-search", "500", "--hit-searches", "30"):
         return None
     new = sorted(set(reports.glob("bid_report_*.csv")) - before)
     if not new:
