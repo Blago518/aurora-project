@@ -1062,7 +1062,7 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ 入札候補 ${good.length}件${weak.length + waits.length + pinnedWaits.length ? ` ・ 確認してから ${weak.length + waits.length + pinnedWaits.length}件` : ""}${accN ? ` ・ 付属品など ${accN}件は除外` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all" title="ヤフオクに負担をかけないよう、一度に読むのは1000件まで">続けて鑑定（次の${Math.min(LOAD_STEP, state.total - ((state.next || 1) - 1))}件・残り${state.total - ((state.next || 1) - 1)}件）</button>` : ""}
-${pageSeller() ? `<button data-a="store" title="このストアの全ページの全商品を読み込み、判定付きで終了が近い順に1つの表で表示します（×・相場なしも含む）">${ALL ? "通常の表示に戻す" : "人気ストア"}</button>` : ""}${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
+${pageSeller() ? `<button data-a="store" title="このストアの全ページの全商品を読み込み、判定付きで終了が近い順に1つの表で表示します（×・相場なしも含む）">${ALL ? "通常の表示に戻す" : "人気ストア"}</button>` : ""}${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="openGood" title="入札候補（◎○）を、並び順（売れ筋・高い物が先）で最大10件、新しいタブにまとめて開きます。上限額の一覧はコピーされるので、メモ帳などに貼って見ながら入札できます（入札はご自身で。自動入札はしません）">◎○をまとめて開く</button><button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ eBayの$は送料別（計算では送料$${SHIP()}込みに戻して手数料を計算）${DATA.cfg.junkFactor < 1 ? ` ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価` : ""} ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 ${ALL ? allTable() : `<h4 style="margin:10px 0 4px">入札候補（終了が近い順）― 上限額をそのまま入札欄へ</h4>
 ${good.length ? `<table>${head}${trustRows(good)}${good.filter((i) => !i.trusted).length ? `<tr><td colspan="6" class="tsep chal">チャレンジ枠（その他の出品者） ${good.filter((i) => !i.trusted).length}件 ― 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上</td></tr>` : ""}${good.filter((i) => !i.trusted).map(row).join("")}</table>` : `<div class="s">このページには、確認なしで入札できる出品はありません（下の「確認してから入札」を見てください）。</div>`}
@@ -1272,6 +1272,26 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       saveMemoFile();
       await navigator.clipboard.writeText(csv).catch(() => {});
       btn.textContent = "コピーしました";
+    }
+    if (a === "openGood") {  // 入札候補（◎○）を最大10件まとめて開き、上限額の一覧をコピー（2026-11-18 ユーザー決定）
+      const seen = load(LS_SEEN, {});
+      const good = state.items.filter((i) => (i.mark === "◎" || i.mark === "○") && !seen[i.id])
+        .sort((x, y) => bidPrio(x) - bidPrio(y) || (x.end < y.end ? -1 : 1)).slice(0, 10);
+      if (!good.length) { btn.textContent = "開く候補がありません"; setTimeout(() => (btn.textContent = "◎○をまとめて開く"), 3000); return; }
+      const urls = good.map((i) => `https://auctions.yahoo.co.jp/jp/auction/${i.id}`);
+      const txt = good.map((i, n) => `${n + 1}. ${i.mark} 入札上限 ${yen(i.calc.maxBid)}（このまま入札）${i.tax ? `・ストア支払い${yen(Math.round(i.calc.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}` : ""} ${endStr(i.end)}終了 ${i.title}`).join("\n");
+      await navigator.clipboard.writeText(txt).catch(() => {});
+      const done = (msg) => { btn.textContent = msg; setTimeout(() => (btn.textContent = "◎○をまとめて開く"), 6000); };
+      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
+        try {
+          chrome.runtime.sendMessage({ type: "openTabs", urls, max: 10 }, (r) => {
+            const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : r && r.error;
+            const rest = urls.slice((r && r.opened) || 0);
+            rest.forEach((u) => window.open(u, "_blank"));
+            done(err ? `${urls.length}件開きました（予備の開き方）・上限額をコピー` : `${urls.length}件開きました・上限額をコピーしました`);
+          });
+        } catch (e) { urls.forEach((u) => window.open(u, "_blank")); done(`${urls.length}件開きました・上限額をコピー`); }
+      } else { urls.forEach((u) => window.open(u, "_blank")); done(`${urls.length}件開きました・上限額をコピー`); }
     }
     if (a === "copy") {
       const good = state.items.filter((i) => i.mark === "◎" || i.mark === "○").sort((x, y) => (x.end < y.end ? -1 : 1));
