@@ -493,3 +493,16 @@ class JapaneseTitlePatterns(unittest.TestCase):
                     f"console.log(JSON.stringify({json.dumps(list(self.CASES), ensure_ascii=False)}.map((t)=>[m.modelWord(t),m.setPartTitles(t)])))")
             out = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout)
         self.assertEqual(out, [[ba._model_word(t), ba.set_part_titles(t)] for t in self.CASES])
+
+
+class RecsSoldHistory(unittest.TestCase):
+    """店舗アプリのおすすめ: 頒布会も販売履歴として数える（2026-11-18）."""
+
+    def test_hanpukai_counts(self):
+        rows = [{"title": "Nikon FM2 Black", "source": "頒布会リスト(SPM)", "_price": 300.0, "purchase_jpy": ""},
+                {"title": "Nikon FM2 Black", "source": "Chatwork販売実績(店)", "_price": 320.0, "purchase_jpy": "20000"}]
+        recs = bs.recommendations(rows, CFG, 150.0)
+        fm2 = [r for r in recs if "FM2" in r["label"]]
+        self.assertTrue(fm2)
+        self.assertEqual(fm2[0]["sales"], 2)            # 頒布会も販売の回数に入る
+        self.assertEqual(fm2[0]["basis"], "Chatwork実績")  # 一番強い根拠の名前
