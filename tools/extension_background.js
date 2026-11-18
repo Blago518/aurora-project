@@ -79,8 +79,10 @@ function saveMemo(csv) {
 }
 
 // ［全て開く］: 今のタブのすぐ右に、渡された順（ヤフオク → sold → now）で開く。ヤフオクと eBay の URL だけ
-function openTabs(urls, tab) {
-  const ok = (urls || []).filter((u) => /^https:\/\/(auctions\.yahoo\.co\.jp|(www\.)?ebay\.com)\//.test(String(u))).slice(0, 5);
+function openTabs(urls, tab, max) {
+  // ［全て開く］は5件まで、［◎○をまとめて開く］は10件まで
+  const lim = Math.min(Math.max(Number(max) || 5, 1), 10);
+  const ok = (urls || []).filter((u) => /^https:\/\/(auctions\.yahoo\.co\.jp|(www\.)?ebay\.com)\//.test(String(u))).slice(0, lim);
   const index = tab && tab.index != null ? tab.index + 1 : undefined;
   const opened = [];
   // 全部を裏で開いてから、最初（ヤフオク）を前に出す（開いた直後にタブが切り替わって残りが開かないのを防ぐ）
@@ -99,7 +101,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
     return true;
   }
   if (msg && msg.type === "openTabs") {
-    openTabs(msg.urls, _sender && _sender.tab).then((n) => send({ ok: true, opened: n }), (e) => send({ error: String((e && e.message) || e) }));
+    openTabs(msg.urls, _sender && _sender.tab, msg.max).then((n) => send({ ok: true, opened: n }), (e) => send({ error: String((e && e.message) || e) }));
     return true;
   }
   // オークファンの入札予約: ヤフオクのパネルの［予約］→ 予約ページを開き、URL と上限額を渡す（予約するのは人）
