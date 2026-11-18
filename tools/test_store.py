@@ -454,3 +454,42 @@ class FNumberOrBody(unittest.TestCase):
                     f"console.log(JSON.stringify({json.dumps(list(self.CASES), ensure_ascii=False)}.map((t)=>m.modelWord(t))))")
             out = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout)
         self.assertEqual(out, list(self.CASES.values()))
+
+
+class JapaneseTitlePatterns(unittest.TestCase):
+    """日本語の商品名のよくある書き方で、型の語とまとめ売りの中身を正しく取れるか（2026-11-18）. Python と JS で同じ."""
+
+    CASES = {
+        "ニコン F3 50mm F1.4 28mm F2.8 セット": ("F3", 3),          # 区切り無しの並び。F3 はボディ
+        "Canon AE-1 35mm フィルムカメラ + FD 50mm F1.8 セット": ("AE-1", 2),  # 35mm はフィルムの規格
+        "レンズ 50mm・28mm・135mm まとめ ニコン": ("50mm", 3),      # 「・」区切り
+        "Nikon F3 35mm フィルムカメラ": ("F3", 0),
+        "オリンパス ５０ミリ F1.4 + OM-1 セット": ("50mm", 2),      # 全角・ミリ
+        "Pentax SP + タクマー 55mm F1.8 セット": ("SP", 2),         # 数字の無いボディの型番
+        "Nikon F2 フォトミック ボディ ＋ ニッコール 50mm F2 セット": ("F2", 2),
+        "Nikkor 35 F2 レンズ": ("", 0),                               # F2 は F値
+        "Nikon FM2 ボディ": ("FM2", 0),
+        "Nikon AI 50mm F1.4": ("50mm", 0),                            # AI は型番ではない
+        "Contax RTS II": ("RTS", 0),
+        "Mamiya RB67 + 127mm F3.8": ("RB67", 2),
+        "1円～/Nikon/ニコン/D5100/ボディ/N031": ("D5100", 0),         # ストアの管理番号は使わない
+    }
+
+    def test_python(self):
+        got = {t: (ba._model_word(t), len(ba.set_part_titles(t))) for t in self.CASES}
+        self.assertEqual(got, self.CASES)
+        self.assertNotIn("35mm", " ".join(ba.set_part_titles("Canon AE-1 35mm フィルムカメラ + FD 50mm F1.8 セット")))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(CFG, 150.0)
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"global.localStorage={{getItem(){{return null}},setItem(){{}}}};const m=require({json.dumps(str(js))});"
+                    f"console.log(JSON.stringify({json.dumps(list(self.CASES), ensure_ascii=False)}.map((t)=>[m.modelWord(t),m.setPartTitles(t)])))")
+            out = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out, [[ba._model_word(t), ba.set_part_titles(t)] for t in self.CASES])

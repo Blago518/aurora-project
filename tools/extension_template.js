@@ -569,7 +569,7 @@
 
   // ------------------------------------------------------------------ 鑑定
   // ---- まとめ売り（appraise.py の set_part_titles・set_value と同じ。2026-11-18）: 中身ごとに相場を当てて合計する
-  const SET_SPLIT_RE = /\s*(?:[＋+、,／/＆&]|\sと\s)\s*/;
+  const SET_SPLIT_RE = /\s*(?:[＋+、,／/＆&・]|\sと\s|\s(?:and|with)\s)\s*/i;
   function brandOf(title) {
     const t = String(title || "").normalize("NFKC");
     for (const [ja, en] of C.brandsJa) if (t.includes(ja)) return en;
@@ -580,31 +580,64 @@
     }
     return "";
   }
-  // F値か（appraise.py の is_f_number と同じ）: f/2・f1.4・1:2 は常に F値。「F2」「F3」は同じ文にレンズの書き方があれば F値、無ければボディの型番
-  const LENS_HINT_RE = /\d\s*mm|レンズ|lens|単焦点|ズーム|zoom|nikkor|ニッコール|zuiko|ズイコー|takumar|タクマー|rokkor|ロッコール|sekor|serenar|hexanon|ヘキサノン|planar|プラナー|sonnar|ゾナー|distagon|ディスタゴン|summicron|ズミクロン|summilux|ズミルックス|elmarit|エルマリート|elmar|tessar|テッサー|xenar|biogon|macro|マクロ|1\s*:\s*\d/i;
-  function isFNumber(tok, text) {
+  // 型の語（appraise.py の norm_title・lens_mm_spans・is_f_number・_model_word・set_part_titles と同じ。2026-11-18）
+  const FILM_AFTER_RE = new RegExp(C.filmFormatAfter.replace("(?i)", ""), "i");
+  const F_BEFORE_RE = new RegExp("(?:\\d+(?:\\.\\d+)?\\s*(?:mm)?|" + C.lensWords + ")\\s*[/,:]?\\s*$", "i");
+  const BODY_SKIP = new Set(C.bodyCodeSkip), BODY_OK = new Set(C.bodyCodeOk);
+  const normTitle = (text) => String(text || "").normalize("NFKC").replace(/(\d)\s*(?:ミリ|㎜)/g, "$1mm");
+  function lensMmSpans(text) {
+    const t = normTitle(text), out = [];
+    for (const m of t.matchAll(/(?<![\d.])(\d+(?:-\d+)?)\s*mm(?![a-z])/gi))
+      if (!FILM_AFTER_RE.test(t.slice(m.index + m[0].length))) out.push({ start: m.index, end: m.index + m[0].length, n: m[1] });
+    return out;
+  }
+  function isFNumber(tok, text, start) {
     const tl = tok.toLowerCase().replace(/^[.,]+|[.,]+$/g, "");
     if (/^(?:f(?:\/\d+(?:\.\d+)?|\d+\.\d+)|1:\d+(?:\.\d+)?)$/.test(tl)) return true;
-    if (/^f\d{1,2}$/.test(tl)) return LENS_HINT_RE.test(String(text || "").normalize("NFKC"));
+    if (/^f\d{1,2}$/.test(tl)) {
+      const t = normTitle(text), i = start != null ? start : t.toLowerCase().indexOf(tl);
+      return F_BEFORE_RE.test(t.slice(Math.max(0, i - 14), Math.max(0, i)));
+    }
     return false;
   }
   function modelWord(title) {
-    for (const tok of titleToQuery(title, 12).split(" ").filter(Boolean)) {
-      const tl = tok.toLowerCase().replace(/^[.,]+|[.,]+$/g, "");
-      if (/^\d+(?:-\d+)?mm$/.test(tl)) return tl;
-      if (/\d/.test(tl) && /[a-z]/.test(tl) && !isFNumber(tok, title) && !/^\d+(?:\.\d+)?(?:mp|x)$/.test(tl)) return tok;
+    const t = normTitle(title);
+    const mm = new Map(lensMmSpans(t).map((s) => [s.start, s.n + "mm"]));
+    const allowed = new Set(titleToQuery(t, 12).toLowerCase().split(" ").filter(Boolean));
+    let prev = "";
+    for (const m of t.matchAll(/[Ff]\/\d+(?:\.\d+)?|1:\d+(?:\.\d+)?|[A-Za-z0-9][A-Za-z0-9\-]*(?:\.\d+)?/g)) {
+      const tok = m[0], tl = tok.toLowerCase();
+      if (mm.has(m.index)) return mm.get(m.index);
+      if (allowed.has(tl) || allowed.has(tl.replace(/^[.,]+|[.,]+$/g, ""))) {
+        if (/\d/.test(tl) && /[a-z]/.test(tl) && !/^\d+(?:-\d+)?mm$/.test(tl) && !isFNumber(tok, t, m.index) && !/^\d+(?:\.\d+)?(?:mp|x|s)$/.test(tl)) return tok;
+        if (/^[A-Za-z]{2,3}$/.test(tok) && tok === tok.toUpperCase() && brandOf(prev) && (BODY_OK.has(tl) || !BODY_SKIP.has(tl))) return tok;
+      }
+      prev = tok;
     }
     return "";
   }
+  const FILM_MM_RE = new RegExp("(?<![\\d.])\\d+\\s*mm(?=\\s*(?:判|フィルム|film|カメラ|camera|一眼|レンジファインダー|rangefinder|slr|コンパクト|compact))", "gi");
+  function splitByModels(seg) {
+    const spans = lensMmSpans(seg);
+    if (!spans.length) return [seg];
+    const head = seg.slice(0, spans[0].start);
+    if (spans.length < 2 && !modelWord(head)) return [seg];
+    const cuts = spans.map((s) => s.start);
+    const pieces = [head].concat(cuts.map((c, i) => seg.slice(c, i + 1 < cuts.length ? cuts[i + 1] : seg.length)));
+    return pieces.filter((x) => x.trim());
+  }
   function setPartTitles(title) {
-    const t = String(title || "").normalize("NFKC"), b0 = brandOf(t), out = [];
-    for (let seg of t.split(SET_SPLIT_RE)) {
-      seg = seg.trim();
-      if (!seg || !modelWord(seg)) continue;
-      const f = detectFlags(seg);
-      if (f.includes("付属品のみ?") || f.includes("アダプター等")) continue;
-      if (b0 && !brandOf(seg)) seg = b0 + " " + seg;
-      out.push(seg);
+    const t = normTitle(title), b0 = brandOf(t), out = [];
+    for (const seg0 of t.split(SET_SPLIT_RE)) {
+      for (let seg of splitByModels(seg0.trim())) {
+        seg = seg.trim();
+        if (!seg || !modelWord(seg)) continue;
+        const f = detectFlags(seg);
+        if (f.includes("付属品のみ?") || f.includes("アダプター等")) continue;
+        seg = seg.replace(FILM_MM_RE, " ").trim();
+        if (b0 && !brandOf(seg)) seg = b0 + " " + seg;
+        out.push(seg);
+      }
     }
     return out.length >= 2 ? out : [];
   }
@@ -1066,7 +1099,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { sweetSpot, bidPrio, isFNumber, modelWord, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
+    module.exports = { sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
     return;
   }
 

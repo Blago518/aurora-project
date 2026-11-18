@@ -929,33 +929,71 @@ def _brand_of(title: str) -> str:
     return ""
 
 
-# レンズの書き方（これがある部分の「F2」「f1.4」は F値。無い部分の「F2」「F3」はボディの型番。2026-11-18 ユーザー指摘）
-LENS_HINT_RE = re.compile(r"\d\s*mm|レンズ|lens|単焦点|ズーム|zoom|nikkor|ニッコール|zuiko|ズイコー|takumar|タクマー|rokkor|ロッコール|"
-                          r"sekor|serenar|hexanon|ヘキサノン|planar|プラナー|sonnar|ゾナー|distagon|ディスタゴン|summicron|ズミクロン|"
-                          r"summilux|ズミルックス|elmarit|エルマリート|elmar|tessar|テッサー|xenar|biogon|macro|マクロ|1\s*:\s*\d", re.I)
+# ---- 型の語（名指しの検索・まとめ売りの中身に使う）. 拡張機能の modelWord・isFNumber・setPartTitles と同じ（2026-11-18）
+# 日本語の商品名のよくある書き方を全部見る: 「５０ミリ」「50㎜」→ 50mm、フィルムの「35mm フィルムカメラ」は焦点距離ではない、
+# 「Nikon F2 ボディ」の F2 は型番・「Nikkor 35 F2」「35mm F2」の F2 は F値（すぐ前が数字・焦点距離・レンズ名なら F値）、
+# 数字の無いボディの型番（Pentax SP・Nikon FM・Contax RTS）はメーカー名のすぐ後ろの英字2〜3文字で拾う
+LENS_WORDS = (r"nikkor|ニッコール|zuiko|ズイコー|takumar|タクマー|rokkor|ロッコール|sekor|serenar|hexanon|ヘキサノン|planar|プラナー|"
+              r"sonnar|ゾナー|distagon|ディスタゴン|summicron|ズミクロン|summilux|ズミルックス|elmarit|エルマリート|elmar|tessar|テッサー|"
+              r"xenar|biogon|lens|レンズ|macro|マクロ")
+FILM_FORMAT_AFTER = re.compile(r"^\s*(?:判|フィルム|film|カメラ|camera|一眼|レンジファインダー|rangefinder|slr|コンパクト|compact)", re.I)
+F_BEFORE_RE = re.compile(r"(?:\d+(?:\.\d+)?\s*(?:mm)?|" + LENS_WORDS + r")\s*[/,:]?\s*$", re.I)
+BODY_CODE_SKIP = {"af", "mf", "ai", "ais", "ed", "if", "vr", "sc", "ssc", "mc", "fd", "fl", "ef", "om", "smc", "hd", "dx", "fx",
+                  "is", "usm", "stm", "ii", "iii", "iv", "mmj", "aej", "aeg", "cy", "pk", "ltm", "new", "nfd", "dc", "di", "dg",
+                  "hsm", "os", "rf", "lm", "pro", "ex", "apo", "sp", "zf", "ze", "zm", "the", "and", "for", "lot", "set", "box",
+                  "ok", "jpn", "usa", "uk", "eu", "red", "led", "lcd", "mp", "nd", "uv", "pl", "cpl", "gn", "tv", "av", "dvd"}
+BODY_CODE_OK = {"sp", "fm", "fe", "fa", "rts", "rx", "st", "mx", "me", "lx", "kx", "km", "xd", "xe", "xk", "ae", "at", "tx",
+                "ftb", "f", "ex"}  # SKIP に入っていても、メーカー名のすぐ後ろならボディの型番として使うもの
+_TOKEN_RE = re.compile(r"[Ff]/\d+(?:\.\d+)?|1:\d+(?:\.\d+)?|[A-Za-z0-9][A-Za-z0-9\-]*(?:\.\d+)?")
 
 
-def is_f_number(tok: str, text: str) -> bool:
-    """tok が F値か. f/2・f1.4・f2.8・1:2 は常に F値。「F2」「F3」のような整数だけの語は、同じ文にレンズの書き方
-    （焦点距離・レンズ・Nikkor など）があれば F値、無ければボディの型番（Nikon F2・F3）とみなす. 拡張機能の isFNumber と同じ."""
+def norm_title(text: str) -> str:
+    """全角→半角、「５０ミリ」「50㎜」→ 50mm."""
+    t = unicodedata.normalize("NFKC", text or "")
+    return re.sub(r"(\d)\s*(?:ミリ|㎜)", r"\1mm", t)
+
+
+FILM_FORMAT_MM_RE = re.compile(r"(?<![\d.])\d+\s*mm(?=\s*(?:判|フィルム|film|カメラ|camera|一眼|レンジファインダー|rangefinder|slr|コンパクト|compact))", re.I)
+
+
+def lens_mm_spans(text: str) -> list:
+    """焦点距離（28mm・80-200mm）の位置. フィルムの「35mm フィルムカメラ」「6x6判」は除く."""
+    t = norm_title(text)
+    return [m for m in re.finditer(r"(?<![\d.])(\d+(?:-\d+)?)\s*mm(?![a-z])", t, re.I)
+            if not FILM_FORMAT_AFTER.match(t[m.end():])]
+
+
+def is_f_number(tok: str, text: str, start: int | None = None) -> bool:
+    """tok が F値か. f/2・f1.4・1:2 は常に F値。「F2」「F3」のような整数だけの語は、すぐ前が数字・焦点距離・レンズ名なら F値、
+    それ以外（「Nikon F2」「ニコン F3 ボディ」）はボディの型番."""
     tl = tok.lower().strip(".,")
     if re.fullmatch(r"f(?:/\d+(?:\.\d+)?|\d+\.\d+)|1:\d+(?:\.\d+)?", tl):
         return True
     if re.fullmatch(r"f\d{1,2}", tl):
-        return bool(LENS_HINT_RE.search(unicodedata.normalize("NFKC", text or "")))
+        t = norm_title(text)
+        i = start if start is not None else t.lower().find(tl)
+        return bool(F_BEFORE_RE.search(t[max(0, i - 14):max(0, i)]))
     return False
 
 
 def _model_word(title: str) -> str:
-    """型の語: 焦点距離（28mm・80-200mm）か型番（T2・D7100・A-1・XA2・ボディの F2/F3）。F値・数字だけの語は使わない.
-    F値かどうかは、その部分の書き方全体から判断する（is_f_number）."""
-    for tok in title_to_query(title, max_tokens=12).split():
-        tl = tok.lower().strip(".,")
-        if re.fullmatch(r"\d+(?:-\d+)?mm", tl):
-            return tl
-        if re.search(r"\d", tl) and re.search(r"[a-z]", tl) and not is_f_number(tok, title) \
-                and not re.fullmatch(r"\d+(?:\.\d+)?(?:mp|x)", tl):
-            return tok
+    """型の語: 焦点距離（28mm・80-200mm）か型番（T2・D7100・A-1・XA2・ボディの F2/F3・数字の無い SP/FM/RTS）. 無ければ ""."""
+    t = norm_title(title)
+    mm_starts = {m.start(): f"{m.group(1)}mm" for m in lens_mm_spans(t)}
+    allowed = set(title_to_query(t, max_tokens=12).lower().split())  # ストアの管理番号などを除いた語
+    prev = ""
+    for m in _TOKEN_RE.finditer(t):
+        tok, tl = m.group(0), m.group(0).lower()
+        if m.start() in mm_starts:
+            return mm_starts[m.start()]
+        if tl in allowed or tok.strip(".,").lower() in allowed:
+            if re.search(r"\d", tl) and re.search(r"[a-z]", tl) and not re.fullmatch(r"\d+(?:-\d+)?mm", tl) \
+                    and not is_f_number(tok, t, m.start()) and not re.fullmatch(r"\d+(?:\.\d+)?(?:mp|x|s)", tl):
+                return tok
+            if re.fullmatch(r"[A-Za-z]{2,3}", tok) and tok.isupper() and _brand_of(prev) and \
+                    (tl in BODY_CODE_OK or tl not in BODY_CODE_SKIP):
+                return tok
+        prev = tok
     return ""
 
 
@@ -984,22 +1022,37 @@ def _model_url(brand: str, word: str) -> str:
 # 区切り（＋ + 、 , ／ / ＆ & 「と」）で分け、型の語（焦点距離・型番）がある部分だけを中身とみなす。メーカーが無い部分は商品名の最初のメーカーを付ける。
 # 相場が見つかった中身だけを足し（見つからない中身は $0 ＝保守的）、2点以上見つかったときだけ判定する。
 # 中身は別々に売る前提なので、2点目からは送料（一律）・1注文の手数料・梱包をそれぞれ引く。拡張機能の setParts と同じ
-SET_SPLIT_RE = re.compile(r"\s*(?:[＋+、,／/＆&]|\sと\s)\s*")
+SET_SPLIT_RE = re.compile(r"\s*(?:[＋+、,／/＆&・]|\sと\s|\s(?:and|with)\s)\s*", re.I)
+
+
+def _split_by_models(seg: str) -> list[str]:
+    """区切りの無い並び（「F3 50mm F1.4 28mm F2.8」）を、焦点距離ごと・その前のボディごとに分ける."""
+    spans = lens_mm_spans(seg)
+    if not spans:
+        return [seg]
+    head = seg[:spans[0].start()]
+    if len(spans) < 2 and not _model_word(head):
+        return [seg]
+    cuts = [m.start() for m in spans]
+    pieces = [head] + [seg[c:(cuts[i + 1] if i + 1 < len(cuts) else len(seg))] for i, c in enumerate(cuts)]
+    return [x for x in pieces if x.strip()]
 
 
 def set_part_titles(title: str) -> list[str]:
-    t = unicodedata.normalize("NFKC", title or "")
+    t = norm_title(title)
     b0 = _brand_of(t)
     out = []
-    for seg in SET_SPLIT_RE.split(t):
-        seg = seg.strip()
-        if not seg or not _model_word(seg):
-            continue
-        if {"付属品のみ?", "アダプター等"} & set(detect_flags(seg)):
-            continue
-        if b0 and not _brand_of(seg):
-            seg = f"{b0} {seg}"
-        out.append(seg)
+    for seg0 in SET_SPLIT_RE.split(t):
+        for seg in _split_by_models(seg0.strip()):
+            seg = seg.strip()
+            if not seg or not _model_word(seg):
+                continue
+            if {"付属品のみ?", "アダプター等"} & set(detect_flags(seg)):
+                continue
+            seg = FILM_FORMAT_MM_RE.sub(" ", seg).strip()  # 「35mm フィルムカメラ」の 35mm は照合に使わない
+            if b0 and not _brand_of(seg):
+                seg = f"{b0} {seg}"
+            out.append(seg)
     return out if len(out) >= 2 else []
 
 
