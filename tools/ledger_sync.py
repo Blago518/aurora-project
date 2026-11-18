@@ -514,6 +514,14 @@ def upload_unpriced(reports: Path | None = None, post=None, top: int = 30) -> in
     for r in rows:
         w.writerow([r.get("title", ""), r.get("件数", ""), r.get("ヤフオク現在価格の中央値", ""), r.get("出品例", "")[:120],
                     r.get("eBay販売済みURL", "")])
+    # 古い相場メモ（90日以上直していない・日付不明）も、夜の下調べで見直す（2026-11-18 ユーザー決定）
+    import appraise as ba
+    ship = float(ba.load_config(None)["shipping"]["deduction_usd"])
+    stale = ba.stale_memos()
+    for m in stale:
+        q = urllib.parse.quote_plus(m["title"])
+        w.writerow([m["title"], "古い相場", "", f"今の相場 ${m['usd'] - ship:.0f}（送料別。{m['date'][:10] or '日付不明'}）を見直す",
+                    f"https://www.ebay.com/sch/i.html?_nkw={q}&LH_Sold=1&LH_Complete=1&_sop=16&_ipg=120"])
     try:
         if post:
             res = post(buf.getvalue())
@@ -529,8 +537,8 @@ def upload_unpriced(reports: Path | None = None, post=None, top: int = 30) -> in
         return None
     if not res.startswith("OK"):
         return None
-    print(f"未登録機種: 上位 {len(rows)}件 → 古物台帳「{UNPRICED_SHEET}」（夜に下調べ）", file=sys.stderr)
-    return len(rows)
+    print(f"未登録機種: 上位 {len(rows)}件＋古い相場 {len(stale)}件 → 古物台帳「{UNPRICED_SHEET}」（夜に下調べ）", file=sys.stderr)
+    return len(rows) + len(stale)
 
 
 def past_bids_rows(text: str) -> list[dict]:

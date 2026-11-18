@@ -905,7 +905,29 @@ def _model_word(title: str) -> str:
     return ""
 
 
-def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30) -> list[tuple[str, str]]:
+def lost_models(bid_rows: list[dict], days: int = 60) -> list[tuple[str, str]]:
+    """競り負けた入札（入札の記録の「負け」「落札失敗」）の機種 [(メーカー, 型の語)]. 新しい順・重複なし（2026-11-18 ユーザー決定）."""
+    from datetime import date, timedelta
+    since = (date.today() - timedelta(days=days)).isoformat()
+    out: list[tuple[str, str]] = []
+    for r in sorted(bid_rows, key=lambda r: r.get("end") or r.get("bid_at") or "", reverse=True):
+        if (r.get("result") or "") not in ("負け", "落札失敗") or (r.get("end") or r.get("bid_at") or "9")[:10] < since:
+            continue
+        k = (_brand_of(r.get("title", "")), _model_word(r.get("title", "")))
+        if all(k) and k not in out:
+            out.append(k)
+    return out
+
+
+def _model_url(brand: str, word: str) -> str:
+    ja = [j for j, en in BRANDS_JA if en == brand]
+    q = urllib.parse.urlencode({"va": word, "vo": " ".join([brand] + ja), "auccat": "23636", "aucminprice": "1000",
+                                "s1": "end", "o1": "a", "n": "100"})
+    return f"https://auctions.yahoo.co.jp/search/search?{q}"
+
+
+def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30,
+                    lost: list[tuple[str, str]] | None = None, lost_limit: int = 20) -> list[tuple[str, str]]:
     """売れ筋（sold_hit）の機種ごとの検索URL. 利益の大きい順に limit 本. 戻り値: [(URL, 機種の説明)]."""
     best: dict[tuple[str, str], float] = {}
     for r in sales:
@@ -916,15 +938,12 @@ def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30) ->
             continue
         k = (brand, word)
         best[k] = max(best.get(k, -1e9), _hit_profit(r, cfg, fx))
-    ja = {}
-    for j, en in BRANDS_JA:
-        ja.setdefault(en, []).append(j)
-    out = []
-    for (brand, word), _ in sorted(best.items(), key=lambda kv: -kv[1])[:limit]:
-        vo = " ".join([brand] + ja.get(brand, []))
-        q = urllib.parse.urlencode({"va": word, "vo": vo, "auccat": "23636", "aucminprice": "1000",
-                                    "s1": "end", "o1": "a", "n": "100"})
-        out.append((f"https://auctions.yahoo.co.jp/search/search?{q}", f"{brand} {word}"))
+    keys = [k for k, _ in sorted(best.items(), key=lambda kv: -kv[1])[:limit]]
+    out = [(_model_url(b, w), f"{b} {w}") for b, w in keys]
+    for b, w in (lost or [])[:lost_limit]:  # 競り負けた機種（同じ機種はまた出品される）
+        if (b, w) not in keys:
+            keys.append((b, w))
+            out.append((_model_url(b, w), f"{b} {w}（負けた機種）"))
     return out
 
 
@@ -1293,6 +1312,29 @@ def add_memo_history(entries: list[dict], dest: Path | None = None) -> int:
             w.writeheader()
             w.writerows(old + add)
     return len(add)
+
+
+def stale_memos(memo_path: Path | None = None, hist_path: Path | None = None, days: int = 90,
+                limit: int = 10) -> list[dict]:
+    """見直したい相場メモ（最後に直した日が days 日より前、または日付が分からないもの）. 古い順に limit 件.
+    毎朝 Mac が「Mac_未登録機種」に足し、夜の下調べで新しい相場の候補を出す（2026-11-18 ユーザー決定）."""
+    from datetime import date, timedelta
+    memo_path = memo_path or DATA / "price_memo.csv"
+    if not memo_path.exists():
+        return []
+    hist = load_memo_history(hist_path)
+    cut = (date.today() - timedelta(days=days)).isoformat()
+    out = []
+    for r in csv.DictReader(memo_path.read_text(encoding="utf-8-sig").splitlines()):
+        t = (r.get("title") or "").strip()
+        v = _float_or_none(r.get("sold_price_usd"))
+        if not t or v is None:
+            continue
+        dates = [h[1] for h in hist.get(t, []) if h[1]]
+        last = max(dates) if dates else ""
+        if not last or last[:10] < cut:
+            out.append({"title": t, "usd": v, "date": last})
+    return sorted(out, key=lambda r: r["date"])[:limit]
 
 
 def load_memo_history(path: Path | None = None) -> dict[str, list]:
@@ -1878,8 +1920,12 @@ def main(argv: list[str] | None = None) -> int:
         known = {it.auction_id for it in items}
         searches = [(su, args.max_per_search) for su in find_search_urls(text)]
         if args.hit_searches:
-            hits = hit_search_urls(sales, cfg, fx, args.hit_searches)
-            print(f"売れ筋の機種の検索: {len(hits)}本（{', '.join(lbl for _, lbl in hits[:8])}{' …' if len(hits) > 8 else ''}）",
+            bid_rows = []
+            for bp in (DATA / "bid_log.csv", DATA / "bid_history.csv"):
+                if bp.exists():
+                    bid_rows += list(csv.DictReader(bp.read_text(encoding="utf-8-sig").splitlines()))
+            hits = hit_search_urls(sales, cfg, fx, args.hit_searches, lost_models(bid_rows))
+            print(f"売れ筋・負けた機種の検索: {len(hits)}本（{', '.join(lbl for _, lbl in hits[:8])}{' …' if len(hits) > 8 else ''}）",
                   file=sys.stderr)
             searches += [(u, 100) for u, _ in hits]  # 1本100件（終了が近い順の1ページ）
         for su, lim in searches:

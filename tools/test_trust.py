@@ -297,3 +297,28 @@ class HitSearches(unittest.TestCase):
         self.assertEqual(q["va"], ["T2"])
         self.assertIn("コンタックス", q["vo"][0])
         self.assertEqual(q["auccat"], ["23636"])
+
+
+class LostAndStale(unittest.TestCase):
+    """負けた機種の検索と、古い相場メモの見直し（2026-11-18）."""
+
+    def test_lost_models(self):
+        from datetime import date
+        today = date.today().isoformat()
+        rows = [{"title": "CONTAX Carl Zeiss Distagon T 35mm F2.8 AEJ コンタックス", "result": "負け", "end": today},
+                {"title": "Nikon AF-S 70-200mm f/2.8G ED", "result": "落札(見込み)", "end": today},
+                {"title": "ニコン Nikon F3 HP ボディ", "result": "落札失敗", "end": "2020-01-01"}]
+        self.assertEqual(ba.lost_models(rows), [("Contax", "35mm")])
+        urls = ba.hit_search_urls([], CFG, 150.0, lost=ba.lost_models(rows))
+        self.assertEqual([lbl for _, lbl in urls], ["Contax 35mm（負けた機種）"])
+
+    def test_stale_memos(self):
+        with tempfile.TemporaryDirectory() as d:
+            memo, hist = Path(d) / "m.csv", Path(d) / "h.csv"
+            memo.write_text("title,sold_price_usd,source,memo\nA 50mm,140,相場メモ,\nB 28mm,120,相場メモ,\nC T2,900,相場メモ,\n",
+                            encoding="utf-8")
+            from datetime import date
+            hist.write_text(f"title,sold_price_usd,cond,date\nA 50mm,140,,2025-01-01\nB 28mm,120,,{date.today().isoformat()}\n",
+                            encoding="utf-8")
+            got = [m["title"] for m in ba.stale_memos(memo, hist)]
+            self.assertEqual(got, ["C T2", "A 50mm"])  # 日付不明が先、最近直した B は出さない
