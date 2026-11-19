@@ -63,6 +63,8 @@
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
     t = t.replace(BRACKET_CODE, " \u0001$1 ");  // 【L256】→ 管理番号の候補の印（\u0001）を付ける
     t = t.replace(/\d+円[~〜～]?/g, " ");
+    t = t.replace(/[∞¶∩§]\s*\S*/g, " ");  // ストアの管理番号（… ∞ 776BC-16・¶ 7774A-5）
+    t = t.replace(/\b\d{3,4}[A-Z]{1,3}\d{0,2}-\d{1,3}\b/g, " ");  // 同じ形の管理番号（7774A-1・776D1-4）
     t = t.replace(/\b[wW]\s*\/\s*/g, " ");
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
     t = t.replace(/[①-⑳]/g, " ");
@@ -1073,7 +1075,7 @@ ${canBrowse() && !waits.length ? `<div class="s">${Object.keys(state.browse).len
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
 <details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
 ${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式APIで調べた<b>出品中</b>の価格（米国向け・中古。送料$${SHIP()}を引いた送料別の額で表示）。想定$には最安値（送料無料の出品は出品額−$30）を<b>案</b>として入れています。<b>sold を見て確認してから［登録］</b>してください（登録するまで判定には使いません）。</div>` : ""}
-<table><tr><th title="機種名→ヤフオクの出品ページ（同じ機種が複数あれば1件目）">機種（→ヤフオク）</th><th>件数</th><th>ヤフオク現在値</th>${canBrowse() ? "<th>eBay出品中</th>" : ""}<th>想定$（送料別）</th></tr>${unpriced.map((g) => { const yh = g.ids.slice(0, 3).map((id) => `https://auctions.yahoo.co.jp/jp/auction/${id}`); return `<tr><td><a href="${yh[0] || ebay(g.label).pr}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a> <button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([...yh, ebay(g.label).sold, ebay(g.label).now]))}" title="ヤフオクの出品ページ（最大3件）・sold・now を、新しいタブに左からこの順で開きます">全て開く</button> <a class="s" href="${ebay(g.label).pr}" target="_blank" rel="noopener">Product Research</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
+<table><tr><th title="機種名→ヤフオクの出品ページ（同じ機種が複数あれば1件目）">機種（→ヤフオク）</th><th>件数</th><th>ヤフオク現在値</th>${canBrowse() ? "<th>eBay出品中</th>" : ""}<th>想定$（送料別）</th></tr>${unpriced.map((g) => { const yh = g.ids.slice(0, 3).map((id) => `https://auctions.yahoo.co.jp/jp/auction/${id}`), sk = "m:" + g.label; return `<tr class="${seenOf(sk) ? "seen" : ""}"><td class="m">${seenBox(sk)}<a href="${yh[0] || ebay(g.label).pr}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a> <button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([...yh, ebay(g.label).sold, ebay(g.label).now]))}" title="ヤフオクの出品ページ（最大3件）・sold・now を、新しいタブに左からこの順で開きます">全て開く</button> <a class="s" href="${ebay(g.label).pr}" target="_blank" rel="noopener">Product Research</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
 <td class="n">${g.n}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
 ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.label)}</td>` : ""}
 <td class="fix">${memoInputs(g.label, `placeholder="$"${suggestUsd(state.browse[g.label]) ? ` class="sug" value="${netOf(suggestUsd(state.browse[g.label]))}"` : ""}`, "登録")}</td></tr>`; }).join("")}</table>
