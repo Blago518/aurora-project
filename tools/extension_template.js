@@ -641,7 +641,8 @@
   function parseItems(json) {
     const l = listingFromNextData(json);
     if (!l) return [];
-    return l.items.filter((x) => !x.isFleamarketItem).map((x) => ({
+    // 同じオークションが一覧に2回入っていることがある（PR枠など）→ 1件にする（件数が2になり［全て開く］で同じページが2つ開いていた。2026-11-19）
+    return l.items.filter((x, i, a) => !x.isFleamarketItem && (!x.auctionId || a.findIndex((y) => y.auctionId === x.auctionId) === i)).map((x) => ({
       id: x.auctionId, title: x.title || "", price: x.price ?? null, buyNow: x.buyNowPrice || null,
       bids: x.bidCount ?? 0, end: x.endTime || "", ship: x.isFreeShipping ? 0 : (x.currentPriceShippingFee ?? null),
       watch: x.watchCount ?? 0, store: !!(x.seller && x.seller.isStore), tax: x.taxFlag === 1,
@@ -768,7 +769,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   // 2026-11-16 ユーザー決定（tentative.py の suggest_usd と同じ）
   function suggestUsd(b) {
     if (!b || !b.med || b.n < DATA.cfg.activeMinCount) return null;
-    return b.min ? Math.floor(b.min) : null;
+    return b.min > 0 ? Math.floor(b.min) : null;  // 送料無料の −$30 でマイナスになる安い出品（付属品など）は案にしない
   }
   // 落札見込み（bid_results.py の win_odds と同じ規則）: 上限額の価格帯 × ストア/個人の過去の勝率。3件未満なら価格帯だけ、それも3件未満なら出さない
   function winOdds(maxBid, store) {
@@ -995,6 +996,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const [label, key] = parts.length ? [parts.map((p) => modelKey(p)[0]).join(" ＋ "), "set:" + parts.map((p) => modelKey(p)[1]).join("|")] : modelKey(i.title);
       if (!parts.length && label.split(" ").length < 2) continue;
       const g = groups.get(key) || { label, n: 0, prices: [], ex: i.title, ids: [], parts: parts.map((p) => modelKey(p)[0]) };
+      if (i.id && g.ids.includes(i.id)) continue;  // 同じ出品は1回だけ数える
       g.n++; if (i.price) g.prices.push(i.price); if (i.id) g.ids.push(i.id); groups.set(key, g);
     }
     // 高い物ほど1件の利益が大きい（実績: $200以上は1件平均6,500円〜、$99以下は344円）ので、ヤフオクの価格が高い機種を上に。同じなら件数の多い順

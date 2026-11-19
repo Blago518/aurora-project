@@ -289,9 +289,13 @@ def parse_listing_page(page: str) -> tuple[list[Item], int | None]:
     if t:
         total = int(t.group(1))
     items = []
+    seen_ids: set = set()
     for x in listing["items"]:
         if x.get("isFleamarketItem"):
             continue
+        if x.get("auctionId") in seen_ids:  # 同じオークションが一覧に2回入っていることがある（拡張機能の parseItems と同じ。2026-11-19）
+            continue
+        seen_ids.add(x.get("auctionId"))
         ship = x.get("currentPriceShippingFee")
         if x.get("isFreeShipping"):
             ship = 0

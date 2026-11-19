@@ -64,7 +64,7 @@ def suggest_usd(stats: dict, cfg: dict) -> float | None:
     j = cfg["judge"]
     if not stats or not stats.get("med") or stats["n"] < j.get("active_min_count", 5):
         return None
-    return int(stats["min"]) if stats.get("min") else None
+    return int(stats["min"]) if (stats.get("min") or 0) > 0 else None  # −$30 でマイナスになる安い出品は案にしない（拡張機能の suggestUsd と同じ）
 
 
 def _browse(query: str) -> dict:

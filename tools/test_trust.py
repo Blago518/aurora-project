@@ -538,6 +538,27 @@ class CanonL(unittest.TestCase):
             self.assertEqual(run_js(data, "console.log(JSON.stringify(m.modelKey(" + json.dumps(t, ensure_ascii=False) + ")[0]))"), label)
 
 
+class DuplicateAuctions(unittest.TestCase):
+    """同じオークションが一覧に2回入っていても1件にする（件数2・［全て開く］で同じページが2つ開いていた。2026-11-19）."""
+    ITEM = {"auctionId": "q1251095026", "title": "Canon EOS Kiss X10 ダブルズームキット", "price": 55000, "bidCount": 0, "endTime": ""}
+
+    def _page(self):
+        nd = {"props": {"pageProps": {"initialState": {"search": {"items": {"listing": {"items": [self.ITEM, dict(self.ITEM)], "totalResultsAvailable": 2}}}}}}}
+        return nd
+
+    def test_python(self):
+        page = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(self._page()) + "</script>"
+        items, _ = ba.parse_listing_page(page)
+        self.assertEqual([i.auction_id for i in items], ["q1251095026"])
+
+    def test_js(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        got = run_js(data, "console.log(JSON.stringify(m.parseItems(" + json.dumps(self._page()) + ").map((x)=>x.id)))")
+        self.assertEqual(got, ["q1251095026"])
+
+
 class KitParts(unittest.TestCase):
     """レンズキットはボディとレンズの2点に分け、中身ごとに相場を当てる（2026-11-19 ユーザー指定）."""
     T = "NIKON ニコン デジタル一眼レフカメラ D70 レンズキット(AF-S DX Zoom-NIKKOR 18-70mm F3.5-4.5G IF ED) ⑤ 7795B-4"

@@ -34,6 +34,7 @@ class Filter(unittest.TestCase):
         self.assertEqual(tv.suggest_usd({"n": 6, "min": 139.99, "med": 220}, CFG), 139)  # 最安値
         self.assertEqual(tv.suggest_usd({"n": 6, "min": 200, "med": 220}, CFG), 200)     # 中央値は使わない（2026-11-16）
         self.assertIsNone(tv.suggest_usd({"n": 2, "min": 200, "med": 220}, CFG))         # 件数不足
+        self.assertIsNone(tv.suggest_usd({"n": 75, "min": -20.77, "med": 9.99}, CFG))     # 送料無料 −$30 でマイナス（付属品など）は案にしない
 
 
 class AddTentative(unittest.TestCase):
