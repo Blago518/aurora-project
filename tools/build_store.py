@@ -218,8 +218,24 @@ def bid_candidates(reports: Path | None = None, now: datetime | None = None) -> 
     return {"built": f"{made:%Y-%m-%d %H:%M}", "items": items}
 
 
+SWEET_NOTES = ("レンズ狙い目スペック", "レンズ世代の高い順")  # knowledge/講座/ の講座資料のまとめ（「狙い目」タブ。2026-11-19 ユーザー指定）
+
+
+def sweet_notes(root: Path | None = None) -> list[dict]:
+    """スマホアプリの「狙い目」タブに出す講座資料のまとめ（knowledge/講座/〈名前〉.md）.
+    講座資料は公開しないので、アプリのページには書かず、暗号化して届く相場データ（store_data.json）に入れる."""
+    folder = (root or ROOT) / "knowledge" / "講座"
+    out = []
+    for name in SWEET_NOTES:
+        p = folder / f"{name}.md"
+        if p.exists():
+            out.append({"name": name, "md": p.read_text(encoding="utf-8")})
+    return out
+
+
 def build(cfg: dict, fx: float) -> dict:
     data = bx.build_data(cfg, fx)
+    data["sweet"] = sweet_notes()
     rows = []
     for name in REC_SOURCES:
         p = ROOT / "data" / name
