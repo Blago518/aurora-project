@@ -39,6 +39,7 @@ def build_data(cfg: dict, fx: float) -> dict:
                 "source": r.get("source") or "自分の販売実績", "tokens": sorted(r["_tokens"]),
                 "acc": bool(ba.ACCESSORY_RE.search(r.get("title", ""))),
                 "hit": ba.sold_hit(r, cfg, fx),  # 売れ筋（実績で利益が出ていた機種）→ 入札候補の上に出す
+                "d": ba.norm_date(r.get("date", "")),  # 売れた日（相場の上がり下がり ↑↓ に使う。分からなければ空）
             })
     kantei = []
     kp = next(iter(sorted((ROOT / "data").glob("kantei_bookmarklet.*"))), None)
@@ -53,6 +54,8 @@ def build_data(cfg: dict, fx: float) -> dict:
         "refs": refs,
         "kantei": kantei,
         "winStats": _win_stats(),
+        # ヤフオクの落札相場（data/yahoo_results.csv。機種ごとの直近の落札額。表示だけで判定・上限額には使わない）
+        "yahooStats": _yahoo_stats(cfg),
         "memoHist": ba.load_memo_history(),  # 相場メモの履歴（拡張機能の「相場の動き」。data/price_memo_history.csv）  # 落札見込み（data/bid_log.csv の結果から。bid_results.win_stats）
         "cfg": {
             "fx": round(fx, 2), "convLossPct": cfg["fx"]["conversion_loss_pct"],
@@ -75,6 +78,9 @@ def build_data(cfg: dict, fx: float) -> dict:
             "browse": False,  # eBay のキーがあれば main() で True にする
             "autoMaxItems": min(cfg.get("extension", {}).get("auto_max_items", 1000), 1000),  # 一度に読むのは1000件まで
             "browseMaxModels": cfg.get("extension", {}).get("browse_max_models", 400),
+            # 落札相場の見張り（拡張機能 → ダウンロード/aurora_seen.csv）: 1日に足す上限と、表示する期間（日）
+            "seenMaxPerDay": cfg.get("yahoo_results", {}).get("seen_max_per_day", 300),
+            "yahooDays": cfg.get("yahoo_results", {}).get("market_days", 90),
         },
         "consts": {
             "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN,
@@ -95,6 +101,14 @@ def build_data(cfg: dict, fx: float) -> dict:
             "increments": [[0 if math.isinf(lim) else lim, step] for lim, step in ba.YAHOO_INCREMENTS],
         },
     }
+
+
+def _yahoo_stats(cfg: dict) -> dict:
+    try:
+        import yahoo_results
+        return yahoo_results.load_model_stats(days=int(cfg.get("yahoo_results", {}).get("market_days", 90)))
+    except Exception:  # noqa: BLE001  記録が無い・読めない → 出さないだけ
+        return {}
 
 
 def _win_stats() -> dict:

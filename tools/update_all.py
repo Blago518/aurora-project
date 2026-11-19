@@ -13,7 +13,10 @@
 4. 入札リスト: data/search_urls.txt の検索をまとめて鑑定 → reports/bid_report_*.html を開く（◎○の件数を通知）
    → スマホ用データ（store_data.json・iCloud・暗号化して自動配信。入札候補もスマホの「入札」タブに届く）→ ナレッジ
    → eBay の出品中一覧・注文・取引明細（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
-5. 入札の結果: 拡張機能の［入札した］の記録を取り込み、終わった出品の最終価格から落札率などを集計 → reports/bid_results.md
+5. 落札相場（拡張機能を作る前）: 前回の入札リスト・拡張機能（ダウンロード/aurora_seen.csv）の ◎○・仮◎○・確認してから の出品を見張り、
+   終わった出品の最終価格・入札数を data/yahoo_results.csv に記録 → 古物台帳「Mac_落札相場」（yahoo_results.py）
+   入札の結果: 拡張機能の［入札した］の記録を取り込み、終わった出品の最終価格から落札率などを集計 → reports/bid_results.md
+   （落札かどうかは古物台帳にそのオークションIDがあるかで決める）
    → 入札の記録を 古物台帳の「入札結果」シートに送る（ゼニガメが負け方を学ぶ）
 
 使い方（aurora フォルダで）:
@@ -141,6 +144,13 @@ def main(argv=None) -> int:
     ok = True
     if (DATA / "ledger.csv").exists() or list(DATA.glob("hanpukai_*.xlsx")):
         ok &= run("build_reference_prices.py")
+    # 落札相場は拡張機能を作る前に（前回の入札リストの出品も、終わっていればここで記録 → 拡張機能に出る）
+    try:
+        import yahoo_results  # 候補に出た出品が、実際にいくらで落札されたか（判定には使わない）
+        print("\n▶ 落札相場（候補に出た出品の最終価格）")
+        yahoo_results.run(downloads=args.downloads)
+    except Exception as e:  # noqa: BLE001  記録の失敗で更新全体を止めない
+        print(f"  落札相場を記録できませんでした（{e}）")
     ok &= run("build_extension.py")
     bids = None if args.no_bids else bid_list()
     ok &= run("build_store.py")  # 入札リストの後に（入札候補もスマホに届ける）

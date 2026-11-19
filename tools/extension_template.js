@@ -828,7 +828,7 @@ const css = `
 #yhk,#akit{position:fixed;top:8px;right:8px;z-index:2147483647;width:min(1100px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;
 background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}#yhk.min,#akit.min{width:auto}#yhk.min .bd,#akit.min .bd{display:none}#yhk .hd,#akit .hd{position:sticky;top:0;background:#0b1728;color:#fff;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}#yhk .hd b,#akit .hd b{font-size:14px}#yhk .hd .sp,#akit .hd .sp{flex:1}#yhk button,#akit button{border:0;border-radius:8px;padding:6px 10px;background:#e8f2f8;color:#14415a;font-weight:700;cursor:pointer;font-size:12px}#yhk .hd button,#akit .hd button{background:#24496a;color:#fff}#yhk .bd,#akit .bd{padding:10px 12px}#yhk table,#akit table{width:100%;border-collapse:collapse}#yhk th,#yhk td,#akit th,#akit td{padding:5px 6px;border-bottom:1px solid #e6ecf2;text-align:left;vertical-align:top}#yhk button.bidon,#akit button.bidon{background:#1f7a5c;color:#fff}#yhk tr.seen td,#akit tr.seen td{opacity:.38}#yhk tr.seen td.m,#akit tr.seen td.m{opacity:1}#yhk tr.seen td.m>*:not(.seen-box),#akit tr.seen td.m>*:not(.seen-box){opacity:.38}#yhk label.seen-box,#akit label.seen-box{display:block;width:max-content;margin:0 0 4px;cursor:pointer;font-size:10px;color:#9fb3c8;white-space:nowrap}#yhk label.seen-box input,#akit label.seen-box input{width:16px;height:16px;vertical-align:middle;margin:0 3px 0 0;cursor:pointer}#yhk .pinmove,#akit .pinmove{margin-top:4px;padding:4px 8px;border-radius:6px;background:#fff3cd;color:#6b4e00;font-size:12px;font-weight:700}
 @keyframes yhkflash{0%,100%{background:transparent}30%{background:#ffe08a}}#yhk tr.flash td,#akit tr.flash td{animation:yhkflash 1.2s ease 2}#yhk-toast,#akit-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;background:#0b1728;color:#fff;padding:10px 16px;border-radius:10px;
-font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show,#akit-toast.show{opacity:1}#yhk .trustb,#akit .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust,#akit .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal,#akit .tsep.chal{background:#eef3f8;color:#2d4a63}#yhk .tmark,#akit .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}#yhk tr.tent td,#akit tr.tent td{background:#fffaf0}#yhk .tsep,#akit .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}#yhk .fix,#akit .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input,#akit .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select,#akit .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button,#akit .fix button{padding:3px 6px;margin-left:2px}#yhk th,#akit th{font-size:11px;color:#5d7083;font-weight:600}#yhk td:nth-child(2),#akit td:nth-child(2){min-width:240px}#yhk td.n,#akit td.n{text-align:right;white-space:nowrap}#yhk input.sug,#akit input.sug{color:#8a6d1f;font-style:italic}#yhk a,#akit a{color:#0b5d8c;text-decoration:none}#yhk .m,#akit .m{font-size:15px;font-weight:800}#yhk .g,#akit .g{color:#1f7a5c}#yhk .o,#akit .o{color:#1b6387}#yhk .x,#akit .x{color:#a4473a}#yhk .s,#akit .s{font-size:11px;color:#6a7c8e}#yhk details,#akit details{margin-top:10px}#yhk summary,#akit summary{cursor:pointer;font-weight:700}#yhk input,#akit input{width:72px;padding:4px;border:1px solid #c6d3de;border-radius:6px}#yhk a.t,#akit a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}#yhk a.usd,#akit a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}#yhk a.now,#yhk a.pill,#akit a.now,#akit a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}#yhk .okb,#akit .okb{display:inline-block;font-size:10px;font-weight:700;color:#1f6b50;background:#e3f4ec;border-radius:5px;padding:0 5px}#yhk .pills,#akit .pills{display:flex;gap:4px;justify-content:flex-end}#yhk button.open3,#akit button.open3{margin-top:3px;font-size:11px;padding:2px 8px}#yhk a.pill.sold,#akit a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}#yhk td.m,#akit td.m{white-space:nowrap;width:58px}#yhk td.um,#akit td.um{white-space:normal;min-width:260px}#yhk .setpart,#akit .setpart{margin-top:6px;padding:6px 8px;border-left:3px solid #9fc0d4;background:#f4f8fb;border-radius:6px}#yhk .setpart b,#akit .setpart b{font-size:13px;color:#14263a}#yhk .fix.fixl,#akit .fix.fixl{margin-left:0;max-width:none;margin-top:6px}#yhk .fix.fixl input,#akit .fix.fixl input{width:64px}#yhk tr.soon td,#akit tr.soon td{background:#fff6ec}#yhk .hot,#akit .hot{color:#c0392b;font-weight:700}#yhk table.hist{width:auto;font-size:11px;border:1px solid #e6ecf2;border-radius:6px}#yhk table.hist td,#yhk table.hist th{padding:2px 8px;white-space:nowrap;min-width:0}#yhk .flag.sweet{background:#e3f4ec;color:#1f6b50;font-weight:700}#yhk .flag,#akit .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
+font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show,#akit-toast.show{opacity:1}#yhk .trustb,#akit .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust,#akit .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal,#akit .tsep.chal{background:#eef3f8;color:#2d4a63}#yhk .tmark,#akit .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}#yhk tr.tent td,#akit tr.tent td{background:#fffaf0}#yhk .tsep,#akit .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}#yhk .fix,#akit .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input,#akit .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select,#akit .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button,#akit .fix button{padding:3px 6px;margin-left:2px}#yhk th,#akit th{font-size:11px;color:#5d7083;font-weight:600}#yhk td:nth-child(2),#akit td:nth-child(2){min-width:240px}#yhk td.n,#akit td.n{text-align:right;white-space:nowrap}#yhk input.sug,#akit input.sug{color:#8a6d1f;font-style:italic}#yhk a,#akit a{color:#0b5d8c;text-decoration:none}#yhk .m,#akit .m{font-size:15px;font-weight:800}#yhk .g,#akit .g{color:#1f7a5c}#yhk .o,#akit .o{color:#1b6387}#yhk .x,#akit .x{color:#a4473a}#yhk .trend,#akit .trend{font-weight:800;font-size:13px;white-space:nowrap}#yhk .s,#akit .s{font-size:11px;color:#6a7c8e}#yhk details,#akit details{margin-top:10px}#yhk summary,#akit summary{cursor:pointer;font-weight:700}#yhk input,#akit input{width:72px;padding:4px;border:1px solid #c6d3de;border-radius:6px}#yhk a.t,#akit a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}#yhk a.usd,#akit a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}#yhk a.now,#yhk a.pill,#akit a.now,#akit a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}#yhk .okb,#akit .okb{display:inline-block;font-size:10px;font-weight:700;color:#1f6b50;background:#e3f4ec;border-radius:5px;padding:0 5px}#yhk .pills,#akit .pills{display:flex;gap:4px;justify-content:flex-end}#yhk button.open3,#akit button.open3{margin-top:3px;font-size:11px;padding:2px 8px}#yhk a.pill.sold,#akit a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}#yhk td.m,#akit td.m{white-space:nowrap;width:58px}#yhk td.um,#akit td.um{white-space:normal;min-width:260px}#yhk .setpart,#akit .setpart{margin-top:6px;padding:6px 8px;border-left:3px solid #9fc0d4;background:#f4f8fb;border-radius:6px}#yhk .setpart b,#akit .setpart b{font-size:13px;color:#14263a}#yhk .fix.fixl,#akit .fix.fixl{margin-left:0;max-width:none;margin-top:6px}#yhk .fix.fixl input,#akit .fix.fixl input{width:64px}#yhk tr.soon td,#akit tr.soon td{background:#fff6ec}#yhk .hot,#akit .hot{color:#c0392b;font-weight:700}#yhk table.hist{width:auto;font-size:11px;border:1px solid #e6ecf2;border-radius:6px}#yhk table.hist td,#yhk table.hist th{padding:2px 8px;white-space:nowrap;min-width:0}#yhk .flag.sweet{background:#e3f4ec;color:#1f6b50;font-weight:700}#yhk .flag,#akit .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
 .yhk-badge{display:inline-block;margin:2px 0;padding:2px 7px;border-radius:7px;font:700 12px -apple-system,sans-serif;color:#fff}
 .yhk-badge.g{background:#1f7a5c}.yhk-badge.o{background:#1b6387}.yhk-badge.x{background:#9aa6b2}
 @media (prefers-color-scheme:dark){#yhk tr.soon td,#akit tr.soon td{background:#2a2216}#yhk tr.tent td,#akit tr.tent td{background:#1f2129}#yhk .tsep,#akit .tsep{background:#3a2f17;color:#f2d79a}#yhk .tsep.trust,#akit .tsep.trust{background:#173a28;color:#a8e6c1}#yhk .tsep.chal,#akit .tsep.chal{background:#1c2c3c;color:#b9d3ea}#yhk,#akit{background:#152231;color:#e2eaf2}#yhk th,#yhk td,#akit th,#akit td{border-color:#26394b}#yhk a,#akit a{color:#7cc4ee}#yhk button,#akit button{background:#24384c;color:#d6e6f2}#yhk input,#akit input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}#yhk .setpart,#akit .setpart{background:#1b2c3e;border-left-color:#7cc4ee}#yhk .setpart b,#akit .setpart b{color:#f2f6fa}#yhk select,#akit select{background:#0f1a26;color:#e2eaf2;border:1px solid #36506a}#yhk .okb,#akit .okb{background:#173a28;color:#a8e6c1}}
@@ -856,6 +856,39 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       if (n >= 3) { const rate = won / n; return { label: rate >= 0.6 ? "高" : rate >= 0.3 ? "中" : "低", won, n, key: k }; }
     }
     return null;
+  }
+  // ヤフオクの落札相場（Mac の data/yahoo_results.csv → yahoo_results.model_stats。機種の比較用キーごと）。
+  // 候補に出た出品が実際にいくらで落札されたか。表示だけ（判定・上限額には使わない）。記録が無ければ何も出さない
+  function yahooLine(key) {
+    const y = key && (DATA.yahooStats || {})[key];
+    if (!y || !y.n) return "";
+    const days = DATA.cfg.yahooDays || 90;
+    const tip = `ヤフオクで実際に落札された額（ストアは税抜。毎朝 Mac が終わった出品ページで記録）\n機種: ${y.label} ・ 直近${days}日 ${y.n}件 ・ ${yen(y.min)}〜${yen(y.max)}${y.unsold ? `\n入札なしで終わった出品 ${y.unsold}件` : ""}\n判定・上限額には使っていません`;
+    return `<div class="s yres" title="${esc(tip)}">ヤフオク落札 中央値 ${yen(y.med)}（${y.n}件・直近${days}日${y.n > 1 ? `・${yen(y.min)}〜${yen(y.max)}` : ""}）</div>`;
+  }
+  // ---- 落札相場の見張り: ◎○・仮◎○・確認してから に出た出品 → ダウンロード/aurora_seen.csv（全件）→ Mac の yahoo_results.py が
+  //      終了後に出品ページで最終価格を記録する。1日に足すのは DATA.cfg.seenMaxPerDay 件まで。終了から7日たった分は消す
+  const LS_WATCH = "yhkWatchV1";
+  const WATCH_FIELDS = ["auction_id", "title", "end", "mark", "max_bid", "store_tax", "seen_at"];
+  function watchAdd(list, now) {
+    now = now || new Date();
+    const all = load(LS_WATCH, {}), day = now.toISOString().slice(0, 10), old = now.getTime() - 7 * 86400000;
+    let pruned = 0;
+    for (const [id, w] of Object.entries(all)) { const t = Date.parse(w.end); if (t && t < old) { delete all[id]; pruned++; } }
+    const cap = DATA.cfg.seenMaxPerDay ?? 300;
+    let today = Object.values(all).filter((w) => String(w.seen_at).slice(0, 10) === day).length, added = 0;
+    for (const x of list) {
+      if (!x.i || !x.i.id || all[x.i.id] || today >= cap) continue;
+      all[x.i.id] = { auction_id: x.i.id, title: x.i.title, end: x.i.end || "", mark: x.mark, max_bid: x.maxBid ?? "",
+        store_tax: x.i.tax ? 1 : 0, seen_at: now.toISOString() };
+      today++; added++;
+    }
+    if (added || pruned) save(LS_WATCH, all);
+    return added;
+  }
+  function watchCsv() {
+    const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    return WATCH_FIELDS.join(",") + "\n" + Object.values(load(LS_WATCH, {})).map((w) => WATCH_FIELDS.map((f) => q(w[f])).join(",")).join("\n");
   }
   function browseCell(label) {
     const b = state.browse[label];
@@ -1071,7 +1104,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       if (i.flags.includes("セット品") && !parts.length) continue;  // 中身が分からないまとめ売りは今までどおり除く
       const [label, key] = parts.length ? [parts.map((p) => modelKey(p)[0]).join(" ＋ "), "set:" + parts.map((p) => modelKey(p)[1]).join("|")] : modelKey(i.title);
       if (!parts.length && label.split(" ").length < 2) continue;
-      const g = groups.get(key) || { label, n: 0, prices: [], ex: i.title, ids: [], parts: parts.map((p) => modelKey(p)[0]) };
+      const g = groups.get(key) || { label, key, n: 0, prices: [], ex: i.title, ids: [], parts: parts.map((p) => modelKey(p)[0]) };
       if (i.id && g.ids.includes(i.id)) continue;  // 同じ出品は1回だけ数える
       g.n++; if (i.price) g.prices.push(i.price); if (i.id) g.ids.push(i.id); groups.set(key, g);
     }
@@ -1096,6 +1129,12 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     }
     waits.sort((a, b) => (a.i.end < b.i.end ? -1 : 1));
     state.waitIds = new Set(waits.map((w) => w.i.id));
+    // 落札相場の見張り（◎○・確認してから・仮◎○）→ 新しく足したときだけ ダウンロード/aurora_seen.csv を書き直す
+    const mb = (i) => (i.calc ? i.calc.maxBid : "");
+    if (watchAdd([...good.map((i) => ({ i, mark: i.mark, maxBid: mb(i) })), ...weak.map((i) => ({ i, mark: "確認してから" + i.mark, maxBid: mb(i) })),
+      ...pinnedWaits.map((i) => ({ i, mark: "仮" + i.mark, maxBid: mb(i) })), ...waits.map((w) => ({ i: w.i, mark: "仮" + w.mk, maxBid: w.c.maxBid }))])
+      && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id)
+      try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_seen.csv", csv: watchCsv() }, () => void chrome.runtime.lastError); } catch (e) {}
     const more = !state.done && state.total && state.total >= (state.next || 1);
 
     // ［直す］した行: 本来の欄が変わっても、ここに残す（ページを開き直すと本来の欄へ）
@@ -1123,8 +1162,8 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const markHtml = ALL && !c ? '<span class="s">相場なし</span>' : i.mark;
       return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${markHtml}<div class="s ${soon ? "hot" : ""}">${left}</div>${ALL && c && i.reason ? `<div class="s">${esc(i.reason)}</div>` : ""}</td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
-<td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a><div class="s">送料別</div>${soldLine(r)}${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
+<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${yahooLine(modelKey(i.title)[1])}${descLine(i.id)}${pinNote(i)}</td>
+<td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a>${trendArrow(i)}<div class="s">送料別</div>${soldLine(r)}${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
@@ -1142,7 +1181,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const d = state.desc[i.id];
       return `<tr class="${soon ? "soon" : ""} tent${seenOf(i.id) ? " seen" : ""}"><td class="m ${w.mk === "◎" ? "g" : "o"}">${seenBox(i.id)}<span class="tmark">仮</span>${w.mk}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>
-<div class="s">機種: ${esc(w.label)} ・ eBay出品中（送料別）最安${nd(w.b.min || 0)}・中央値${nd(w.b.med)}から、最安値の案 ${nd(w.sg)}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} で仮計算（sold未確認）</div>
+<div class="s">機種: ${esc(w.label)} ・ eBay出品中（送料別）最安${nd(w.b.min || 0)}・中央値${nd(w.b.med)}から、最安値の案 ${nd(w.sg)}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} で仮計算（sold未確認）</div>${yahooLine(modelKey(i.title)[1])}
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
 <td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
@@ -1180,7 +1219,7 @@ ${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式API�
   const body = g.parts && g.parts.length
     ? `<a href="${yh[0] || "#"}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.ex.slice(0, 70))}</a><div class="s">セット・キット ${g.parts.length}点 ― 相場あり ${g.parts.filter((l) => memoVal(load(LS_MEMO, {})[l]).usd).length}/${g.parts.length}点${g.parts.every((l) => memoVal(load(LS_MEMO, {})[l]).usd) ? "（そろいました。上の表で判定されます）" : " ― 全部そろうと合計から判定します"}</div>`
       + g.parts.map((l, n) => `<div class="setpart"><b>${n + 1}. ${esc(l)}</b> ${line(l)}<div class="fix fixl">${memoInputs(l, `placeholder="想定$"${sug(l)}`, "登録")}</div></div>`).join("")
-    : `<a href="${yh[0] || ebay(g.label).pr}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.label)}</a> ${line(g.label)}<div class="s">${esc(g.ex.slice(0, 60))}</div><div class="fix fixl">${memoInputs(g.label, `placeholder="想定$"${sug(g.label)}`, "登録")}</div>`;
+    : `<a href="${yh[0] || ebay(g.label).pr}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.label)}</a> ${line(g.label)}<div class="s">${esc(g.ex.slice(0, 60))}</div>${yahooLine(g.key)}<div class="fix fixl">${memoInputs(g.label, `placeholder="想定$"${sug(g.label)}`, "登録")}</div>`;
   return `<tr class="${seenOf(sk) ? "seen" : ""}"><td class="um">${seenBox(sk)}${body}</td>
 <td class="n">${g.n}${yh.length > 1 ? `<div class="s">ほかに同じ機種 ${yh.slice(1).map((u, k) => `<a href="${u}" target="_blank" rel="noopener">${k + 1}</a>`).join(" ")}${g.n > yh.length ? " …" : ""}</div>` : ""}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
 ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.label)}</td>` : ""}</tr>`; }).join("")}</table>
@@ -1206,7 +1245,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
+    module.exports = { trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 
@@ -1261,6 +1300,35 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const md = (d) => `（${mdOf(d)}）`;
     const path = vals.slice(-4).map((e) => `${nd(e.usd)}${md(e.d)}`).join(" → ");
     return `<div class="s" title="［直す］［登録］で上書きした相場の履歴（送料別の商品代）。上向きなら強気、下向きなら控えめに">相場の動き ${path} ${arrow}${btn}</div>${open}`;
+  }
+  // 相場の上がり下がり（↑↓。2026-11-19 ユーザー指定「わかるものだけでいい」）。判定・上限額は変えない（表示だけ）
+  //   1) 手で直した相場（相場メモ）: 前回の登録額と今の額
+  //   2) 日付のある販売実績（自分・Chatwork・頒布会）: いちばん新しい日から90日以内と、それより前の中央値
+  //   どちらも ±10% 以上動いたときだけ矢印。データが足りなければ出さない
+  const TREND_PCT = 10;
+  function trendOf(i) {
+    const r = i.refs && i.refs[0];
+    if (!r || i.setParts && i.setParts.length) return null;
+    if (isMemo(r)) {
+      const vals = memoHistList(r.title).filter((e, k, a) => k === 0 || e.usd !== a[k - 1].usd);
+      if (vals.length >= 2) {
+        const last = vals[vals.length - 1], prev = vals[vals.length - 2];
+        return { pct: Math.round((last.usd - prev.usd) / prev.usd * 100), why: `相場メモ ${nd(netOf(prev.usd) ?? prev.usd)}（${mdOf(prev.d)}）→ ${nd(netOf(last.usd) ?? last.usd)}（${mdOf(last.d)}）` };
+      }
+    }
+    const pts = i.refs.filter((x) => x.tier <= 2 && /^\d{4}-\d\d-\d\d$/.test(x.d || "")).sort((a, b) => a.d.localeCompare(b.d));
+    if (pts.length < 2) return null;
+    const newest = Date.parse(pts[pts.length - 1].d), cut = newest - 90 * 864e5;
+    const recent = pts.filter((x) => Date.parse(x.d) >= cut), older = pts.filter((x) => Date.parse(x.d) < cut);
+    if (!recent.length || !older.length) return null;
+    const a = median(older.map((x) => x.price)), b = median(recent.map((x) => x.price));
+    return { pct: Math.round((b - a) / a * 100), why: `売れた価格 90日より前 ${nd(netOf(a))}（${older.length}件）→ 直近90日 ${nd(netOf(b))}（${recent.length}件）` };
+  }
+  function trendArrow(i) {
+    const t = trendOf(i);
+    if (!t || Math.abs(t.pct) < TREND_PCT) return "";
+    const up = t.pct > 0;
+    return ` <span class="trend ${up ? "g" : "x"}" title="${esc((up ? "相場が上がっている" : "相場が下がっている") + "（判定・上限額は今の相場のまま。表示だけ）\n" + t.why)}">${up ? "↑" : "↓"}${up ? "+" : ""}${t.pct}%</span>`;
   }
   function saveMemoFile() {
     if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) return;

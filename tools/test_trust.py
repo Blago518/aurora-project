@@ -585,6 +585,34 @@ class StoreCodeTitles(unittest.TestCase):
         self.assertEqual(got, self.CASES)
 
 
+class PriceTrend(unittest.TestCase):
+    """相場の上がり下がり（↑↓。2026-11-19 ユーザー指定）. 判定は変えず、表示だけ."""
+
+    def test_dates(self):
+        for raw, want in [("2026-11-16", "2026-11-16"), ("Nov-16-26", "2026-11-16"), ("d:16-Nov-26", "2026-11-16"), ("2026/1/5", "2026-01-05"), ("", ""), ("abc", "")]:
+            self.assertEqual(ba.norm_date(raw), want, raw)
+
+    def test_js(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        ref = lambda p, d: {"title": "Nikon F3", "price": p, "tier": 0, "source": "自分の販売実績", "tokens": ["nikon", "f3"], "acc": False, "d": d}  # noqa: E731
+        cases = {
+            "up": [ref(300, "2026-03-01"), ref(310, "2026-04-01"), ref(400, "2026-10-20"), ref(420, "2026-11-10")],
+            "down": [ref(400, "2026-03-01"), ref(300, "2026-11-10")],
+            "flat": [ref(300, "2026-03-01"), ref(310, "2026-11-10")],
+            "recent_only": [ref(300, "2026-10-01"), ref(400, "2026-11-10")],
+            "no_date": [ref(300, ""), ref(400, "")],
+        }
+        code = "const C=" + json.dumps(cases) + ";console.log(JSON.stringify(Object.fromEntries(Object.entries(C).map(([k,refs])=>{const t=m.trendOf({refs});return [k,t?t.pct:null]}))))"
+        got = run_js(data, code)
+        self.assertGreater(got["up"], 10)
+        self.assertLess(got["down"], -10)
+        self.assertLess(abs(got["flat"]), 10)      # 矢印は出ない（±10%未満）
+        self.assertIsNone(got["recent_only"])     # 90日より前のデータが無い → 出さない
+        self.assertIsNone(got["no_date"])
+
+
 class KitParts(unittest.TestCase):
     """レンズキットはボディとレンズの2点に分け、中身ごとに相場を当てる（2026-11-19 ユーザー指定）."""
     T = "NIKON ニコン デジタル一眼レフカメラ D70 レンズキット(AF-S DX Zoom-NIKKOR 18-70mm F3.5-4.5G IF ED) ⑤ 7795B-4"
