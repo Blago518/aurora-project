@@ -1133,8 +1133,12 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const mb = (i) => (i.calc ? i.calc.maxBid : "");
     if (watchAdd([...good.map((i) => ({ i, mark: i.mark, maxBid: mb(i) })), ...weak.map((i) => ({ i, mark: "確認してから" + i.mark, maxBid: mb(i) })),
       ...pinnedWaits.map((i) => ({ i, mark: "仮" + i.mark, maxBid: mb(i) })), ...waits.map((w) => ({ i: w.i, mark: "仮" + w.mk, maxBid: w.c.maxBid }))])
-      && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id)
-      try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_seen.csv", csv: watchCsv() }, () => void chrome.runtime.lastError); } catch (e) {}
+      && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
+      clearTimeout(state.seenTimer);  // 続けて読むときに何度も保存しないよう、30秒まとめて1回
+      state.seenTimer = setTimeout(() => {
+        try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_seen.csv", csv: watchCsv() }, () => void chrome.runtime.lastError); } catch (e) {}
+      }, 30000);
+    }
     const more = !state.done && state.total && state.total >= (state.next || 1);
 
     // ［直す］した行: 本来の欄が変わっても、ここに残す（ページを開き直すと本来の欄へ）
