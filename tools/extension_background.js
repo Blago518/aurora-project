@@ -93,6 +93,18 @@ function openTabs(urls, tab, max) {
     .then(() => opened.length);
 }
 
+// 拡張機能が自動で保存する aurora_*.csv（Mac が取り込む用）は、ダウンロードの吹き出しと一覧に出さない（2026-11-19 ユーザー指摘）。
+// ファイルは上書きで1つだけ。保存の間だけ吹き出しを止め、終わったら一覧から消す（ファイルは残る）
+function quietDownload(opts) {
+  const ui = (on) => { try { if (chrome.downloads.setUiOptions) return chrome.downloads.setUiOptions({ enabled: on }).catch(() => {}); } catch (e) {} return Promise.resolve(); };
+  return ui(false).then(() => chrome.downloads.download(opts)).then((id) => new Promise((ok) => {
+    const done = () => { chrome.downloads.onChanged.removeListener(watch); clearTimeout(t); ui(true); chrome.downloads.erase({ id }).catch(() => {}); ok(id); };
+    const watch = (d) => { if (d.id === id && d.state && d.state.current !== "in_progress") done(); };
+    const t = setTimeout(done, 10000);
+    chrome.downloads.onChanged.addListener(watch);
+  }), (e) => { ui(true); throw e; });
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   // 相場データ: フォルダの data.json を毎回読む（Mac が作り直した最新。拡張機能の ↻ は不要）
   if (msg && msg.type === "getData") {
@@ -116,7 +128,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   }
   if (msg && msg.type === "saveFile" && /^aurora_[a-z_]+\.csv$/.test(msg.name || "")) {  // 安心ストアの一覧など
     const url = "data:text/csv;charset=utf-8," + encodeURIComponent("\ufeff" + msg.csv);
-    chrome.downloads.download({ url, filename: msg.name, conflictAction: "overwrite", saveAs: false })
+    quietDownload({ url, filename: msg.name, conflictAction: "overwrite", saveAs: false })
       .then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
     return true;
   }

@@ -370,7 +370,7 @@ class ExtensionBrowse(unittest.TestCase):
         self.assertNotIn("host_permissions", man)  # キーが無ければ eBay への通信権限は付けない
         # background.js は相場メモの自動保存（ダウンロード/aurora_price_memo.csv）のため常に入る。キーは入らない
         self.assertIn("const APP_ID = null;", bg)
-        self.assertEqual(man["permissions"], ["downloads", "storage"])
+        self.assertEqual(man["permissions"], ["downloads", "downloads.ui", "storage"])
 
 
 if __name__ == "__main__":

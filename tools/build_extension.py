@@ -167,7 +167,7 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
     # 裏方（background.js）は常に入れる: 相場メモを ダウンロード/aurora_price_memo.csv に保存する（downloads 権限）。
     # eBay のキーがあれば、出品中の相場を公式 Browse API で調べる（通信先は api.ebay.com だけ）
     manifest["background"] = {"service_worker": "background.js"}
-    manifest["permissions"] = ["downloads", "storage"]  # storage: オークファンの予約の受け渡し・eBay 出品中の価格の保存
+    manifest["permissions"] = ["downloads", "downloads.ui", "storage"]  # downloads.ui: 自動保存の吹き出しを出さない  # storage: オークファンの予約の受け渡し・eBay 出品中の価格の保存
     if keys:
         manifest["host_permissions"] = ["https://api.ebay.com/*"]
     shutil.copy(HERE / "extension_aucfan.js", folder / "aucfan.js")
