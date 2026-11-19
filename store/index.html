@@ -301,7 +301,8 @@ async function autoUpdate(manual) {
     $("dataSt").textContent = `データ ${d.built}（自動）`;
     if (manual || fresh) { $("autoMsg").className = "status"; $("autoMsg").textContent = fresh ? "最新のデータを読み込みました。" : "すでに最新です。"; }
   } catch (err) {
-    $("autoInfo").textContent = "設定済み。最新を読めなかったので、前回のデータを使っています。";
+    $("autoInfo").textContent = `設定済み。最新を読めませんでした（${String(err.message || err).slice(0, 80)}）。` +
+      (DATA ? `前回のデータ（${DATA.built}作成）を使っています。` : "前回のデータもありません。下の［保存して読み込む］を押すと理由が出ます。");
     if (manual) { $("autoMsg").className = "status err"; $("autoMsg").textContent = "読み込めませんでした: " + (err.message || err); }
   }
 }
