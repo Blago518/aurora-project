@@ -63,6 +63,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "refundRatio": (t["consumption_tax_pct"] / (100 + t["consumption_tax_pct"])
                             if t["include_consumption_tax_refund"] else 0.0),
             "minProfit": j["min_profit_jpy"], "minMarginPct": j["min_margin_pct"],
+            "lowPriceUsd": j.get("low_price_usd", 0), "lowPriceMinProfit": j.get("low_price_min_profit_jpy", 0),  # 安い物は利益の基準を上げる
             "trustedMinProfit": j.get("trusted_min_profit_jpy", j["min_profit_jpy"]),
             "trustedMinMarginPct": j.get("trusted_min_margin_pct", j["min_margin_pct"]),
             "junkFactor": j.get("junk_price_factor", 1.0),

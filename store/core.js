@@ -217,7 +217,8 @@ function makeCore(DATA) {
     const k = tm * (1 - g.refundRatio);
     const fixed = net - dom - intl - g.packing;
     // 安心ストア（フォロー中）の基準（appraise.py の calculate と同じ。2026-11-16 から全体と同じ値）
-    const minP = it.trusted ? (g.trustedMinProfit ?? g.minProfit) : g.minProfit;
+    const minP0 = it.trusted ? (g.trustedMinProfit ?? g.minProfit) : g.minProfit;
+    const minP = g.lowPriceUsd && rev <= g.lowPriceUsd ? Math.max(minP0, g.lowPriceMinProfit || 0) : minP0;  // 売値$99以下は利益4,000円以上（appraise.low_price_min_profit）
     const minM = it.trusted ? (g.trustedMinMarginPct ?? g.minMarginPct) : g.minMarginPct;
     const maxBid = Math.max(0, roundDown(Math.min((fixed - minP) / k, (fixed - minM / 100 * revJpy) / k)));
     const be = Math.max(0, roundDown(fixed / k));

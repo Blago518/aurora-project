@@ -1260,6 +1260,13 @@ def intl_shipping(item: Item, cfg: dict, fx: float) -> int:
     return int(s.get(f"{item.ship_size}_jpy", s["default_jpy"])) if item.ship_size else int(s["default_jpy"])
 
 
+def low_price_min_profit(revenue_usd: float, min_profit: float, j: dict) -> float:
+    """売値（送料込み）が low_price_usd 以下なら、利益の基準を low_price_min_profit_jpy に上げる（2026-11-19 ユーザー決定）."""
+    if j.get("low_price_usd") and revenue_usd <= j["low_price_usd"]:
+        return max(min_profit, j.get("low_price_min_profit_jpy", min_profit))
+    return min_profit
+
+
 def calculate(item: Item, cfg: dict, fx: float) -> dict:
     """想定販売価格から手取り・利益・上限入札額を計算する."""
     if item.expected_price_usd is None:
@@ -1293,6 +1300,7 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
     # 安心ストア（フォロー中）の基準（config.toml の trusted_*。2026-11-16 から全体と同じ値）
     min_profit = j.get("trusted_min_profit_jpy", j["min_profit_jpy"]) if item.trusted else j["min_profit_jpy"]
     min_margin = j.get("trusted_min_margin_pct", j["min_margin_pct"]) if item.trusted else j["min_margin_pct"]
+    min_profit = low_price_min_profit(revenue_usd, min_profit, j)
     by_profit = (fixed - min_profit) / k
     by_margin = (fixed - min_margin / 100 * revenue_jpy) / k
     max_bid = max(0, round_down_to_increment(min(by_profit, by_margin)))
