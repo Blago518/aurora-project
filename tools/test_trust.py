@@ -268,7 +268,7 @@ class StoreCodesAndTripods(unittest.TestCase):
     """リサマイ市場などの管理番号（∞ 776BC-16・7774A-1）は機種名に入れない。三脚・雲台・外部モニターはカメラではない（2026-11-19）."""
 
     def test_store_codes(self):
-        self.assertEqual(ba.model_key("NIKON ニコン コンパクトデジタルカメラ COOLPIX P7000 ∞ 776BC-16")[0], "Nikon P7000")
+        self.assertEqual(ba.model_key("NIKON ニコン コンパクトデジタルカメラ COOLPIX P7000 ∞ 776BC-16")[0], "Nikon COOLPIX P7000")
         self.assertNotIn("7771C-1", ba.title_to_query("OLYMPUS 単焦点レンズ M.ZUIKO DIGITAL 45mm f1.8 7771C-1", 20))
         self.assertIn("X-T2", ba.title_to_query("富士フイルム FUJIFILM X-T2 ボディ", 20))  # 本物の型番は残す
 
@@ -562,7 +562,7 @@ class DuplicateAuctions(unittest.TestCase):
 class StoreCodeTitles(unittest.TestCase):
     """実際の出品の商品名で、管理番号を外し・本物の型番は残す（2026-11-19 ユーザー指摘「管理番号は無くならない？他のまで除外しちゃう？」）. Python と拡張機能で同じ."""
     CASES = {
-        "【草】ジャンク品 Canon Power Shot S110 (silver) キヤノン パワーショット【K172】K03": "Canon S110",
+        "【草】ジャンク品 Canon Power Shot S110 (silver) キヤノン パワーショット【K172】K03": "Canon PowerShot S110",  # シリーズ名を残す（2026-11-19）
         "【加】稼働！ 撮影可能！ OLYMPUS オリンパス VH-510 ピンク コンパクト デジタル カメラ【9022NT】K11": "Olympus VH-510",
         "【豊】希少 現状品 SELSI 6×15 Field 7° 小型 双眼鏡 ヴィンテージ ケース付き【2282MK】K14": "SELSI 6x15",
         "【塩】OLYMPUS オリンパス OM10 シャッターOK ZUIKO AUTO-S 50mm F1.8 カビ・チリ一部あり【25490CK】J26": "Olympus OM10 50mm F1.8",
@@ -606,3 +606,112 @@ class KitParts(unittest.TestCase):
         self.assertIn("18-70mm", out[1])
         self.assertTrue(out[1].lower().startswith("nikon"))
 
+
+class AuditTitles(unittest.TestCase):
+    """2026-11-19 監査: 古物台帳・相場メモ・ヤフオクの検索結果 約2,000件の商品名で見つけた機種名・検索語の誤り. 実際の商品名そのまま.
+    Python（毎朝の入札リスト）と拡張機能・店舗アプリで同じ機種名になること."""
+    LABELS = {
+        # シリーズ名が抜けていた（ユーザー指摘「Canon Power Shot S110 → Canon S110」「EOS Kiss X10 → Canon X10」）
+        "Canon Power Shot G7": "Canon PowerShot G7",
+        "キヤノン EOS Kiss X10 ボディ": "Canon EOS Kiss X10",
+        "【中古】Canon キヤノン EOS Kiss X7 ダブルズームキット ブラック シャッター回数僅少": "Canon EOS Kiss X7",
+        "【中古】Canon キヤノン IXY 620F ゴールド コンパクトデジタルカメラ": "Canon IXY 620F",
+        "【中古】Nikon ニコン COOLPIX W100 ブルー コンパクトデジタルカメラ": "Nikon COOLPIX W100",
+        "【返品保証】 ニコン Nikon COOLPIX 4500 コンパクトデジタルカメラ e16129": "Nikon COOLPIX 4500",
+        "Sony Syber-Shot DSC-RX1R": "Sony Cyber-shot DSC-RX1R",
+        "【中古】FUJIFILM 富士フイルム FinePix S9000 ブラック コンパクトデジタルカメラ": "Fujifilm FinePix S9000",
+        "Panasonic LUMIX DC-TZ95D Black": "Panasonic LUMIX DC-TZ95D",
+        "Olympus OM-D E-M5 Mark II Black": "Olympus OM-D E-M5 Mark II",
+        "【返品保証】 オリンパス Olympus PEN F F.Zuiko Auto-S 38mm F1.8 ボディレンズセット e16343": "Olympus PEN F 38mm F1.8",
+        "【返品保証】 オリンパス Olympus μ mju ZOOM 105 DELUXE 38-105mm コンパクトカメラ e21932": "Olympus mju 105 38-105mm",
+        "%516 OLYMPUS μ-7040 オリンパス ミュー コンパクトデジタルカメラ": "Olympus mju-7040",
+        "【返品保証】 ペンタックス Pentax ESPIO 110 38-110mm コンパクトカメラ e16773": "Pentax ESPIO 110 38-110mm",
+        "【動作品】OLYMPUS XA オリンパス コンパクトフィルムカメラ C-3157": "Olympus XA",
+        "【ジャンク】OLUMPUS XA 2 + A11 #U978": "Olympus XA2 A11",
+        "【返品保証】 【シャッター290回】ニコン Nikon 1 J3 レッド 10-100mm F4-5.6 VR ミラーレス一眼 e16905": "Nikon 1 J3 10-100mm F4-5.6",
+        "キヤノン Canon EOS RP RF 24-105mm IS STM レンズキット ミラーレス一眼 カメラ 中古": "Canon EOS RP RF 24-105mm",
+        "【返品保証】 キャノン Canon EOS 7 ボディ e20645": "Canon EOS 7",
+        # 「NIKON D850」が「NIKO」になっていた（[#＃No.] の文字の組で N＋D850 を管理番号として消していた）
+        "NIKON D850 ボディ": "Nikon D850",
+        "CANON 600D": "Canon 600D",
+        "PENTAX-110 F2.8 50mm #U713": "Pentax 110 F2.8 50mm",
+        # 管理番号・シャッター回数・個数・ズーム倍率・重さ・Canon の内部型番が機種名に入っていた
+        "オリンパス OLYMPUS μ[mju:]-II mju Ⅱ mju2 110 μ ミュー 現状品 #5344A2104": "Olympus mju II mju2 110",
+        "【返品保証】 タムロン Tamron SP Di II 10-24mm F3.5-4.5 レンズ e8358": "Tamron II 10-24mm F3.5-4.5",
+        "◇美品【SONY ソニー】α77II ボディ ILCA-77M2 デジタル一眼カメラ　シャッター回数：138回": "Sony α77II ILCA-77M2",
+        "☆訳あり大特価☆オリンパス OLYMPUS XA2 2個まとめ #140#3442": "Olympus XA2",
+        "【返品保証】 リコー Ricoh Caplio R1 4.8x コンパクトデジタルカメラ e12021": "Ricoh Caplio R1",
+        "AB-0892 Nikon NIKKOR50mm 1:1.2 レンズ カメラ 部品 パーツ アクセサリー アンティーク レトロ 391g": "Nikon 50mm F1.2",
+        "★極上美品★ Canon PowerShot SX60 HS PC2188": "Canon PowerShot SX60",
+        "【20260103KNK-002】Nikon Ai AF-S ズームニッコール ED 28-70mm F2.8D (IF) ブラック": "Nikon Ai AF-S 28-70mm F2.8",
+        # 判（645・110）を消していた・焦点距離と同じ数字を重ねていた
+        "【返品保証】 ペンタックス Pentax smc PENTAX-A 645 200mm F4.5 中判レンズ e11939": "Pentax 645 200mm F4.5",
+        "【返品保証】 ペンタックス Pentax 100 MACRO WR smc PENTAX-D FA MACRO 100mm F2.8 レンズ e17136": "Pentax 100mm F2.8",
+        # 型（New FD・Ai）を2回書いていた・非Ai を Ai と読んでいた
+        "Canon New FD 50mm f/1.8": "Canon New FD 50mm F1.8",
+        "Nikon Ai 28mm f/2.8": "Nikon Ai 28mm F2.8",
+        "Nikon NIKKOR-S Auto 35mm f/2.8 non Ai": "Nikon 35mm F2.8 Non-Ai",
+        "Contax Planar 50mm f/1.4 AEJ": "Contax 50mm F1.4 AEJ",
+        # 社外レンズが「〜マウント」のメーカー名になっていた・書き間違いのメーカー名
+        "【返品保証】 ROKINON 35mm F1.5 キャノンマウント レンズ e15869": "ROKINON 35mm F1.5",
+        "【返品保証】 SEAGULL 24mm F2.8 ミノルタマウント レンズ e18039": "SEAGULL 24mm F2.8",
+        "※動作未確認のためジャンク Cannon/キヤノンカメラAE-1 おまけレンズ付きTEFNON/テフノンH/D-MC ZOOM1:4.5ｆ＝80-200㎜": "Canon AE-1 ZOOM1 4.5f",
+        "【外観並級】Cannon IXY 930 IS　#u14695": "Canon IXY 930",
+        # ボディの型番 FE2 を「FE 2」に分けていた
+        "Nikon FE2 Body": "Nikon FE2",
+        # 今日直したもの（再発しないこと）
+        "【加】稼働！ 撮影可能！ OLYMPUS オリンパス VH-510 ピンク コンパクト デジタル カメラ【9022NT】K11": "Olympus VH-510",
+        "Canon EF 200mm f/2.8 L Ⅱ": "Canon EF 200mm F2.8 II L",
+    }
+
+    def test_python(self):
+        self.assertEqual({t: ba.model_key(t)[0] for t in self.LABELS}, self.LABELS)
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        T = list(self.LABELS)
+        got = run_js(data, "const T=" + json.dumps(T, ensure_ascii=False)
+                     + ";console.log(JSON.stringify(T.map((t)=>[m.modelKey(t),m.titleToQuery(t),m.titleToQuery(t,20)])))")
+        self.assertEqual(got, [[list(ba.model_key(t)), ba.title_to_query(t), ba.title_to_query(t, 20)] for t in T])
+
+    def test_series_not_in_compare_key(self):
+        # シリーズ名は表示だけ。「Canon S110」と「Canon PowerShot S110」は同じ機種としてまとめる
+        self.assertEqual(ba.model_key("Canon S110")[1], ba.model_key("Canon PowerShot S110")[1])
+
+    def test_matching(self):
+        """相場の当たり方: 判（645・110）違い・社外レンズ・非Ai は当てない. 書き間違いのメーカー名・Power Shot・大文字の NIKON は当てる."""
+        def hit(listing, ref):
+            return bool(ba.match_sales(ba.title_to_query(listing, 20),
+                                       [{"title": ref, "sold_price_usd": 100, "source": "自分の販売実績", "_tokens": ba._tokens(ref)}]))
+        self.assertFalse(hit("PENTAX-110 F2.8 50mm #U713", "Pentax FA 50mm f/2.8 Macro"))
+        self.assertFalse(hit("【返品保証】 ペンタックス Pentax smc PENTAX-A 645 200mm F4 中判レンズ e14661", "Pentax 200mm f/4"))
+        self.assertTrue(hit("【返品保証】 ペンタックス Pentax auto 110 PENTAX-110 24mm F2.8 カメラ e15321", "Pentax 110 Auto 24mm f/2.8"))
+        self.assertFalse(hit("【外観美品】 【元箱付き】アストロリ AstrHori 50mm F2 ライカLマウント レンズ e19251", "Leica Summicron-M 50mm f/2 silver"))
+        self.assertFalse(hit("Nikon NIKKOR-S Auto 35mm f/2.8 non Ai", "Nikon Ai 35mm f/2.8"))
+        self.assertTrue(hit("【中古】Canon キヤノン PowerShot G7 コンパクトデジタルカメラ", "Canon Power Shot G7"))
+        self.assertTrue(hit("【外観並級】Cannon IXY 930 IS　#u14695", "Canon IXY 930 IS"))
+        self.assertTrue(hit("NIKON D850 ボディ", "Nikon D850 Body"))
+
+
+class SuggestNet(unittest.TestCase):
+    """仮の相場の案: 送料 $40 を引いた商品代が 0 以下なら案にしない（2026-11-19 ユーザー指摘「案 $-1」「案 $-20」）."""
+
+    def test_python(self):
+        import tentative as tv
+        self.assertIsNone(tv.suggest_usd({"n": 6, "min": 39.99, "med": 120}, CFG))   # 送料込み $39.99 → 商品代 −$0.01
+        self.assertIsNone(tv.suggest_usd({"n": 6, "min": 20, "med": 120}, CFG))      # 商品代 −$20
+        self.assertIsNone(tv.suggest_usd({"n": 6, "min": 40.5, "med": 120}, CFG))    # 切り捨てて $40 → 商品代 $0
+        self.assertIsNone(tv.suggest_usd({"n": 6, "min": 41.2, "med": 120}, CFG))     # 商品代 $1 は付属品などの誤ヒット（下限 $20。2026-11-19 ユーザー決定）
+        self.assertEqual(tv.suggest_usd({"n": 6, "min": 60.5, "med": 120}, CFG), 60)  # 商品代 $20 は案にする
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import tentative as tv
+        data = bx.build_data(CFG, 150.0)
+        cases = [39.99, 20, 40.5, 41.2, 59.9, 60.5, 139.99]
+        got = run_js(data, "console.log(JSON.stringify(" + json.dumps(cases) + ".map((x)=>m.suggestUsd({n:6,min:x,med:120}))))")
+        self.assertEqual(got, [tv.suggest_usd({"n": 6, "min": x, "med": 120}, CFG) for x in cases])

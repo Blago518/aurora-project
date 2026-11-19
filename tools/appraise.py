@@ -450,11 +450,17 @@ BRANDS_JA = [
     ("マミヤ", "Mamiya"), ("シグマ", "Sigma"), ("タムロン", "Tamron"), ("トキナー", "Tokina"),
     ("ヤシカ", "Yashica"), ("カシオ", "Casio"), ("フォクトレンダー", "Voigtlander"),
     ("ブロニカ", "Bronica"), ("ツァイス", "Zeiss"), ("コダック", "Kodak"), ("京セラ", "Kyocera"),
+    # よくある書き間違い（検索URL でわざと探している。2026-11-19）
+    ("キャノソ", "Canon"), ("ニツコン", "Nikon"), ("オリンバス", "Olympus"), ("ペンタクス", "Pentax"),
+    ("ミノルダ", "Minolta"), ("コンタクス", "Contax"), ("コンタッックス", "Contax"),
 ]
 # 検索語に残す日本語（色など）
 WORDS_JA = [("ブラック", "Black"), ("シルバー", "Silver"), ("クローム", "Chrome"), ("チタン", "Titanium")]
 BRANDS_EN = {b.lower(): b for _, b in BRANDS_JA} | {
     "fuji": "Fujifilm", "om": "OM", "lumix": "Panasonic", "carl": "Carl",
+    # よくある書き間違い（2026-11-19。「Cannon IXY 930」が Canon の相場に当たらず、機種名も「Cannon 930」だった）
+    "cannon": "Canon", "nikkon": "Nikon", "olimpus": "Olympus", "olynpus": "Olympus", "olumpus": "Olympus",
+    "olympas": "Olympus", "pentux": "Pentax", "minolata": "Minolta", "shigma": "Sigma",
 }
 LENS_MAKERS = {"tamron", "sigma", "tokina", "kenko", "samyang", "vivitar", "soligor"}
 LENS_LINES = {"zuiko": "Olympus", "nikkor": "Nikon", "takumar": "Pentax", "rokkor": "Minolta",
@@ -664,13 +670,62 @@ def is_stock_code(tok: str, before_brand: bool, bracketed: bool) -> bool:
     return before_brand and (bracketed or any(re.fullmatch(p, tok) for p in STOCK_CODE_WEAK))
 
 
+# 商品名の書き方をそろえる・型番でない語を外す（2026-11-19 監査。実際の出品約2,000件で見つけた誤り）. 拡張機能も同じ表を使う
+# (正規表現, 置き換え, "i"=大文字小文字を区別しない). JS と同じ結果になるよう \b は使わず、前後の英数字を明示する
+TITLE_FIXES = [
+    # 管理番号・シリアル・個数など（eBay の検索語・機種名に入っていた）
+    (r"[#＃]+\s*[A-Za-z]{0,4}\d[A-Za-z0-9\-]*", " ", ""),             # #5344A2104・#am9780・#U457・###z19144・＃142
+    (r"\s[a-z]{1,2}\d{3,5}\s*$", " ", ""),                             # 末尾の e7467・v5270・s7162（小文字＋数字。D850 などの型番は大文字）
+    (r"S/N\s*[:：]?\s*[A-Za-z0-9\-]+", " ", "i"),                      # S/N:8G17636
+    (r"[\[【(（]?管理?(?:番号)?[:：]?[A-Za-z]*[0-9][A-Za-z0-9\-]*[\]】)）]?", " ", ""),  # 管OL10420・[管NI9765]・管理8H0907C-A1（「保管 Nikon」は外さない）
+    (r"%\s*\d+", " ", ""),                                              # %516
+    (r"[【\[]\s*(?:\d{6,}[A-Za-z]*-?\d*|\d+_\d+)\s*[】\]]", " ", ""),      # 【20260103KNK-002】・【258_87610】（日付・番号の管理番号）
+    (r"(?<![A-Za-z0-9])PC\d{4}(?![A-Za-z0-9])", " ", ""),              # Canon の内部型番 PC1250（eBay の商品名には書かれない）
+    (r"(?<![A-Za-z0-9.])[\d,]+\s*回(?:以下|以上|程度)?", " ", ""),      # シャッター333回・シャッター回数19000回以下
+    (r"(?<![A-Za-z0-9.\-])\d+\s*(?:個|点(?!検)|台(?!座)|本(?!体)|枚)(?:\s*(?:セット|まとめ|おまとめ))?", " ", ""),  # 2個まとめ・6点・42台・3本
+    (r"(?<![A-Za-z0-9.\-])\d{2,4}\s*g(?![A-Za-z0-9])", " ", ""),       # 重さ 391g・175g
+    # シリーズ名の書き方をそろえる（機種名に残す。Power Shot → PowerShot、μ → mju）
+    (r"power\s+shot", "PowerShot", "i"),
+    (r"(?:cyber|syber)[\s\-]*shot", "Cyber-shot", "i"),
+    (r"[μµ](?=-[0-9])", " mju", ""),                                    # μ-7040 → mju-7040
+    (r"[μµ]", " mju ", ""),
+    (r"ミュー", " mju ", ""),
+    (r"パワーショット", " PowerShot ", ""),
+    (r"クールピクス", " COOLPIX ", ""),
+    (r"サイバーショット", " Cyber-shot ", ""),
+    (r"ファインピクス", " FinePix ", ""),
+    (r"エクシリム", " EXILIM ", ""),
+    (r"オートボーイ", " Autoboy ", ""),
+    (r"(?<![A-Za-z0-9])XA\s+([1-4])(?![0-9])", r"XA\1", "i"),          # XA 2 → XA2
+    (r"(?<![A-Za-z])mju(?=I)", "mju ", ""),                             # mjuⅡ → mju II
+    # くっついた語を分ける（Nikon1 J5・CanonEOS620・EOS80D・PENTAX-110・Olympus-PEN・1NIKKOR・NIKKOR50mm・28-80mm1:3.5）
+    (r"(?<![A-Za-z])(canon|cannon|nikon|olympus|pentax|minolta)(?=EOS|[0-9])", r"\1 ", "i"),
+    (r"(?<![A-Za-z])(EOS)(?=[0-9])", r"\1 ", "i"),
+    (r"(?<![A-Za-z])(pentax)-(?=[0-9])", r"\1 ", "i"),
+    (r"(?<![A-Za-z])(olympus)-(?=pen)", r"\1 ", "i"),
+    (r"(?<![A-Za-z0-9])1(?=nikkor)", "1 ", "i"),
+    (r"(?<![A-Za-z])(nikkor|zuiko|takumar|rokkor|hexanon)(?=[0-9])", r"\1 ", "i"),
+    (r"([0-9])\s*mm(?=[0-9])", r"\1mm ", "i"),
+    # 「non Ai」「Non-Ai」は非Ai（Ai として相場を当てていた）
+    (r"(?<![A-Za-z])non[\s\-]*Ai(?![A-Za-z\-])", " nonAi ", "i"),
+]
+TITLE_FIXES_RE = [(re.compile(p, re.I if f == "i" else 0), r) for p, r, f in TITLE_FIXES]
+
+
+KEEP4_AFTER = {"coolpix", "finepix", "powershot", "ixy", "eos", "optio", "exilim", "dimage", "caplio"}  # この後の4桁の数字は型番
+
+
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
+    for rx, rep in TITLE_FIXES_RE:
+        t = rx.sub(rep, t)
     t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
     # 末尾の管理番号（【9022NT】K11・【K172】K03・【1582-4NT】K17・【25490CK】J26。拡張機能と同じ。2026-11-19）
     t = re.sub(r"[【\[]\s*[A-Za-z]{0,2}\d{2,6}(?:-\d{1,5})?[A-Za-z]{0,3}\s*[】\]]\s*[A-Z]\d{1,3}\s*$", " ", t)
     t = re.sub(r"[【\[]\s*\d{3,6}(?:-\d{1,5})?[A-Za-z]{1,3}\s*[】\]]\s*$", " ", t)
-    t = re.sub(r"\d+(?:\.\d+)?\s*°", " ", re.sub(r"(\d+)\s*[×xX]\s*(\d+)(?![\d.])", r"\1x\2", t))  # 7° は視野角  # 双眼鏡の 6×15・8x30、中判の 6x6 を1語に
+    # 双眼鏡の 6×15・8x30、中判の 6x6 を1語に（数字だけの語どうし。「ZTC1.4x 1103」「DSC-T2×2」はつなげない）。7° は視野角
+    t = re.sub(r"\d+(?:\.\d+)?\s*°", " ", re.sub(r"(?<![A-Za-z0-9.\-])(\d+)\s*[×xX]\s*(\d+)(?![\d.])", r"\1x\2", t))
+    t = re.sub(r"×\s*\d+(?![\d.])", " ", t)  # 残った ×2・×3 は個数
     t = re.sub(BRACKET_CODE_RE, lambda m: " \x01" + m.group(1) + " ", t)  # 【L256】→ 管理番号の候補の印（\x01）を付ける
     t = re.sub(r"\d+円[~〜～]?", " ", t)  # 「1円～」
     t = re.sub(r"[∞¶∩§]\s*\S*", " ", t)  # ストアの管理番号（… ∞ 776BC-16・¶ 7774A-5。リサマイ市場など）
@@ -681,12 +736,14 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = re.sub(r"[①-⑳]", " ", t)  # まとめ⑤ 等の丸数字
     t = re.sub(r"非\s*-?\s*A[iI](?![-sS])", " nonAi ", t)  # 非Ai（Ai/Ai-Sとは相場が違う）
     for pat, rep in VARIANT_NORMALIZE:  # 型の表記をそろえる（AE Japan → AEJ、S.S.C. → SSC など）
-        t = re.sub(pat, rep, t, flags=re.I)
-    t = re.sub(r"[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b", " ", t)  # #v4081 等の管理番号
+        t = re.sub(pat, rep, t, flags=re.I | re.A)  # \b は英数字だけで判定（拡張機能の JS と同じ。「AISニッコール」も Ai-S に）
+    # No.10131 等の管理番号（#v4081 などは TITLE_FIXES）。以前は [#＃No.] の文字の組で「NIKON D850」の「N D850」まで消していた（2026-11-19）
+    t = re.sub(r"(?<![A-Za-z0-9])N[oO]\.\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?(?![A-Za-z0-9])", " ", t)
     t = re.sub(r"(\d)\s*[・･]\s*(\d)", r"\1.\2", t)        # f2・8 → f2.8
     t = re.sub(r"\b[fF]\s*/\s*(\d)", r"F\1", t)              # f/2.8 → F2.8
     t = re.sub(r"\b1\s*:\s*(\d(?:\.\d)?)\b", r"F\1", t)      # 1:1.8 → F1.8
-    t = re.sub(r"\b(EF-S|EF|RF|FD|XF|FE)(\d)", r"\1 \2", t, flags=re.I)  # EF135mm → EF 135mm
+    # EF135mm → EF 135mm（焦点距離が続くときだけ。Nikon FE2・FE10 のボディの型番は分けない。2026-11-19）
+    t = re.sub(r"\b(EF-S|EF|RF|FD|XF|FE)(\d+(?:-\d+)?\s*(?:mm|㎜))", r"\1 \2", t, flags=re.I)
     t = re.sub(r"\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b", r"\1 \2", t)  # F2L → F2 L
     t = re.sub(r"(?<![\d.-])(\d{2,3})-\s+(?=[fF]\d)", r"\1mm ", t)  # 「EF 50- F1.2L」→ 50mm（mm の書き忘れ）
     t = re.sub(r"[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+", " ", t)
@@ -705,14 +762,17 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     brand_at += [m.start() for m in found if m.group().lower().strip(".-") in BRANDS_EN][:1]
     # メーカー名が無いタイトルは「先頭の語」だけを頭とみなす（Polaroid 【SX-70】 の SX-70 を外さない）
     first_brand = min(brand_at) if brand_at else (found[0].end() if found else 0)
+    tok_at: dict[str, int] = {}
     for m in found:
         tok = m.group()
         low = tok.lower().strip(".-")
+        tok_at.setdefault(tok, m.start())
         if not low or low in NOISE_TOKENS:
             continue
         # 1桁の数字は検索語では落とすが、照合用（max_tokens>7）では残す（EOS 5 / Nikon 1 等）
-        if re.fullmatch(r"\d+", low) and ((len(low) < 2 and max_tokens <= 7) or len(low) >= 4):
-            continue  # 「1円」の1や、シリアル番号っぽい長い数字
+        if re.fullmatch(r"\d+", low) and ((len(low) < 2 and max_tokens <= 7) or len(low) >= 4) \
+                and not (len(low) == 4 and tokens and tokens[-1].lower() in KEEP4_AFTER):
+            continue  # 「1円」の1や、シリアル番号っぽい長い数字（COOLPIX 4500・FinePix 1200 の4桁は型番）
         if re.fullmatch(r"no\.?\d+", low):
             continue
         if is_stock_code(tok, m.start() < first_brand, m.start() > 0 and t[m.start() - 1] == "\x01"):
@@ -723,13 +783,21 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
         if low in BRANDS_EN:
             brand = brand or BRANDS_EN[low]
             all_brands.append(BRANDS_EN[low])
-            if BRANDS_EN[low] != "Carl":
+            if BRANDS_EN[low] != "Carl" and low != "lumix":  # LUMIX はシリーズ名として残す
                 continue
         if not any(x.lower() == low for x in tokens):
             tokens.append(tok)
     makers = [b for b in all_brands if b.lower() in LENS_MAKERS]
     if makers:  # 「タムロン … ニコン用」はタムロン製
         brand = makers[0]
+    # 社外レンズ（Rokinon・Viltrox・TTArtisan など）は「キャノンマウント」「ソニーEマウント」のメーカーではなく、その社名を頭に（2026-11-19）
+    # （社名がメーカー名より前にあるときだけ。「Canon AE-1 おまけレンズ付き TEFNON」のボディは Canon のまま）
+    tp = next((x for x in tokens if x.lower() in THIRD_PARTY and x.lower() not in LENS_MAKERS), None)
+    if tp and brand.lower() not in THIRD_PARTY | LENS_MAKERS and (not brand_at or tok_at.get(tp, 0) < min(brand_at)):
+        if brand and brand not in all_brands:
+            all_brands.append(brand)
+        brand = tp
+        tokens.remove(tp)
     if max_tokens <= 7:  # eBay検索語では一般的な表記に
         tokens = ["Non-Ai" if x == "nonAi" else x for x in tokens]
     words = ([brand] if brand else []) + tokens
@@ -849,7 +917,9 @@ def _base_cfg() -> dict:
 ACCESSORY_RE = re.compile(r"strap|(?<!w/)\bcase\b|grip|charger|battery|hood only|\bcap\b|catalog", re.I)
 THIRD_PARTY = {"tamron", "sigma", "tokina", "7artisans", "ttartisan", "brightin", "kenko", "pixco", "k&f", "meike", "viltrox", "laowa",
                "samyang", "yongnuo", "kipon", "fotodiox", "neewer", "commlite", "sg-image", "pergear",
-               "kamlan", "zonlai", "fujian", "rokinon", "vello"}
+               "kamlan", "zonlai", "fujian", "rokinon", "vello",
+               # 2026-11-19 監査: 「Seagull 24mm ミノルタマウント」が Minolta の相場に、「Leotax Leonon 5cm F2 ライカLマウント」が Leica に当たり得た
+               "oshiro", "astrhori", "seagull", "panagor", "shoten", "komura", "leotax", "tefnon", "mitakon", "zhongyi", "sirui"}
 COLOR_WORDS = {"black", "silver", "chrome", "white", "red", "blue", "green", "brown"}
 GENERATIONS = {"ii", "iii", "iv", "mkii", "mkiii", "mk2", "mk3", "mark"}
 # 系統の語（2026-11-19）: 同じ焦点距離・F値でも別のレンズ・カメラ。片方にだけあれば別物として扱い、機種名にも残す
@@ -866,6 +936,13 @@ MOUNT_WORDS = {
     "fujifilm": {"xf": "X", "xc": "X", "gf": "GF"},
 }
 MOUNT_TOKENS = {t for d in MOUNT_WORDS.values() for t in d}
+
+
+FORMAT_WORDS = {"110": "110", "645": "645", "67": "67", "6x7": "67"}  # レンズの判（片方にだけあれば別物）
+
+
+def format_of(tokens: set[str]) -> set[str]:
+    return {FORMAT_WORDS[t] for t in tokens if t in FORMAT_WORDS}
 
 
 def mount_of(tokens: set[str]) -> set[str]:
@@ -1094,7 +1171,8 @@ def _split_by_models(seg: str) -> list[str]:
 
 
 def set_part_titles(title: str) -> list[str]:
-    t = norm_title(title)
+    # 末尾のストアの管理番号（…/ジャンク/N031）は区切りで分ける前に外す（分けた後では型番と見分けられない。拡張機能と同じ）
+    t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", norm_title(title))
     b0 = _brand_of(t)
     out = []
     for seg0 in SET_SPLIT_RE.split(t):
@@ -1198,6 +1276,9 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
             continue
         # マウント違い（Canon EF と FD と RF、Nikon Z と F など）。マウントが分からない側があっても当てない
         if _lensy(qt) and mount_of(qt) != mount_of(rt):
+            continue
+        # フィルムの判（2026-11-19 監査）: 「Pentax 645 200mm F4」「PENTAX-110 50mm F2.8」に 35mm 判の同じ焦点距離の相場を当てない
+        if _lensy(qt) and format_of(qt) != format_of(rt):
             continue
         # 型違い（Contax の MMJ と AEG など）は相場が違う
         if variants_conflict(qt, rt):
@@ -1945,24 +2026,107 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+# 機種名に残すシリーズ名（2026-11-19 ユーザー指摘「Canon Power Shot S110 → Canon S110」）. 型番だけだと eBay の検索が広すぎ・狭すぎになる
+# 機種名（表示・eBay 検索語・相場メモの名前）だけに使い、比較用キー（まとめ方）と相場の当たり方には使わない
+LINE_WORDS = {"powershot": "PowerShot", "ixy": "IXY", "eos": "EOS", "kiss": "Kiss", "rebel": "Rebel", "coolpix": "COOLPIX",
+              "cyber-shot": "Cyber-shot", "lumix": "LUMIX", "finepix": "FinePix", "pen": "PEN", "om-d": "OM-D", "mju": "mju",
+              "stylus": "Stylus", "exilim": "EXILIM", "caplio": "Caplio", "optio": "Optio", "espio": "ESPIO", "dimage": "DiMAGE",
+              "autoboy": "Autoboy", "xa": "XA"}
+KEEP_NUM_AFTER = set(LINE_WORDS) | {"zoom", "auto", "super", "lubitel"}  # この後の数字は型番（mju ZOOM 105・Pentax Auto 110）
+FORMAT_NUMS = {"110", "645"}  # フィルムの判（Pentax 645 のレンズと 35mm 用のレンズは別物）
+# 型の表示名（拡張機能の VLABEL と同じ）
+VARIANT_LABELS = {"newfd": "New FD", "ssc": "SSC", "sc": "SC", "nonai": "Non-Ai", "ai": "Ai", "ai-s": "Ai-S", "aikai": "Ai改",
+                  "eyelevel": "EyeLevel", "photomic": "Photomic"}
+DISPLAY_WORDS = {"NewFD": "New FD", "nonAi": "Non-Ai"}
+NIKON1_RE = re.compile(r"(?:nikon|ニコン)\s*1\s*(?:[JVS][1-9]|AW1|nikkor)", re.I)
+
+
+def variant_of(tokens: set[str]) -> tuple[str, str] | None:
+    """型（MMJ・AEG・New FD・Ai-S など）の (キー, 表示名). 拡張機能の variantOf と同じ."""
+    for g in VARIANT_GROUPS:
+        if not (set(g["ctx"]) & tokens):
+            continue
+        found = [v for v in g["vars"] if v in tokens]
+        if len(found) == 1:
+            return found[0], VARIANT_LABELS.get(found[0], g["vars"][found[0]])
+    return None
+
+
 def model_key(title: str) -> tuple[str, str]:
-    """相場未登録の出品を機種ごとにまとめるためのキー（表示用の検索語, 比較用キー）."""
+    """相場未登録の出品を機種ごとにまとめるためのキー（表示用の検索語, 比較用キー）. 拡張機能の modelKey と同じ."""
     toks = title_to_query(title, 20).split()
     # 知らないメーカーでも、先頭が英字の語ならメーカー名として扱う（拡張機能の modelKey と同じ）
     brand = toks[0] if toks and (toks[0].lower() in {b.lower() for b in BRANDS_EN.values()}
                                  or (re.fullmatch(r"[A-Za-z][A-Za-z-]{2,}", toks[0]) and not re.search(r"\d", toks[0]))) else ""
     rest = toks[1:] if brand else toks
-    # 世代（II・III）と限定などの型も機種名に残す（拡張機能の modelKey と同じ考え方）
+    is_lens = any(re.search(r"mm$", t, re.I) for t in rest)
+    mm_nums = {n for t in rest if re.search(r"mm$", t, re.I) for n in re.findall(r"\d+", t)}
+    ratio = lambda t: bool(re.fullmatch(r"\d+(?:\.\d+)?x", t, re.I))  # noqa: E731  ズーム倍率 3x・10.7x
+    has_model = any(re.search(r"\d", t) and not ratio(t) for t in rest)
+
+    def code(i: int, t: str) -> bool:
+        """管理番号らしい語（C-2436・OL4709・2-2-2441）、レンズの機種名に混ざった数字、ズーム倍率など（機種名に入れない）."""
+        if re.fullmatch(r"[A-Za-z]{1,2}-\d{4,}|[A-Za-z]{2,3}\d{4,}|\d{4,}-\d{1,3}|[a-z]{1,2}\d{3,5}", t):
+            return True
+        if ratio(t) and has_model and not re.search(r"converter|extender|teleplus|テレコン", title, re.I):
+            return True
+        if re.fullmatch(r"\d+", t) and is_lens:
+            if t in FORMAT_NUMS or (i > 0 and (rest[i - 1].lower() in KEEP_NUM_AFTER or rest[i - 1].lower().split("-")[0] in LINE_WORDS)):
+                return False
+            return len(t) >= 3 or t in mm_nums
+        return False
+
     gen = lambda t: t.lower() in GENERATIONS or t.lower() in PREMIUM_VARIANTS  # noqa: E731
-    digits = [t for t in rest if re.search(r"\d", t)][:3]
-    key_toks = ([t for t in rest if t in digits or gen(t)] if digits else []) or rest[:2]
+    key_toks: list[str] = []
+    for i, t in enumerate(rest):
+        if (re.search(r"\d", t) and not code(i, t)) or gen(t):
+            if not (gen(t) and any(x.lower() == t.lower() for x in key_toks)):
+                key_toks.append(t)
+    while sum(1 for t in key_toks if not gen(t)) > 3:
+        j = max(i for i, t in enumerate(key_toks) if not gen(t))
+        key_toks.pop(j)
+    # シリーズ名（PowerShot・IXY・EOS Kiss・COOLPIX・PEN・mju など）と、そのすぐ後ろの数字の無い型番（EOS RP・PEN F・PEN EE）
+    lines: list[str] = []
+    for i, t in enumerate(rest):
+        lt = t.lower()
+        if lt in LINE_WORDS or (lt.split("-")[0] in LINE_WORDS and "-" in lt and not re.search(r"\d", lt)):  # PEN-FT・mju-II
+            lines.append(LINE_WORDS.get(lt, t))
+            nx = rest[i + 1] if i + 1 < len(rest) else ""
+            if lt in LINE_WORDS and re.fullmatch(r"[A-Z]{1,3}", nx) and nx.lower() not in BODY_CODE_SKIP \
+                    and nx.lower() not in LINE_WORDS:
+                lines.append(nx)
+    if "Kiss" in lines and "EOS" not in lines and brand.lower() == "canon":
+        lines.insert(lines.index("Kiss"), "EOS")
+    if brand.lower() == "nikon" and NIKON1_RE.search(unicodedata.normalize("NFKC", title)):
+        lines.insert(0, "1")
+    lines = list(dict.fromkeys(lines))
     has_mount = bool(mount_of(_tokens(title)))
     ser = [t for i, t in enumerate(rest) if (t.lower() in SERIES or (has_mount and t.lower() in MOUNT_TOKENS))
            and t.lower() not in [x.lower() for x in rest[:i]]]
-    label = " ".join(([brand] if brand else []) + ser + [t for t in key_toks if t not in ser]
-                     + (["L"] if canon_l(_tokens(title)) else []))  # Canon の L は機種名・検索語に残す
+    used = {x.lower() for x in lines + ser}
+    fallback = [t for i, t in enumerate(rest[:2]) if not code(i, t)]  # 型番の数字が無い機種（Contax T2 ではない XA など）
+    body = [t for t in (key_toks if any(not gen(t) for t in key_toks) else fallback) if t.lower() not in used]
+    vt = variant_of(_tokens(title))
+    # シリーズ名が型番の一部になっているとき（mju-7040・mju-II）は、シリーズ名だけの語を重ねない
+    lines = [x for x in lines if not any(y.lower().startswith(x.lower() + "-") for y in lines + body)]
+    # 商品名に書かれた順に並べる（Canon EOS Kiss X5 EF-S 18-55mm。補った EOS・Nikon 1 の 1 はシリーズ名の前）
+    pos: dict[str, float] = {}
+    for i, t in enumerate(rest):
+        pos.setdefault(t.lower(), i)
+    if "Kiss" in lines and "eos" not in pos:
+        pos["eos"] = pos.get("kiss", 0) - 0.5
+    pos.setdefault("1", -1)
+    words = ([brand] if brand else []) + sorted(dict.fromkeys(lines + ser + body), key=lambda w: pos.get(w.lower(), 99))
+    if vt and vt[0] not in {w.lower() for w in words}:  # 型（AEJ・MMJ・SSC・New FD）も機種名に（拡張機能と同じ。New FD を2回書かない）
+        words.append(vt[1])
+    if canon_l(_tokens(title)):  # Canon の L は機種名・検索語に残す
+        words.append("L")
+    label = " ".join(dict.fromkeys(DISPLAY_WORDS.get(w, w) for w in words))  # eBay で通じる書き方に（NewFD → New FD）
     norm = []
+    line_low = {x.lower() for x in lines}
     for t in label.lower().split():
+        if t in line_low:  # シリーズ名は比較用キーに入れない（「Canon S110」と「Canon PowerShot S110」を同じ機種にまとめる）
+            continue
         t = re.sub(r"^f/?", "", t) if re.fullmatch(r"f/?\d+(\.\d)?(-\d+(\.\d)?)?", t) else t
         norm.append("f" + t if re.fullmatch(r"\d+(\.\d)?(-\d+(\.\d)?)?", t) and "." in t else t)
     return label, " ".join(norm)
