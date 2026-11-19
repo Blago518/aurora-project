@@ -76,6 +76,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "trustedMinProfit": j.get("trusted_min_profit_jpy", j["min_profit_jpy"]),
             "trustedMinMarginPct": j.get("trusted_min_margin_pct", j["min_margin_pct"]),
             "junkFactor": j.get("junk_price_factor", 1.0),
+            "realized": dict(cfg.get("realized") or {}),  # 実績の売値の割合（表示だけ。appraise.realized_ratio）
             # 状態1ランクの補正（%）。実績から推定（appraise.condition_step_pct。相場メモは使わない）
             "condStep": ba.condition_step_pct(cfg, [r for r in rows if not ba.is_memo(r)]),
             "activeMinCount": j.get("active_min_count", 5),

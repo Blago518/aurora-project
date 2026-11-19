@@ -1463,7 +1463,32 @@ def low_price_min_profit(revenue_usd: float, min_profit: float, j: dict) -> floa
     return min_profit
 
 
-def calculate(item: Item, cfg: dict, fx: float) -> dict:
+def realized_ratio(net_usd: float | None, rank: int | None, cfg: dict) -> float | None:
+    """実績の売値の割合（2026-11-20 ユーザー決定。表示だけ）. 見込み（送料別）に対し、実際に売れた割合。拡張機能の realizedRatio と同じ."""
+    r = cfg.get("realized") or {}
+    if not r or net_usd is None:
+        return None
+    if rank is not None and rank >= COND_RANK["MINT"] and r.get("mint"):
+        return float(r["mint"])
+    key = "under_100" if net_usd < 100 else "under_200" if net_usd < 200 else "over_200"
+    return float(r[key]) if r.get(key) else None
+
+
+def realized_profit(item: Item, cfg: dict, fx: float, c: dict) -> tuple[float | None, int | None]:
+    """上限入札額で落札し、実績の割合（realized_ratio）で売れたときの利益（円）. 表示だけに使う."""
+    if not c or not c.get("max_bid_jpy") or item.expected_price_usd is None:
+        return None, None
+    ded = cfg["shipping"].get("deduction_usd", 0)
+    ratio = realized_ratio(item.expected_price_usd - ded, listing_rank(item.title or ""), cfg)
+    if ratio is None:
+        return None, None
+    tm = 1 + cfg["yahoo"]["store_tax_pct"] / 100 if item.store_tax else 1.0
+    low = Item(**{**item.__dict__, "expected_price_usd": ded + (item.expected_price_usd - ded) * ratio,
+                  "current_price_jpy": round(c["max_bid_jpy"] * tm), "buy_now_jpy": None})
+    return ratio, calculate(low, cfg, fx, False).get("profit_now_jpy")
+
+
+def calculate(item: Item, cfg: dict, fx: float, with_realized: bool = True) -> dict:
     """想定販売価格から手取り・利益・上限入札額を計算する."""
     if item.expected_price_usd is None:
         return {}
@@ -1529,6 +1554,8 @@ def calculate(item: Item, cfg: dict, fx: float) -> dict:
         )
     if item.buy_now_jpy:
         out["profit_buy_now_jpy"] = round(profit_at(item.buy_now_jpy / tax_mult))
+    if with_realized:
+        out["realized"] = realized_profit(item, cfg, fx, out)  # (割合, 円)。表示だけ（2026-11-20）
     return out
 
 
@@ -2036,6 +2063,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "入札額の税": (f"ストア: このまま入札。支払いは税込{round(c['max_bid_jpy'] * 1.1):,}円" if c.get("tax_excl_bid")
                               else "個人: このまま入札（税なし）") if c else "",
                 "損益分岐入札額": c.get("breakeven_bid_jpy"),
+                "実績どおりの利益": c.get("realized"),  # (割合, 円)。表示だけ（2026-11-20）
                 "上限までの余裕": c.get("headroom_jpy"),
                 "注意": " / ".join(it.flags),
                 "説明文": ("説明文に " + "・".join(h["word"] for h in it.desc_hits)) if it.desc_hits
@@ -2208,6 +2236,9 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float, reserve: 
             f"- 利益(現在価格で落札した場合): {_yen(r['利益(現在価格)'])}（{r['利益率%'] if r['利益率%'] is not None else '-'}%）",
             f"- **上限入札額: {_yen(r['上限入札額'])}**（{r['入札額の税']}）（損益分岐 {_yen(r['損益分岐入札額'])}）",
         ]
+        rr = r.get("実績どおりの利益") or (None, None)
+        if rr[1] is not None:
+            lines.append(f"- 実績どおりなら（落札した物は見込みの{round(rr[0] * 100)}%で売れている）上限額で落札して 利益 {_yen(rr[1])}（表示だけ。判定は変えない）")
         if r["注意"]:
             lines.append(f"- 注意: {r['注意']}")
         if r["メモ"]:

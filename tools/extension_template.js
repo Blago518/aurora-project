@@ -1058,7 +1058,23 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     if (!c || !c.maxBid || i.usd == null) return "";
     const tm = i.tax ? 1 + DATA.cfg.storeTaxPct / 100 : 1;
     const x = calculate(Object.assign({}, i, { price: Math.round(c.maxBid * tm) }), i.usd, state.fx);
-    return x.profit == null ? "" : `<div class="s" title="上限額ちょうどで落札したときの利益">落札時 利益${yen(x.profit)}（${x.margin}%）</div>`;
+    if (x.profit == null) return "";
+    // 実績どおりに売れたとき（2026-11-20 ユーザー決定「まず表示だけ」。判定・上限額は変えない。appraise.realized_profit と同じ）
+    const ded = DATA.cfg.deductionUsd || 0, ratio = realizedRatio(i.usd - ded, i.lrank ?? listingRank(i.title || ""));
+    let low = "";
+    if (ratio != null) {
+      const y = calculate(Object.assign({}, i, { price: Math.round(c.maxBid * tm) }), ded + (i.usd - ded) * ratio, state.fx);
+      if (y.profit != null) low = `<div class="s${y.profit < 0 ? " x" : ""}" title="ヤフオクで落札した物は、見込みの売値（送料別）に対して実際は${Math.round(ratio * 100)}%で売れていた（落札73件の実績）。表示だけで、判定・上限額は変えない">実績どおりなら 利益${yen(y.profit)}（見込みの${Math.round(ratio * 100)}%）</div>`;
+    }
+    return `<div class="s" title="上限額ちょうどで落札したときの利益">落札時 利益${yen(x.profit)}（${x.margin}%）</div>` + low;
+  }
+  // 実績の売値の割合（config.toml [realized]）。商品名が MINT 以上なら mint、それ以外は見込み（送料別$）の帯で
+  function realizedRatio(netUsd, rank) {
+    const r = DATA.cfg.realized;
+    if (!r || netUsd == null) return null;
+    if (rank != null && rank >= 9 && r.mint) return r.mint;
+    const v = netUsd < 100 ? r.under_100 : netUsd < 200 ? r.under_200 : r.over_200;
+    return v || null;
   }
   function condLine(i) {
     const rs = (i.refs || []).filter((r) => r.tier <= 2).slice(0, 5);
