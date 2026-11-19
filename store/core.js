@@ -358,6 +358,84 @@ function makeCore(DATA) {
       return lr != null && rr != null ? Math.round(Math.max(r.price * Math.pow(1 + step / 100, lr - rr), 0) * 100) / 100 : r.price;
     });
   }
-  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote };
+  // ---- まとめ売り（appraise.py の set_part_titles・set_value と同じ。2026-11-18）: 中身ごとに相場を当てて合計する
+  const SET_SPLIT_RE = /\s*(?:[＋+、,／/＆&・()（）]|\sと\s|\s(?:and|with)\s)\s*/i;  // かっこはキットの中身（Python と同じ）
+  const KIT_RE = /キット|\bkit\b/i;
+  function brandOf(title) {
+    const t = String(title || "").normalize("NFKC");
+    for (const [ja, en] of C.brandsJa) if (t.includes(ja)) return en;
+    for (const w of t.match(/[A-Za-z]+/g) || []) {
+      const lw = w.toLowerCase();
+      if (C.brandsEn[lw] && !["OM", "Carl"].includes(C.brandsEn[lw])) return C.brandsEn[lw];
+      if (C.lensLines[lw] && C.lensLines[lw] !== "Zeiss") return C.lensLines[lw];
+    }
+    return "";
+  }
+  // 型の語（appraise.py の norm_title・lens_mm_spans・is_f_number・_model_word・set_part_titles と同じ。2026-11-18）
+  const FILM_AFTER_RE = new RegExp(C.filmFormatAfter.replace("(?i)", ""), "i");
+  const F_BEFORE_RE = new RegExp("(?:\\d+(?:\\.\\d+)?\\s*(?:mm)?|" + C.lensWords + ")\\s*[/,:]?\\s*$", "i");
+  const BODY_SKIP = new Set(C.bodyCodeSkip), BODY_OK = new Set(C.bodyCodeOk);
+  const normTitle = (text) => String(text || "").normalize("NFKC").replace(/(\d)\s*(?:ミリ|㎜)/g, "$1mm");
+  function lensMmSpans(text) {
+    const t = normTitle(text), out = [];
+    for (const m of t.matchAll(/(?<![\d.])(\d+(?:-\d+)?)\s*mm(?![a-z])/gi))
+      if (!FILM_AFTER_RE.test(t.slice(m.index + m[0].length))) out.push({ start: m.index, end: m.index + m[0].length, n: m[1] });
+    return out;
+  }
+  function isFNumber(tok, text, start) {
+    const tl = tok.toLowerCase().replace(/^[.,]+|[.,]+$/g, "");
+    if (/^(?:f(?:\/\d+(?:\.\d+)?|\d+\.\d+)|1:\d+(?:\.\d+)?)$/.test(tl)) return true;
+    if (/^f\d{1,2}$/.test(tl)) {
+      const t = normTitle(text), i = start != null ? start : t.toLowerCase().indexOf(tl);
+      return F_BEFORE_RE.test(t.slice(Math.max(0, i - 14), Math.max(0, i)));
+    }
+    return false;
+  }
+  function modelWord(title) {
+    const t = normTitle(title);
+    const mm = new Map(lensMmSpans(t).map((s) => [s.start, s.n + "mm"]));
+    const allowed = new Set(titleToQuery(t, 12).toLowerCase().split(" ").filter(Boolean));
+    let prev = "";
+    for (const m of t.matchAll(/[Ff]\/\d+(?:\.\d+)?|1:\d+(?:\.\d+)?|[A-Za-z0-9][A-Za-z0-9\-]*(?:\.\d+)?/g)) {
+      const tok = m[0], tl = tok.toLowerCase();
+      if (mm.has(m.index)) return mm.get(m.index);
+      if (allowed.has(tl) || allowed.has(tl.replace(/^[.,]+|[.,]+$/g, ""))) {
+        if (/\d/.test(tl) && /[a-z]/.test(tl) && !/^\d+(?:-\d+)?mm$/.test(tl) && !isFNumber(tok, t, m.index) && !/^\d+(?:\.\d+)?(?:mp|x|s)$/.test(tl)) return tok;
+        if (/^[A-Za-z]{2,3}$/.test(tok) && tok === tok.toUpperCase() && brandOf(prev) && (BODY_OK.has(tl) || !BODY_SKIP.has(tl))) return tok;
+      }
+      prev = tok;
+    }
+    return "";
+  }
+  const FILM_MM_RE = new RegExp("(?<![\\d.])\\d+\\s*mm(?=\\s*(?:判|フィルム|film|カメラ|camera|一眼|レンジファインダー|rangefinder|slr|コンパクト|compact))", "gi");
+  function splitByModels(seg) {
+    const spans = lensMmSpans(seg);
+    if (!spans.length) return [seg];
+    const head = seg.slice(0, spans[0].start);
+    if (spans.length < 2 && !modelWord(head)) return [seg];
+    const cuts = spans.map((s) => s.start);
+    const pieces = [head].concat(cuts.map((c, i) => seg.slice(c, i + 1 < cuts.length ? cuts[i + 1] : seg.length)));
+    return pieces.filter((x) => x.trim());
+  }
+  function setPartTitles(title) {
+    const t = normTitle(title), b0 = brandOf(t), out = [];
+    for (const seg0 of t.split(SET_SPLIT_RE)) {
+      for (let seg of splitByModels(seg0.trim())) {
+        seg = seg.trim();
+        if (!seg || !modelWord(seg)) continue;
+        const f = detectFlags(seg);
+        if (f.includes("付属品のみ?") || f.includes("アダプター等")) continue;
+        seg = seg.replace(FILM_MM_RE, " ").trim();
+        if (b0 && !seg.toLowerCase().includes(b0.toLowerCase())) seg = b0 + " " + seg;  // 「AF-S DX Zoom-NIKKOR」にもメーカー名を付ける
+        out.push(seg);
+      }
+    }
+    return out.length >= 2 ? out : [];
+  }
+  function setValue(parts, fx) {
+    const extra = (DATA.cfg.deductionUsd || 0) + DATA.cfg.perOrderUsd + DATA.cfg.packing / fx;
+    return Math.round((parts.reduce((a, p) => a + p.usd, 0) - (parts.length - 1) * extra) * 100) / 100;
+  }
+  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { makeCore };
