@@ -394,6 +394,22 @@ class SheetMemoAndKnowledge(unittest.TestCase):
             self.assertEqual(ls.sync_research("u", "k", dest=Path(d) / "r.csv"), 2)
             self.assertIn("リサーチ(Mint)", (Path(d) / "r.csv").read_text(encoding="utf-8-sig"))
 
+    def test_transactions_csv(self):
+        # eBay API の取引 → 「ebay売上」と同じ列（A 日付・B 種類・K 入金・U SKU・AI 総額・AJ 通貨・AK レート）
+        fin = [{"date": "2026-11-16", "type": "SALE", "booking": "CREDIT", "order_id": "O1", "amount": "123.3", "amount_original": ""},
+               {"date": "2026-11-14", "type": "SALE", "booking": "CREDIT", "order_id": "O2", "amount": "599.63", "amount_original": "915.00 AUD"},
+               {"date": "2026-11-16", "type": "REFUND", "booking": "DEBIT", "order_id": "O1", "amount": "21.88", "amount_original": ""},
+               {"date": "2026-11-09", "type": "NON_SALE_CHARGE", "booking": "DEBIT", "order_id": "O1", "amount": "3.39", "amount_original": ""}]
+        orders = [{"order_id": "O1", "sku": "S39", "currency": "USD", "item_price": "139.99", "quantity": "1", "shipping": "0"},
+                  {"order_id": "O2", "sku": "N2", "currency": "AUD", "item_price": "1070.32", "quantity": "1", "shipping": "0"}]
+        rows = list(csv.reader(io.StringIO(ls.transactions_csv(fin, orders))))
+        self.assertEqual(rows[1][0], "Transaction creation date")
+        a, b, k, u, ai = 0, 1, 10, 20, 34
+        self.assertEqual([rows[2][a], rows[2][b], rows[2][k], rows[2][u], rows[2][ai]], ["d:16-Nov-26", "Order", "123.3", "S39", "139.99"])
+        self.assertAlmostEqual(float(rows[3][ai]), 1070.32 * 599.63 / 915.00, places=1)   # 豪ドルの注文は入金のレートで USD に
+        self.assertEqual([rows[4][b], rows[4][k], rows[4][ai]], ["Refund", "-21.88", "-21.88"])
+        self.assertEqual([rows[5][a], rows[5][b], rows[5][k]], ["d:9-Nov-26", "Other fee", "-3.39"])
+
     def test_knowledge(self):
         text = '"ファイル名","本文"\n"狙い目スペック","# 狙い目\n50mm は f/1.2 より明るい"\n"a/b","x"\n'
         with tempfile.TemporaryDirectory() as d, mock.patch.object(ls, "fetch", return_value=text):
