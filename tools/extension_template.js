@@ -1234,6 +1234,10 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     if (tr) tr.classList.toggle("seen", box.checked);  // 並びは変えない（消さない）
   });
 
+  // ［全て開く］の予備: このページから開く。Chrome は1回のクリックで1つしか開かせないので、開けなかった数を返す
+  const openHere = (urls) => urls.filter((u) => !window.open(u, "_blank")).length;
+  // 拡張機能を ↻ した後は、開いていたヤフオクのページと拡張機能のつながりが切れる（chrome.runtime.id が無くなる）
+  const RELOAD_MSG = (n) => `${n}件を開けませんでした。拡張機能を ↻ した後は、このページを再読み込み（⌘R）してください`;
   document.addEventListener("click", async (ev) => {
     const btn = ev.target.closest && ev.target.closest("#yhk button");
     if (!btn) return;
@@ -1255,11 +1259,11 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
             if (!err && r && r.opened >= urls.length) return done("開きました");
             // 裏方で開けなかった分は、このページから開く（予備）。理由はボタンに出す
             const rest = urls.slice((r && r.opened) || 0);
-            rest.forEach((u) => window.open(u, "_blank"));
-            done(`開きました（予備の開き方: ${String(err || "途中で止まった").slice(0, 60)}）`);
+            const ng = openHere(rest);
+            done(ng ? RELOAD_MSG(ng) : `開きました（予備の開き方: ${String(err || "途中で止まった").slice(0, 60)}）`);
           });
-        } catch (e) { urls.forEach((u) => window.open(u, "_blank")); done("開きました（予備の開き方）"); }
-      } else { urls.forEach((u) => window.open(u, "_blank")); done("開きました"); }
+        } catch (e) { const ng = openHere(urls); done(ng ? RELOAD_MSG(ng) : "開きました（予備の開き方）"); }
+      } else { const ng = openHere(urls); done(ng ? RELOAD_MSG(ng) : "開きました"); }
     }
     if (a === "bid") {
       const info = state.bidInfo[btn.dataset.id];
@@ -1318,12 +1322,11 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
         try {
           chrome.runtime.sendMessage({ type: "openTabs", urls, max: 10 }, (r) => {
             const err = chrome.runtime.lastError ? chrome.runtime.lastError.message : r && r.error;
-            const rest = urls.slice((r && r.opened) || 0);
-            rest.forEach((u) => window.open(u, "_blank"));
-            done(err ? `${urls.length}件開きました（予備の開き方）・上限額をコピー` : `${urls.length}件開きました・上限額をコピーしました`);
+            const ng = openHere(urls.slice((r && r.opened) || 0));
+            done(ng ? RELOAD_MSG(ng) + "（上限額はコピー済み）" : err ? `${urls.length}件開きました（予備の開き方）・上限額をコピー` : `${urls.length}件開きました・上限額をコピーしました`);
           });
-        } catch (e) { urls.forEach((u) => window.open(u, "_blank")); done(`${urls.length}件開きました・上限額をコピー`); }
-      } else { urls.forEach((u) => window.open(u, "_blank")); done(`${urls.length}件開きました・上限額をコピー`); }
+        } catch (e) { const ng = openHere(urls); done(ng ? RELOAD_MSG(ng) + "（上限額はコピー済み）" : `${urls.length}件開きました・上限額をコピー`); }
+      } else { const ng = openHere(urls); done(ng ? RELOAD_MSG(ng) + "（上限額はコピー済み）" : `${urls.length}件開きました・上限額をコピー`); }
     }
     if (a === "copy") {
       const good = state.items.filter((i) => i.mark === "◎" || i.mark === "○").sort((x, y) => (x.end < y.end ? -1 : 1));
