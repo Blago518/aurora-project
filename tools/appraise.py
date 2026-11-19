@@ -848,6 +848,25 @@ GENERATIONS = {"ii", "iii", "iv", "mkii", "mkiii", "mk2", "mk3", "mark"}
 SERIES = {"digital", "m.zuiko", "rolleicord", "rolleiflex"}
 
 
+# マウント（2026-11-19 ユーザー決定）: 同じ焦点距離・F値でもマウントで相場が大きく違う。レンズでは、マウントの分かる語が
+# 両方に同じ組で無ければ相場を当てない（片方に書いていないだけでも当てない＝要確認に回す。高づかみを防ぐ）
+MOUNT_WORDS = {
+    "canon": {"ef": "EF", "ef-s": "EF-S", "ef-m": "EF-M", "fd": "FD", "newfd": "FD", "nfd": "FD", "fl": "FL", "rf": "RF"},
+    "nikon": {"z": "Z", "ai": "F", "ai-s": "F", "af": "F", "af-s": "F", "af-p": "F", "af-i": "F", "nonai": "F"},
+    "sony": {"fe": "FE", "e": "E"},
+    "fujifilm": {"xf": "X", "xc": "X", "gf": "GF"},
+}
+MOUNT_TOKENS = {t for d in MOUNT_WORDS.values() for t in d}
+
+
+def mount_of(tokens: set[str]) -> set[str]:
+    out = set()
+    for brand, words in MOUNT_WORDS.items():
+        if brand in tokens or (brand == "fujifilm" and "fuji" in tokens):
+            out |= {words[t] for t in tokens if t in words}
+    return out
+
+
 def series_of(tokens: set[str], lens: bool) -> set[str]:
     s = {t for t in tokens if t in SERIES}
     if "m.zuiko" in s:
@@ -1158,6 +1177,9 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
             continue
         # 系統違い（Zuiko Digital と OM Zuiko、Rolleicord と Rolleiflex）は別物
         if series_of(qt, _lensy(qt)) != series_of(rt, _lensy(rt)):
+            continue
+        # マウント違い（Canon EF と FD と RF、Nikon Z と F など）。マウントが分からない側があっても当てない
+        if _lensy(qt) and mount_of(qt) != mount_of(rt):
             continue
         # 型違い（Contax の MMJ と AEG など）は相場が違う
         if variants_conflict(qt, rt):
@@ -1916,7 +1938,9 @@ def model_key(title: str) -> tuple[str, str]:
     gen = lambda t: t.lower() in GENERATIONS or t.lower() in PREMIUM_VARIANTS  # noqa: E731
     digits = [t for t in rest if re.search(r"\d", t)][:3]
     key_toks = ([t for t in rest if t in digits or gen(t)] if digits else []) or rest[:2]
-    ser = [t for i, t in enumerate(rest) if t.lower() in SERIES and t.lower() not in [x.lower() for x in rest[:i]]]
+    has_mount = bool(mount_of(_tokens(title)))
+    ser = [t for i, t in enumerate(rest) if (t.lower() in SERIES or (has_mount and t.lower() in MOUNT_TOKENS))
+           and t.lower() not in [x.lower() for x in rest[:i]]]
     label = " ".join(([brand] if brand else []) + ser + [t for t in key_toks if t not in ser])
     norm = []
     for t in label.lower().split():

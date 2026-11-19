@@ -41,6 +41,9 @@
   // 系統の語（appraise.series_of と同じ）: Zuiko Digital・M.Zuiko と OM Zuiko、Rolleicord と Rolleiflex は別物
   const seriesOf = (ts, lens) => { const s = new Set([...ts].filter((t) => SERIES.has(t))); if (s.has("m.zuiko")) s.add("digital");
     if (!lens) { s.delete("digital"); s.delete("m.zuiko"); } return [...s].sort().join(","); };
+  // マウント（appraise.mount_of と同じ）: レンズはマウントの組が両方で同じときだけ相場を当てる
+  const MOUNTS = C.mounts || {}, MOUNT_TOKENS = new Set(Object.values(MOUNTS).flatMap((d) => Object.keys(d)));
+  const mountOf = (ts) => { const out = new Set(); for (const [b, w] of Object.entries(MOUNTS)) if (ts.has(b) || (b === "fujifilm" && ts.has("fuji"))) for (const t of ts) if (w[t]) out.add(w[t]); return [...out].sort().join(","); };
   const ACCESSORY_RE = new RegExp(C.accessoryRe, "i");
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
   const KANTEI = DATA.kantei.map((r) => ({ ...r, re: r.patterns.map((p) => { try { return new RegExp(p, "i"); } catch (e) { return null; } }) }));
@@ -196,6 +199,7 @@
       if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
       if (seriesOf(qt, qmm) !== seriesOf(rt, lensy(rt))) continue;
+      if (qmm && mountOf(qt) !== mountOf(rt)) continue;
       if (variantsConflict(qt, rt)) continue;
       // 実績側の英字の語（メーカー・レンズ銘など）が1つも無ければ別物（YASHICA 35mm 2.8 に ALPA 35mm 2.8 が当たっていた）
       if (![...rt].some((t) => !/\d/.test(t) && !COLORS.has(t) && qt.has(t))) continue;
@@ -317,7 +321,8 @@
     const keyToks = rest.filter((t) => (/\d/.test(t) && !code(t)) || gen(t)).filter((t, i, a) => !gen(t) || a.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
     while (keyToks.filter((t) => !gen(t)).length > 3) keyToks.splice(keyToks.findLastIndex((t) => !gen(t)), 1);
     const vt = variantOf(tokensOf(title));
-    const ser = rest.filter((t, i) => SERIES.has(t.toLowerCase()) && rest.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
+    const hasMount = !!mountOf(tokensOf(title));
+    const ser = rest.filter((t, i) => (SERIES.has(t.toLowerCase()) || (hasMount && MOUNT_TOKENS.has(t.toLowerCase()))) && rest.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
     const label = (brand ? [brand] : []).concat(ser, (keyToks.some((t) => !gen(t)) ? keyToks : rest.slice(0, 2)).filter((t) => !ser.includes(t)))
       .concat(vt ? [vt.label] : []).join(" ");
     const norm = label.toLowerCase().split(" ").map((t) => {
