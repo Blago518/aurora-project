@@ -667,6 +667,10 @@ def is_stock_code(tok: str, before_brand: bool, bracketed: bool) -> bool:
 def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = unicodedata.normalize("NFKC", title)
     t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
+    # 末尾の管理番号（【9022NT】K11・【K172】K03・【1582-4NT】K17・【25490CK】J26。拡張機能と同じ。2026-11-19）
+    t = re.sub(r"[【\[]\s*[A-Za-z]{0,2}\d{2,6}(?:-\d{1,5})?[A-Za-z]{0,3}\s*[】\]]\s*[A-Z]\d{1,3}\s*$", " ", t)
+    t = re.sub(r"[【\[]\s*\d{3,6}(?:-\d{1,5})?[A-Za-z]{1,3}\s*[】\]]\s*$", " ", t)
+    t = re.sub(r"\d+(?:\.\d+)?\s*°", " ", re.sub(r"(\d+)\s*[×xX]\s*(\d+)(?![\d.])", r"\1x\2", t))  # 7° は視野角  # 双眼鏡の 6×15・8x30、中判の 6x6 を1語に
     t = re.sub(BRACKET_CODE_RE, lambda m: " \x01" + m.group(1) + " ", t)  # 【L256】→ 管理番号の候補の印（\x01）を付ける
     t = re.sub(r"\d+円[~〜～]?", " ", t)  # 「1円～」
     t = re.sub(r"[∞¶∩§]\s*\S*", " ", t)  # ストアの管理番号（… ∞ 776BC-16・¶ 7774A-5。リサマイ市場など）

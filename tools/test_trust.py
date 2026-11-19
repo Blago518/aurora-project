@@ -559,6 +559,32 @@ class DuplicateAuctions(unittest.TestCase):
         self.assertEqual(got, ["q1251095026"])
 
 
+class StoreCodeTitles(unittest.TestCase):
+    """実際の出品の商品名で、管理番号を外し・本物の型番は残す（2026-11-19 ユーザー指摘「管理番号は無くならない？他のまで除外しちゃう？」）. Python と拡張機能で同じ."""
+    CASES = {
+        "【草】ジャンク品 Canon Power Shot S110 (silver) キヤノン パワーショット【K172】K03": "Canon S110",
+        "【加】稼働！ 撮影可能！ OLYMPUS オリンパス VH-510 ピンク コンパクト デジタル カメラ【9022NT】K11": "Olympus VH-510",
+        "【豊】希少 現状品 SELSI 6×15 Field 7° 小型 双眼鏡 ヴィンテージ ケース付き【2282MK】K14": "SELSI 6x15",
+        "【塩】OLYMPUS オリンパス OM10 シャッターOK ZUIKO AUTO-S 50mm F1.8 カビ・チリ一部あり【25490CK】J26": "Olympus OM10 50mm F1.8",
+        "【錦】美品！Leica ライカ M3 -1073565 LENS ｆ＝5cm 1:2 レンジファインダー フィルムカメラ【1582-4NT】K17": "Leica M3 5cm F2",
+        "【加】美品！Carl Zeiss Planar T* 50mm F1.4 防湿庫保管！ コンタックス CONTAX【9005NT】K7": "Contax 50mm F1.4",
+        "OLYMPUS E-410 ボディ": "Olympus E-410",          # E-410・VH-510 は型番（C-2436 のような4桁は管理番号）
+        "Nikon 【D750】": "Nikon D750",                    # 括弧の中の型番は消さない
+        "Polaroid 【SX-70】 ランドカメラ": "Polaroid SX-70",
+        "1円～/Nikon/ニコン/D5100/ボディ/N031": "Nikon D5100",
+    }
+
+    def test_python(self):
+        self.assertEqual({t: ba.model_key(t)[0] for t in self.CASES}, self.CASES)
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        got = run_js(data, "const T=" + json.dumps(list(self.CASES), ensure_ascii=False) + ";console.log(JSON.stringify(Object.fromEntries(T.map((t)=>[t,m.modelKey(t)[0]]))))")
+        self.assertEqual(got, self.CASES)
+
+
 class KitParts(unittest.TestCase):
     """レンズキットはボディとレンズの2点に分け、中身ごとに相場を当てる（2026-11-19 ユーザー指定）."""
     T = "NIKON ニコン デジタル一眼レフカメラ D70 レンズキット(AF-S DX Zoom-NIKKOR 18-70mm F3.5-4.5G IF ED) ⑤ 7795B-4"
