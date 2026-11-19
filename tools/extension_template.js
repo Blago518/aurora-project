@@ -889,6 +889,11 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   }
   // ヤフオクの落札相場（Mac の data/yahoo_results.csv → yahoo_results.model_stats。機種の比較用キーごと）。
   // 候補に出た出品が実際にいくらで落札されたか。表示だけ（判定・上限額には使わない）。記録が無ければ何も出さない
+  // 注意を出す出品者（config.toml [caution]。2026-11-19 ユーザー決定「注意書きだけ出す」）。判定・上限額・並びは変えない
+  function cautionLine(i) {
+    const c = DATA.caution || {}, name = String(i.sellerName || "");
+    return name && (c.sellers || []).some((w) => w && name.includes(w)) ? `<div class="s x" title="${esc(name)}">⚠ ${esc(c.note || "注意する出品者")}</div>` : "";
+  }
   function yahooLine(key) {
     const y = key && (DATA.yahooStats || {})[key];
     if (!y || !y.n) return "";
@@ -1200,7 +1205,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const markHtml = ALL && !c ? '<span class="s">相場なし</span>' : i.mark;
       return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${markHtml}<div class="s ${soon ? "hot" : ""}">${left}</div>${ALL && c && i.reason ? `<div class="s">${esc(i.reason)}</div>` : ""}</td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${yahooLine(modelKey(i.title)[1])}${descLine(i.id)}${pinNote(i)}</td>
+${cautionLine(i)}<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${yahooLine(modelKey(i.title)[1])}${descLine(i.id)}${pinNote(i)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a>${trendArrow(i)}<div class="s">送料別</div>${soldLine(r)}${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
@@ -1285,7 +1290,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
+    module.exports = { cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 
