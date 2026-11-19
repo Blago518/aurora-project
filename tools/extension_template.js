@@ -845,7 +845,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     if (!b || !b.med || b.n < DATA.cfg.activeMinCount) return null;
     // b.min は送料込み。送料を引いた商品代（画面の額）が 0 以下・下限以下なら案にしない（以前は送料込みで 0 と比べ「案 $-1」が出た。tentative.suggest_usd と同じ）
     const sg = Math.floor(b.min);
-    return netOf(sg) > Math.max(0, DATA.cfg.suggestMinNetUsd || 0) ? sg : null;
+    return netOf(sg) > 0 && netOf(sg) >= (DATA.cfg.suggestMinNetUsd || 0) ? sg : null;  // 送料別 $20 未満は案にしない（2026-11-19 ユーザー決定）
   }
   // 落札見込み（bid_results.py の win_odds と同じ規則）: 上限額の価格帯 × ストア/個人の過去の勝率。3件未満なら価格帯だけ、それも3件未満なら出さない
   function winOdds(maxBid, store) {

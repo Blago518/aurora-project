@@ -68,7 +68,7 @@ def suggest_usd(stats: dict, cfg: dict) -> float | None:
     # suggest_min_net_usd 以下なら案にしない（2026-11-19 監査: 以前は送料込みの額で 0 と比べていて「案 $-1」「案 $-20」が出た。拡張機能の suggestUsd と同じ）
     sg = int(stats.get("min") or 0)
     net = sg - float(cfg["shipping"].get("deduction_usd", 0))
-    return sg if net > max(0.0, float(j.get("suggest_min_net_usd", 0))) else None
+    return sg if net > 0 and net >= float(j.get("suggest_min_net_usd", 0)) else None  # 送料別 $20 未満は案にしない（2026-11-19 ユーザー決定）
 
 
 def _browse(query: str) -> dict:

@@ -704,13 +704,14 @@ class SuggestNet(unittest.TestCase):
         self.assertIsNone(tv.suggest_usd({"n": 6, "min": 39.99, "med": 120}, CFG))   # 送料込み $39.99 → 商品代 −$0.01
         self.assertIsNone(tv.suggest_usd({"n": 6, "min": 20, "med": 120}, CFG))      # 商品代 −$20
         self.assertIsNone(tv.suggest_usd({"n": 6, "min": 40.5, "med": 120}, CFG))    # 切り捨てて $40 → 商品代 $0
-        self.assertEqual(tv.suggest_usd({"n": 6, "min": 41.2, "med": 120}, CFG), 41)  # 商品代 $1 は案にする（下限は config の suggest_min_net_usd）
+        self.assertIsNone(tv.suggest_usd({"n": 6, "min": 41.2, "med": 120}, CFG))     # 商品代 $1 は付属品などの誤ヒット（下限 $20。2026-11-19 ユーザー決定）
+        self.assertEqual(tv.suggest_usd({"n": 6, "min": 60.5, "med": 120}, CFG), 60)  # 商品代 $20 は案にする
 
     def test_js_same(self):
         if not shutil.which("node"):
             self.skipTest("node がありません")
         import tentative as tv
         data = bx.build_data(CFG, 150.0)
-        cases = [39.99, 20, 40.5, 41.2, 139.99]
+        cases = [39.99, 20, 40.5, 41.2, 59.9, 60.5, 139.99]
         got = run_js(data, "console.log(JSON.stringify(" + json.dumps(cases) + ".map((x)=>m.suggestUsd({n:6,min:x,med:120}))))")
         self.assertEqual(got, [tv.suggest_usd({"n": 6, "min": x, "med": 120}, CFG) for x in cases])
