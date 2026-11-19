@@ -39,6 +39,7 @@ def build_data(cfg: dict, fx: float) -> dict:
                 "source": r.get("source") or "自分の販売実績", "tokens": sorted(r["_tokens"]),
                 "acc": bool(ba.ACCESSORY_RE.search(r.get("title", ""))),
                 "hit": ba.sold_hit(r, cfg, fx),  # 売れ筋（実績で利益が出ていた機種）→ 入札候補の上に出す
+                "d": ba.norm_date(r.get("date", "")),  # 売れた日（相場の上がり下がり ↑↓ に使う。分からなければ空）
             })
     kantei = []
     kp = next(iter(sorted((ROOT / "data").glob("kantei_bookmarklet.*"))), None)

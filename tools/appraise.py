@@ -896,6 +896,22 @@ def read_sales(path: Path | None) -> list[dict]:
     return rows
 
 
+def norm_date(s: str) -> str:
+    """いろいろな書き方の日付 → YYYY-MM-DD（読めなければ空）。相場の上がり下がり（↑↓）に使う（2026-11-19）."""
+    s = str(s or "").strip().removeprefix("d:")
+    if not s:
+        return ""
+    m = re.match(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", s)
+    if m:
+        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    for fmt in ("%b-%d-%y", "%d-%b-%y", "%b %d, %Y", "%d %b %Y", "%b-%d-%Y", "%d-%b-%Y"):
+        try:
+            return datetime.strptime(s[:12].strip(), fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
+
+
 def chatwork_gross(price: float, cfg: dict | None = None) -> float:
     """Chatwork（スクールの販売報告）の販売価格は、だいたい送料 $30 込み（スクールの方針）. 商品代＝価格 − $30 とし、
     うちが売るときの送料（入札判断の一律額 $40）を乗せた額を、送料込みの売値として扱う（2026-11-18 ユーザー決定）.
