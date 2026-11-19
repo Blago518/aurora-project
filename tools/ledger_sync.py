@@ -675,6 +675,95 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
     return len(rows)
 
 
+TXN_SHEET = "Mac_取引"  # eBay API の取引明細を「ebay売上」と同じ列の位置で（管理の月次サマリーが毎朝これを読む。2026-11-19）
+# 「ebay売上」（Seller Hub の取引レポートを貼ったシート）と同じ列: A 日付・B 種類・K 入金額(USD)・U Custom label・AI 総額・AJ 通貨・AK 換算レート
+TXN_COLS = {"A": "Transaction creation date", "B": "Type", "K": "Net amount", "U": "Custom label",
+            "AI": "Gross transaction amount", "AJ": "Transaction currency", "AK": "Exchange rate"}
+TXN_TYPES = {"SALE": "Order", "REFUND": "Refund", "DISPUTE": "Claim", "NON_SALE_CHARGE": "Other fee",
+             "ADJUSTMENT": "Adjustment", "PAYOUT": "Payout", "SHIPPING_LABEL": "Shipping label", "TRANSFER": "Transfer",
+             "CREDIT": "Credit"}
+
+
+def _col_index(letters: str) -> int:
+    n = 0
+    for ch in letters:
+        n = n * 26 + ord(ch) - 64
+    return n - 1
+
+
+def _report_date(iso: str) -> str:
+    """2026-11-16 → 「d:16-Nov-26」（取引レポートと同じ書き方。先頭の d: は、シートが日付に変えないため）."""
+    d = datetime.strptime(iso[:10], "%Y-%m-%d")
+    return f"d:{d.day}-{d.strftime('%b')}-{d.strftime('%y')}"
+
+
+def transactions_csv(fin_rows: list[dict], order_rows: list[dict]) -> str:
+    """eBay API の取引明細（ebay_finances）と注文（ebay_orders）→ 「Mac_取引」に送る CSV.
+    1行目は説明、2行目は見出し、3行目から（「ebay売上」と同じく3行目から）。金額は USD（換算レート 1）.
+    注文の総額 = 商品代＋送料（出品サイトの通貨のときは、その取引の入金額の換算レートで USD に直す）。返金・クレームは入金額（マイナス）."""
+    orders: dict[str, dict] = {}
+    for o in order_rows:
+        g = orders.setdefault(o.get("order_id", ""), {"sku": o.get("sku", ""), "gross": 0.0, "cur": o.get("currency", "USD")})
+        try:
+            g["gross"] += float(o.get("item_price") or 0) * float(o.get("quantity") or 1) + float(o.get("shipping") or 0)
+        except ValueError:
+            pass
+    width = _col_index("AK") + 1
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Mac が eBay API から毎朝書き込みます（手で直さない）。管理の月次サマリーが読みます"] + [""] * (width - 1))
+    head = [""] * width
+    for col, name in TXN_COLS.items():
+        head[_col_index(col)] = name
+    w.writerow(head)
+    for r in fin_rows:
+        t = TXN_TYPES.get(r.get("type", ""), r.get("type", ""))
+        try:
+            amt = float(r.get("amount") or 0)
+        except ValueError:
+            continue
+        net = amt if r.get("booking") == "CREDIT" else -amt
+        rate = 1.0
+        orig = (r.get("amount_original") or "").split()
+        if orig:
+            try:
+                rate = amt / float(orig[0]) if float(orig[0]) else 1.0
+            except ValueError:
+                pass
+        o = orders.get(r.get("order_id", ""), {})
+        if t == "Order" and o.get("gross"):
+            gross = o["gross"] * (1.0 if o.get("cur", "USD") == "USD" else rate)
+        else:
+            gross = net
+        row = [""] * width
+        row[_col_index("A")] = _report_date(r.get("date", "")) if r.get("date") else ""
+        row[_col_index("B")] = t
+        row[_col_index("K")] = round(net, 2)
+        row[_col_index("U")] = o.get("sku", "") or "--"
+        row[_col_index("AI")] = round(gross, 2)
+        row[_col_index("AJ")] = "USD"
+        row[_col_index("AK")] = 1
+        w.writerow(row)
+    return buf.getvalue()
+
+
+def upload_transactions(reports: Path | None = None, post=None) -> int | None:
+    """reports/ebay_finances_*.csv と ebay_orders_*.csv（最新）→ 古物台帳「Mac_取引」（まるごと置き換え）. 送った行数."""
+    reports = reports or ROOT / "reports"
+    fins = sorted(reports.glob("ebay_finances_*.csv"))
+    ords = sorted(reports.glob("ebay_orders_*.csv"))
+    if not fins:
+        return None
+    read = lambda p: list(csv.DictReader(p.read_text(encoding="utf-8-sig").splitlines()))  # noqa: E731
+    body = transactions_csv(read(fins[-1]), read(ords[-1]) if ords else [])
+    if not post_sheet(TXN_SHEET, body, post=post):
+        print(f"eBay の取引: 台帳「{TXN_SHEET}」に送れませんでした", file=sys.stderr)
+        return None
+    n = body.count("\n") - 2
+    print(f"eBay の取引: 台帳「{TXN_SHEET}」に {n}行 → 管理の月次サマリーが最新になります", file=sys.stderr)
+    return n
+
+
 DASH_SHEET = "Mac_グラフ"  # 数字のグラフの中身（Artifacts の「aurora 数字のグラフ」が開くたびに読む）
 DASH_CHUNK = 30000  # 1マスに入る文字数（上限 5万字）より小さく分ける
 
