@@ -857,6 +857,39 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     }
     return null;
   }
+  // ヤフオクの落札相場（Mac の data/yahoo_results.csv → yahoo_results.model_stats。機種の比較用キーごと）。
+  // 候補に出た出品が実際にいくらで落札されたか。表示だけ（判定・上限額には使わない）。記録が無ければ何も出さない
+  function yahooLine(key) {
+    const y = key && (DATA.yahooStats || {})[key];
+    if (!y || !y.n) return "";
+    const days = DATA.cfg.yahooDays || 90;
+    const tip = `ヤフオクで実際に落札された額（ストアは税抜。毎朝 Mac が終わった出品ページで記録）\n機種: ${y.label} ・ 直近${days}日 ${y.n}件 ・ ${yen(y.min)}〜${yen(y.max)}${y.unsold ? `\n入札なしで終わった出品 ${y.unsold}件` : ""}\n判定・上限額には使っていません`;
+    return `<div class="s yres" title="${esc(tip)}">ヤフオク落札 中央値 ${yen(y.med)}（${y.n}件・直近${days}日${y.n > 1 ? `・${yen(y.min)}〜${yen(y.max)}` : ""}）</div>`;
+  }
+  // ---- 落札相場の見張り: ◎○・仮◎○・確認してから に出た出品 → ダウンロード/aurora_seen.csv（全件）→ Mac の yahoo_results.py が
+  //      終了後に出品ページで最終価格を記録する。1日に足すのは DATA.cfg.seenMaxPerDay 件まで。終了から7日たった分は消す
+  const LS_WATCH = "yhkWatchV1";
+  const WATCH_FIELDS = ["auction_id", "title", "end", "mark", "max_bid", "store_tax", "seen_at"];
+  function watchAdd(list, now) {
+    now = now || new Date();
+    const all = load(LS_WATCH, {}), day = now.toISOString().slice(0, 10), old = now.getTime() - 7 * 86400000;
+    let pruned = 0;
+    for (const [id, w] of Object.entries(all)) { const t = Date.parse(w.end); if (t && t < old) { delete all[id]; pruned++; } }
+    const cap = DATA.cfg.seenMaxPerDay ?? 300;
+    let today = Object.values(all).filter((w) => String(w.seen_at).slice(0, 10) === day).length, added = 0;
+    for (const x of list) {
+      if (!x.i || !x.i.id || all[x.i.id] || today >= cap) continue;
+      all[x.i.id] = { auction_id: x.i.id, title: x.i.title, end: x.i.end || "", mark: x.mark, max_bid: x.maxBid ?? "",
+        store_tax: x.i.tax ? 1 : 0, seen_at: now.toISOString() };
+      today++; added++;
+    }
+    if (added || pruned) save(LS_WATCH, all);
+    return added;
+  }
+  function watchCsv() {
+    const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    return WATCH_FIELDS.join(",") + "\n" + Object.values(load(LS_WATCH, {})).map((w) => WATCH_FIELDS.map((f) => q(w[f])).join(",")).join("\n");
+  }
   function browseCell(label) {
     const b = state.browse[label];
     if (!b) return '<span class="s">…</span>';
@@ -1071,7 +1104,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       if (i.flags.includes("セット品") && !parts.length) continue;  // 中身が分からないまとめ売りは今までどおり除く
       const [label, key] = parts.length ? [parts.map((p) => modelKey(p)[0]).join(" ＋ "), "set:" + parts.map((p) => modelKey(p)[1]).join("|")] : modelKey(i.title);
       if (!parts.length && label.split(" ").length < 2) continue;
-      const g = groups.get(key) || { label, n: 0, prices: [], ex: i.title, ids: [], parts: parts.map((p) => modelKey(p)[0]) };
+      const g = groups.get(key) || { label, key, n: 0, prices: [], ex: i.title, ids: [], parts: parts.map((p) => modelKey(p)[0]) };
       if (i.id && g.ids.includes(i.id)) continue;  // 同じ出品は1回だけ数える
       g.n++; if (i.price) g.prices.push(i.price); if (i.id) g.ids.push(i.id); groups.set(key, g);
     }
@@ -1096,6 +1129,12 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     }
     waits.sort((a, b) => (a.i.end < b.i.end ? -1 : 1));
     state.waitIds = new Set(waits.map((w) => w.i.id));
+    // 落札相場の見張り（◎○・確認してから・仮◎○）→ 新しく足したときだけ ダウンロード/aurora_seen.csv を書き直す
+    const mb = (i) => (i.calc ? i.calc.maxBid : "");
+    if (watchAdd([...good.map((i) => ({ i, mark: i.mark, maxBid: mb(i) })), ...weak.map((i) => ({ i, mark: "確認してから" + i.mark, maxBid: mb(i) })),
+      ...pinnedWaits.map((i) => ({ i, mark: "仮" + i.mark, maxBid: mb(i) })), ...waits.map((w) => ({ i: w.i, mark: "仮" + w.mk, maxBid: w.c.maxBid }))])
+      && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id)
+      try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_seen.csv", csv: watchCsv() }, () => void chrome.runtime.lastError); } catch (e) {}
     const more = !state.done && state.total && state.total >= (state.next || 1);
 
     // ［直す］した行: 本来の欄が変わっても、ここに残す（ページを開き直すと本来の欄へ）
@@ -1123,7 +1162,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const markHtml = ALL && !c ? '<span class="s">相場なし</span>' : i.mark;
       return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${markHtml}<div class="s ${soon ? "hot" : ""}">${left}</div>${ALL && c && i.reason ? `<div class="s">${esc(i.reason)}</div>` : ""}</td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${descLine(i.id)}${pinNote(i)}</td>
+<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${yahooLine(modelKey(i.title)[1])}${descLine(i.id)}${pinNote(i)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a>${trendArrow(i)}<div class="s">送料別</div>${soldLine(r)}${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
@@ -1142,7 +1181,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const d = state.desc[i.id];
       return `<tr class="${soon ? "soon" : ""} tent${seenOf(i.id) ? " seen" : ""}"><td class="m ${w.mk === "◎" ? "g" : "o"}">${seenBox(i.id)}<span class="tmark">仮</span>${w.mk}<div class="s ${soon ? "hot" : ""}">${left}</div></td>
 <td><a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>
-<div class="s">機種: ${esc(w.label)} ・ eBay出品中（送料別）最安${nd(w.b.min || 0)}・中央値${nd(w.b.med)}から、最安値の案 ${nd(w.sg)}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} で仮計算（sold未確認）</div>
+<div class="s">機種: ${esc(w.label)} ・ eBay出品中（送料別）最安${nd(w.b.min || 0)}・中央値${nd(w.b.med)}から、最安値の案 ${nd(w.sg)}${w.usd !== w.sg ? "×ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%" : ""} で仮計算（sold未確認）</div>${yahooLine(modelKey(i.title)[1])}
 ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文を確認</button>`}</td>
 <td class="n"><div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div><a class="s" href="${e.pr}" target="_blank" rel="noopener">Product Research</a></td>
 <td class="n">${yen(i.price)}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
@@ -1180,7 +1219,7 @@ ${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式API�
   const body = g.parts && g.parts.length
     ? `<a href="${yh[0] || "#"}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.ex.slice(0, 70))}</a><div class="s">セット・キット ${g.parts.length}点 ― 相場あり ${g.parts.filter((l) => memoVal(load(LS_MEMO, {})[l]).usd).length}/${g.parts.length}点${g.parts.every((l) => memoVal(load(LS_MEMO, {})[l]).usd) ? "（そろいました。上の表で判定されます）" : " ― 全部そろうと合計から判定します"}</div>`
       + g.parts.map((l, n) => `<div class="setpart"><b>${n + 1}. ${esc(l)}</b> ${line(l)}<div class="fix fixl">${memoInputs(l, `placeholder="想定$"${sug(l)}`, "登録")}</div></div>`).join("")
-    : `<a href="${yh[0] || ebay(g.label).pr}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.label)}</a> ${line(g.label)}<div class="s">${esc(g.ex.slice(0, 60))}</div><div class="fix fixl">${memoInputs(g.label, `placeholder="想定$"${sug(g.label)}`, "登録")}</div>`;
+    : `<a href="${yh[0] || ebay(g.label).pr}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.label)}</a> ${line(g.label)}<div class="s">${esc(g.ex.slice(0, 60))}</div>${yahooLine(g.key)}<div class="fix fixl">${memoInputs(g.label, `placeholder="想定$"${sug(g.label)}`, "登録")}</div>`;
   return `<tr class="${seenOf(sk) ? "seen" : ""}"><td class="um">${seenBox(sk)}${body}</td>
 <td class="n">${g.n}${yh.length > 1 ? `<div class="s">ほかに同じ機種 ${yh.slice(1).map((u, k) => `<a href="${u}" target="_blank" rel="noopener">${k + 1}</a>`).join(" ")}${g.n > yh.length ? " …" : ""}</div>` : ""}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
 ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.label)}</td>` : ""}</tr>`; }).join("")}</table>
@@ -1206,7 +1245,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds };
+    module.exports = { trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 

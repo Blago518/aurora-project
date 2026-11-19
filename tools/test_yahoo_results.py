@@ -1,0 +1,217 @@
+"""落札相場の記録（yahoo_results.py）と、入札の結果を古物台帳で決めるテスト. python -m unittest discover -s tools で実行."""
+import csv
+import json
+import shutil
+import tempfile
+import unittest
+from unittest import mock
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import appraise as ba
+import bid_results as br
+import yahoo_results as yr
+
+CFG = ba.load_config(None)
+NOW = datetime(2026, 11, 19, 3, 0, tzinfo=timezone.utc)  # 日本時間 12:00
+
+
+def page(status, price, bids, end):
+    item = {"status": status, "price": price, "bids": bids, "endTime": end}
+    return ('<script id="__NEXT_DATA__" type="application/json">' +
+            json.dumps({"props": {"pageProps": {"initialState": {"item": {"detail": {"item": item}}}}}}) + "</script>")
+
+
+def report_csv(path: Path, rows: list[dict]) -> None:
+    keys = ["判定", "根拠の強さ", "仮判定", "仮の上限入札額", "タイトル", "ヤフオクURL", "終了", "上限入札額", "入札額の税"]
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=keys)
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: r.get(k, "") for k in keys})
+
+
+class Watch(unittest.TestCase):
+    def test_report_rows(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "bid_report_20261119_0700.csv"
+            u = "https://auctions.yahoo.co.jp/jp/auction/"
+            report_csv(p, [
+                {"判定": "◎", "根拠の強さ": "確認不要", "タイトル": "Nikon FM2 ボディ", "ヤフオクURL": u + "x100000001",
+                 "終了": "2026-11-19T21:00:00+09:00", "上限入札額": "20000", "入札額の税": "個人: このまま入札（税なし）"},
+                {"判定": "○", "根拠の強さ": "確認してから", "タイトル": "Canon AE-1", "ヤフオクURL": u + "x100000002",
+                 "上限入札額": "8000", "入札額の税": "ストア: このまま入札。支払いは税込8,800円"},
+                {"判定": "要確認", "仮判定": "◎", "仮の上限入札額": "12000", "タイトル": "Pentax LX", "ヤフオクURL": u + "x100000003"},
+                {"判定": "×", "タイトル": "Olympus OM-1", "ヤフオクURL": u + "x100000004"},
+                {"判定": "要確認", "タイトル": "Minolta X-700", "ヤフオクURL": u + "x100000005"},
+            ])
+            rows = yr.report_rows(p)
+        self.assertEqual([(r["auction_id"], r["mark"], r["max_bid"], r["store_tax"]) for r in rows],
+                         [("x100000001", "◎", "20000", "0"), ("x100000002", "確認してから○", "8000", "1"),
+                          ("x100000003", "仮◎", "12000", "0")])
+
+    def test_add_watch_and_seen_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            dl = Path(d)
+            (dl / "aurora_seen.csv").write_text(
+                "﻿auction_id,title,end,mark,max_bid,store_tax,seen_at\n"
+                '"x1","Nikon FM2 ボディ","2026-11-19T21:00:00+09:00","◎","20000","0","2026-11-18T10:00:00Z"\n'
+                '"x2","Canon AE-1","2026-11-20T21:00:00+09:00","仮○","8000","1","2026-11-18T10:00:00Z"\n', encoding="utf-8")
+            new = yr.seen_rows(dl)
+        rows, added = yr.add_watch(new, [], NOW)
+        self.assertEqual(added, 2)
+        self.assertEqual(rows[0]["model_key"], ba.model_key("Nikon FM2 ボディ")[1])
+        self.assertEqual(rows[0]["seen_from"], "extension")
+        # 朝のリストにも出た → 1行のまま、どこから見たかを足す。自動延長で終了時刻が変わったら直す
+        rows, added = yr.add_watch([{"auction_id": "x1", "title": "Nikon FM2 ボディ", "end": "2026-11-19T21:05:00+09:00",
+                                     "mark": "◎", "seen_from": "morning"}], rows, NOW)
+        self.assertEqual((added, len(rows), rows[0]["seen_from"], rows[0]["end"]),
+                         (0, 2, "extension+morning", "2026-11-19T21:05:00+09:00"))
+
+
+class Check(unittest.TestCase):
+    def rows(self):
+        mk = lambda aid, end: {k: "" for k in yr.FIELDS} | {"auction_id": aid, "title": "Nikon FM2", "end": end}  # noqa: E731
+        return [mk("a1", "2026-11-18T21:00:00+09:00"), mk("a2", "2026-11-18T22:00:00+09:00"),
+                mk("a3", "2026-11-20T21:00:00+09:00"), mk("a4", "2026-11-01T21:00:00+09:00")]
+
+    def test_ended_unsold_and_future(self):
+        rows = self.rows()
+        pages = {"a1": page("closed", 18000, 5, "2026-11-18T21:00:00+09:00"),
+                 "a2": page("closed", 3000, 0, "2026-11-18T22:00:00+09:00")}
+        seen = []
+
+        def fetch(u):
+            aid = u.rsplit("/", 1)[1]
+            seen.append(aid)
+            if aid not in pages:
+                raise OSError("404")
+            return pages[aid]
+        res = yr.check_watch(rows, 300, 0, fetch, NOW)
+        by = {r["auction_id"]: r for r in rows}
+        self.assertNotIn("a3", seen)  # まだ終わっていない出品は読まない
+        self.assertEqual((by["a1"]["final_price"], by["a1"]["bids"], by["a1"]["status"]), (18000, 5, "落札された"))
+        self.assertEqual((by["a2"]["final_price"], by["a2"]["bids"], by["a2"]["status"]), ("", 0, "流れた"))
+        self.assertEqual(by["a4"]["status"], "読めず")  # 終了から14日以上たって読めない（削除など）
+        self.assertEqual((res["sold"], res["unsold"], res["gave_up"]), (1, 1, 1))
+        # 記録済みはもう読まない
+        seen.clear()
+        yr.check_watch(rows, 300, 0, fetch, NOW)
+        self.assertEqual(seen, [])
+
+    def test_limit_and_extended(self):
+        rows = self.rows()[:2]
+        # 自動延長でまだ終わっていない → 終了時刻だけ直して記録しない
+        later = "2026-11-19T23:00:00+09:00"
+        res = yr.check_watch(rows, 1, 0, lambda u: page("open", 9000, 3, later), NOW)
+        self.assertEqual((res["due"], res["read"]), (2, 1))  # 1回の上限
+        self.assertEqual((rows[0]["end"], rows[0]["checked_at"]), (later, ""))
+
+    def test_model_stats_and_sheet(self):
+        rows = []
+        for aid, p, b, end in (("a1", 18000, 5, "2026-11-10T21:00:00+09:00"), ("a2", 22000, 9, "2026-11-11T21:00:00+09:00"),
+                               ("a3", 20000, 3, "2026-11-12T21:00:00+09:00"), ("a4", "", 0, "2026-11-13T21:00:00+09:00"),
+                               ("a5", 99000, 4, "2026-06-01T21:00:00+09:00")):  # 90日より前は数えない
+            rows.append({k: "" for k in yr.FIELDS} | {
+                "auction_id": aid, "title": "Nikon FM2 ボディ", "model": "Nikon FM2", "model_key": "nikon fm2", "end": end,
+                "final_price": p, "bids": b, "status": "落札された" if b else "流れた", "checked_at": "2026-11-19 07:00"})
+        st = yr.model_stats(rows, 90, NOW)
+        self.assertEqual(st["nikon fm2"], {"label": "Nikon FM2", "n": 3, "med": 20000, "min": 18000, "max": 22000, "unsold": 1})
+        body = yr.sheet_csv(rows, 90, NOW)
+        self.assertEqual(body.count("\n"), 1 + 4)
+        self.assertNotIn("seller", body.lower())
+        self.assertIn("2026-11-13,Nikon FM2,,0", body)
+        import ledger_sync
+        sent = []
+        with mock.patch.object(ledger_sync.keychain, "get", lambda s, k: "x"):
+            self.assertEqual(yr.upload(rows, 90, post=lambda b: sent.append(b) or "OK"), 4)
+        self.assertTrue(sent[0].startswith("終了日,機種,落札額"))
+
+
+class LedgerJudge(unittest.TestCase):
+    """落札かどうかは古物台帳（オークションID・URL）で決める。max_bid（提示額）では決めない."""
+    ROW = {"auction_id": "x111111111", "title": "Nikon FM2", "max_bid": "20000", "usd": "260", "end": "2026-11-10T21:00:00+09:00",
+           "trusted": "0", "store_tax": "0", "ship": "800", "bid_at": "2026-11-10T10:00:00Z"}
+
+    def test_load_won_ids(self):
+        with tempfile.TemporaryDirectory() as d:
+            led = Path(d) / "ledger.csv"
+            led.write_text("No.,品目,備考\nA1,Nikon FM2,https://auctions.yahoo.co.jp/jp/auction/x111111111\nA2,Canon AE-1,ｗ２２２２２２２２２\n",
+                           encoding="utf-8")
+            ids = br.load_won_ids([led, Path(d) / "kanri.csv"])
+            self.assertIn("x111111111", ids)
+            self.assertIn("w222222222", ids)  # 全角も読む
+            led.write_text("No.,品目\nA1,Nikon FM2\n", encoding="utf-8")
+            self.assertIsNone(br.load_won_ids([led]))  # IDが1つも無い台帳 → 台帳では判定しない
+
+    def test_judge(self):
+        closed = br._item_state(page("closed", 25000, 6, "2026-11-10T21:00:00+09:00"))
+        # 最終価格が上限額を超えていても、台帳にあれば落札（実際の入札額は提示額と違うことがある）
+        self.assertEqual(br.judge_result(dict(self.ROW), closed, CFG, 150.0, {"x111111111"})["result"], "落札")
+        # 台帳に無い・終了から10日以上 → 負け。最終価格が上限額以下でも落札にしない
+        cheap = br._item_state(page("closed", 15000, 6, "2026-11-01T21:00:00+09:00"))
+        self.assertEqual(br.judge_result(dict(self.ROW, end="2026-11-01T21:00:00+09:00"), cheap, CFG, 150.0, set(["zzz"]))["result"], "負け")
+        # 終わった直後で台帳に無い → 確認待ち
+        just = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        self.assertEqual(br.judge_result(dict(self.ROW, end=just), br._item_state(page("closed", 15000, 6, just)), CFG, 150.0,
+                                         {"zzz"})["result"], "確認待ち")
+        # 入札0件で終わった → 流れた
+        self.assertEqual(br.judge_result(dict(self.ROW), br._item_state(page("closed", 5000, 0, "2026-11-10T21:00:00+09:00")),
+                                         CFG, 150.0, {"zzz"}), {"result": "流れた", "final_price": ""})
+
+    def test_check_results_waits_then_decides(self):
+        just = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        rows = [dict(self.ROW, end=just)]
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(br, "LOG", Path(d) / "log.csv"):
+            known = {"x111111111": {"status": "closed", "price": "15000", "bids": "4", "end": just}}
+            fetched = []
+            br.check_results(CFG, 150.0, 0, rows, lambda u: fetched.append(u), won_ids={"zzz"}, known=known)
+            self.assertEqual(fetched, [])  # 落札相場で記録済みの出品は読み直さない
+            self.assertEqual((rows[0]["result"], rows[0]["final_price"]), ("確認待ち", 15000))
+            self.assertEqual(br.summarize(rows, None)["pending"], 1)
+            # 翌朝、台帳に載った → 落札
+            self.assertEqual(br.check_results(CFG, 150.0, 0, rows, None, won_ids={"x111111111"}, known={}), 1)
+            self.assertEqual(rows[0]["result"], "落札")
+            # 以前の「落札(見込み)」も台帳にあれば落札に
+            old = [dict(self.ROW, result="落札(見込み)", final_price="18000")]
+            br.check_results(CFG, 150.0, 0, old, None, won_ids={"x111111111"}, known={})
+            self.assertEqual(old[0]["result"], "落札")
+
+    def test_stats_skip_pending_and_unsold(self):
+        rows = [{"max_bid": "8000", "store_tax": "0", "result": r} for r in ("落札", "負け", "確認待ち", "流れた", "負け")]
+        self.assertEqual(br.win_stats(rows)["1万円未満|*"], [1, 3])
+        s = br.summarize([dict(r, bid_at="2026-11-10") for r in rows], None)
+        self.assertEqual((s["done"], s["pending"], s["unsold"], s["win_rate"]), (3, 1, 1, 33))
+
+
+class Extension(unittest.TestCase):
+    """拡張機能: 落札相場の行は記録があるときだけ出す。見張りは1日の上限まで."""
+
+    def test_yahoo_line(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        from test_trust import run_js
+        data = bx.build_data(CFG, 150.0)
+        data.update(refs=[], kantei=[], yahooStats={"nikon fm2": {"label": "Nikon FM2", "n": 3, "med": 20000, "min": 18000,
+                                                                  "max": 22000, "unsold": 1}})
+        out = run_js(data, 'console.log(JSON.stringify([m.yahooLine("nikon fm2"), m.yahooLine("canon ae-1"), m.yahooLine("")]))')
+        self.assertIn("ヤフオク落札 中央値 20,000円（3件・直近90日", out[0])
+        self.assertEqual(out[1:], ["", ""])
+
+    def test_watch_cap(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        from test_trust import run_js
+        data = bx.build_data(CFG, 150.0)
+        data.update(refs=[], kantei=[])
+        data["cfg"]["seenMaxPerDay"] = 2
+        code = ('const L=[1,2,3].map((n)=>({i:{id:"x"+n,title:"Nikon FM"+n,end:"2099-01-01T00:00:00+09:00",tax:n===1},mark:"◎",maxBid:1000*n}));'
+                'console.log(JSON.stringify([m.watchAdd(L), m.watchCsv().split("\\n")[0]]))')
+        out = run_js(data, code)
+        self.assertEqual(out, [2, ",".join(yr.SEEN_FIELDS)])  # 上限2件。CSV の列は Mac の取り込みと同じ
+
+
+if __name__ == "__main__":
+    unittest.main()

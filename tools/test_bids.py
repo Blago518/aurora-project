@@ -48,7 +48,7 @@ class Flow(unittest.TestCase):
             with mock.patch.object(br, "LOG", log):
                 self.assertEqual(br.import_extension_bids(dl, log), 3)
                 pages = {"a1": page("closed", 18000, 4), "a2": page("closed", 5400, 7), "a3": page("closed", 20000, 9)}
-                n = br.check_results(CFG, 150.0, delay=0, fetch=lambda u: pages[u.rsplit("/", 1)[1]])
+                n = br.check_results(CFG, 150.0, delay=0, fetch=lambda u: pages[u.rsplit("/", 1)[1]], won_ids=None, known={})
                 self.assertEqual(n, 3)
                 s = br.summarize(br._read(log), None)
         self.assertEqual((s["bids"], s["won"], s["lost"], s["win_rate"]), (3, 1, 2, 33))
