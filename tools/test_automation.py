@@ -410,6 +410,16 @@ class SheetMemoAndKnowledge(unittest.TestCase):
         self.assertEqual([rows[4][b], rows[4][k], rows[4][ai]], ["Refund", "-21.88", "-21.88"])
         self.assertEqual([rows[5][a], rows[5][b], rows[5][k]], ["d:9-Nov-26", "Other fee", "-3.39"])
 
+    def test_returns_csv(self):
+        # 返品の一覧 → 「Mac_返品」: 決めた列だけを送る（ほかの列があっても送らない）
+        rows = [{"kind": "返品", "sku": "S1", "title": "Nikon F3", "order_date": "2026-10-01", "date": "2026-10-10",
+                 "verdict": "返品・返金済み", "refund": "120", "refund_currency": "USD", "reason": "NOT_AS_DESCRIBED",
+                 "status": "CLOSED", "order_id": "X-1", "id": "R1", "return_tracking": "T1"}]
+        out = list(csv.reader(io.StringIO(ls.returns_csv(rows))))
+        self.assertEqual(out[0], ls.RETURNS_COLS)
+        self.assertEqual(out[1][ls.RETURNS_COLS.index("reason")], "NOT_AS_DESCRIBED")
+        self.assertNotIn("X-1", out[1])
+
     def test_knowledge(self):
         text = '"ファイル名","本文"\n"狙い目スペック","# 狙い目\n50mm は f/1.2 より明るい"\n"a/b","x"\n'
         with tempfile.TemporaryDirectory() as d, mock.patch.object(ls, "fetch", return_value=text):

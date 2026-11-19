@@ -404,3 +404,31 @@ class ExtensionSame(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CautionSellers(unittest.TestCase):
+    """注意を出す出品者（2026-11-19 ユーザー決定「注意書きだけ出す」）. 判定・上限額は変えない."""
+
+    def test_python(self):
+        cfg = {"caution": {"sellers": ["バイセル"], "note": "注意"}}
+        self.assertEqual(ba.caution_note("バイセル ヤフオク!店", cfg), "注意")
+        self.assertEqual(ba.caution_note("ハローカメラ", cfg), "")
+        self.assertEqual(ba.caution_note("", cfg), "")
+
+    def test_js(self):
+        import subprocess
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(ba.load_config(None), 150.0)
+        data["caution"] = {"sellers": ["バイセル"], "note": "注意"}
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            out = subprocess.run(["node", "-e", "global.localStorage={getItem(){return null},setItem(){}};const m=require(" + json.dumps(str(js)) +
+                                  ");console.log(JSON.stringify([m.cautionLine({sellerName:'バイセル ヤフオク!店'}),m.cautionLine({sellerName:'ハローカメラ'})]))"],
+                                 capture_output=True, text=True, check=True).stdout
+        a, b = json.loads(out)
+        self.assertIn("注意", a)
+        self.assertEqual(b, "")

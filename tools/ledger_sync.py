@@ -747,6 +747,34 @@ def transactions_csv(fin_rows: list[dict], order_rows: list[dict]) -> str:
     return buf.getvalue()
 
 
+RETURNS_SHEET = "Mac_返品"  # 返品・キャンセル・返金の一覧（eBay API。購入者の名前・住所・メッセージは入れない。2026-11-19 返品を減らす作業のため）
+RETURNS_COLS = ["kind", "sku", "title", "order_date", "date", "verdict", "refund", "refund_currency", "reason", "status"]
+
+
+def returns_csv(rows: list[dict]) -> str:
+    """reports/ebay_returns_*.csv の行 → 「Mac_返品」に送る CSV（決めた列だけ。購入者の情報は元から入っていない）."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(RETURNS_COLS)
+    for r in rows:
+        w.writerow([r.get(c, "") for c in RETURNS_COLS])
+    return buf.getvalue()
+
+
+def upload_returns(reports: Path | None = None, post=None) -> int | None:
+    """reports/ebay_returns_*.csv（最新）→ 古物台帳「Mac_返品」（まるごと置き換え）. 送った行数."""
+    reports = reports or ROOT / "reports"
+    files = sorted(p for p in reports.glob("ebay_returns_*.csv") if "_raw_" not in p.name)
+    if not files:
+        return None
+    rows = list(csv.DictReader(files[-1].read_text(encoding="utf-8-sig").splitlines()))
+    if not post_sheet(RETURNS_SHEET, returns_csv(rows), post=post):
+        print(f"返品の一覧: 台帳「{RETURNS_SHEET}」に送れませんでした", file=sys.stderr)
+        return None
+    print(f"返品の一覧: 台帳「{RETURNS_SHEET}」に {len(rows)}行（返品を減らす分析に使う）", file=sys.stderr)
+    return len(rows)
+
+
 def upload_transactions(reports: Path | None = None, post=None) -> int | None:
     """reports/ebay_finances_*.csv と ebay_orders_*.csv（最新）→ 古物台帳「Mac_取引」（まるごと置き換え）. 送った行数."""
     reports = reports or ROOT / "reports"

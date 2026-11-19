@@ -112,6 +112,7 @@ class Item:
     sold_hit: bool = False  # 売れ筋（根拠の販売実績で利益が出ていた機種）
     set_parts: list = field(default_factory=list)  # まとめ売りの中身 [(中身, 相場$送料込み)]（2点以上のときだけ）
     seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
+    seller_name: str = ""    # 出品者の表示名（注意を出す出品者の照合に使う。config.toml [caution]）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
     desc_checked: bool = False  # 説明文を読んだか（check_descriptions）
@@ -323,6 +324,7 @@ def parse_listing_page_full(page: str) -> tuple[list[Item], int | None, int]:
             store_tax=x.get("taxFlag") == 1,
             memo="ストア" if (x.get("seller") or {}).get("isStore") else "",
             seller_id=str((x.get("seller") or {}).get("userId") or ""),
+            seller_name=str((x.get("seller") or {}).get("displayName") or ""),
         ))
     return items, total, len(listing["items"])
 
@@ -1968,6 +1970,13 @@ def _usd(v) -> str:
     return "-" if v is None else f"${v:,.2f}"
 
 
+def caution_note(seller_name: str, cfg: dict | None = None) -> str:
+    """注意を出す出品者（config.toml [caution]）なら注意の文、それ以外は空. 判定・上限額・並びには使わない."""
+    c = (cfg or _base_cfg()).get("caution") or {}
+    name = str(seller_name or "")
+    return str(c.get("note", "")) if name and any(w and w in name for w in c.get("sellers", [])) else ""
+
+
 def rows_for_output(items: list[Item]) -> list[dict]:
     rows = []
     for it in items:
@@ -1995,6 +2004,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "理由": reason,
                 "タイトル": it.title,
                 "ヤフオクURL": it.url,
+                "出品者の注意": caution_note(it.seller_name),
                 "現在価格": it.current_price_jpy,
                 "即決価格": it.buy_now_jpy,
                 "入札数": it.bids,
@@ -2048,7 +2058,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
 # 勝ちやすさの記録が無い機種は default_rate（全体の勝ちやすさの目安）で並べる。即決価格が上限額以下の出品は別枠で先頭（数えない）。
 # 1日の予約額の合計には上限を付けない（2026-11-19 ユーザー決定）
 RESERVE_FIELDS = ["順", "区分", "判定", "勝ちやすさ", "上限入札額(入札欄に入れる額)", "支払い額(ストアは税込)", "現在価格",
-                  "即決価格", "利益(今の価格で落札)", "終了", "商品名", "ヤフオク"]
+                  "即決価格", "利益(今の価格で落札)", "終了", "商品名", "ヤフオク", "注意"]
 
 
 def _end_dt(s: str):
@@ -2101,7 +2111,7 @@ def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 
                 "支払い額(ストアは税込)": round(mb * (1 + store_tax_pct / 100)) if store else mb,
                 "現在価格": r.get("現在価格"), "即決価格": r.get("即決価格"),
                 "利益(今の価格で落札)": r.get("利益(現在価格)"), "終了": r.get("終了") or "",
-                "商品名": r.get("タイトル") or "", "ヤフオク": r["ヤフオクURL"],
+                "商品名": r.get("タイトル") or "", "ヤフオク": r["ヤフオクURL"], "注意": r.get("出品者の注意") or "",
             })
     return out
 
@@ -2118,7 +2128,7 @@ def reserve_html(rows: list[dict], target: int) -> str:
     n_pick = sum(1 for r in rows if r["区分"] == "予約")
     body = "".join(
         f'<tr><td>{r["順"]}</td><td>{e(r["区分"])}<br><b>{e(r["判定"])}</b></td>'
-        f'<td><a href="{e(r["ヤフオク"])}" target="_blank" rel="noopener">{e(r["商品名"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small></td>'
+        f'<td><a href="{e(r["ヤフオク"])}" target="_blank" rel="noopener">{e(r["商品名"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small>{('<br><small style="color:#a4473a">⚠ ' + e(r["注意"]) + '</small>') if r.get("注意") else ""}</td>'
         f'<td><b>{_yen(r["上限入札額(入札欄に入れる額)"])}</b><br><small>支払い {_yen(r["支払い額(ストアは税込)"])}'
         f'{"（税込）" if r["支払い額(ストアは税込)"] != r["上限入札額(入札欄に入れる額)"] else ""}</small></td>'
         f'<td>{_yen(r["現在価格"])}{("<br><small>即決 " + _yen(r["即決価格"]) + "</small>") if r["即決価格"] else ""}</td>'

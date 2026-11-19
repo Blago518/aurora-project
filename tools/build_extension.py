@@ -61,6 +61,7 @@ def build_data(cfg: dict, fx: float) -> dict:
         # robots.txt で Disallow の引数（［続けて鑑定］で続きのページを読むとき外す）[パスの正規表現, 引数の末尾]
         "robotsParams": _robots_params(),
         "memoHist": ba.load_memo_history(),  # 相場メモの履歴（拡張機能の「相場の動き」。data/price_memo_history.csv）  # 落札見込み（data/bid_log.csv の結果から。bid_results.win_stats）
+        "caution": {"sellers": list((cfg.get("caution") or {}).get("sellers", [])), "note": str((cfg.get("caution") or {}).get("note", ""))},  # 注意を出す出品者（表示だけ）
         "cfg": {
             "fx": round(fx, 2), "convLossPct": cfg["fx"]["conversion_loss_pct"],
             "feePct": e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"],
