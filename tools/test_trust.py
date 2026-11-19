@@ -496,3 +496,25 @@ class MountWords(unittest.TestCase):
             label = ba.model_key(t)[0]
             self.assertTrue(ba.match_sales(t, [self._ref(label)]), (t, label))
 
+
+class KitParts(unittest.TestCase):
+    """レンズキットはボディとレンズの2点に分け、中身ごとに相場を当てる（2026-11-19 ユーザー指定）."""
+    T = "NIKON ニコン デジタル一眼レフカメラ D70 レンズキット(AF-S DX Zoom-NIKKOR 18-70mm F3.5-4.5G IF ED) ⑤ 7795B-4"
+
+    def test_python_parts(self):
+        parts = ba.set_part_titles(self.T)
+        self.assertEqual(len(parts), 2)
+        labels = [ba.model_key(p)[0] for p in parts]
+        self.assertIn("D70", labels[0])
+        self.assertTrue(labels[1].startswith("Nikon") and "18-70mm" in labels[1] and "AF-S" in labels[1], labels)
+
+    def test_js_same_parts(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        out = run_js(data, "console.log(JSON.stringify(m.setPartTitles(" + json.dumps(self.T, ensure_ascii=False) + ")))")
+        self.assertEqual(len(out), 2)
+        self.assertIn("18-70mm", out[1])
+        self.assertTrue(out[1].lower().startswith("nikon"))
+

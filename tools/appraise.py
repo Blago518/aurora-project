@@ -1059,7 +1059,9 @@ def _model_url(brand: str, word: str) -> str:
 # 区切り（＋ + 、 , ／ / ＆ & 「と」）で分け、型の語（焦点距離・型番）がある部分だけを中身とみなす。メーカーが無い部分は商品名の最初のメーカーを付ける。
 # 相場が見つかった中身だけを足し（見つからない中身は $0 ＝保守的）、2点以上見つかったときだけ判定する。
 # 中身は別々に売る前提なので、2点目からは送料（一律）・1注文の手数料・梱包をそれぞれ引く。拡張機能の setParts と同じ
-SET_SPLIT_RE = re.compile(r"\s*(?:[＋+、,／/＆&・]|\sと\s|\s(?:and|with)\s)\s*", re.I)
+# 区切り: ＋ + 、 , ／ / ＆ & ・ と、かっこ（「D70 レンズキット(AF-S 18-70mm)」のキットの中身。2026-11-19）
+SET_SPLIT_RE = re.compile(r"\s*(?:[＋+、,／/＆&・()（）]|\sと\s|\s(?:and|with)\s)\s*", re.I)
+KIT_RE = re.compile(r"キット|\bkit\b", re.I)  # レンズキット: ボディとレンズの2点として扱う（中身が2点見つかったときだけ）
 
 
 def _split_by_models(seg: str) -> list[str]:
@@ -1087,7 +1089,7 @@ def set_part_titles(title: str) -> list[str]:
             if {"付属品のみ?", "アダプター等"} & set(detect_flags(seg)):
                 continue
             seg = FILM_FORMAT_MM_RE.sub(" ", seg).strip()  # 「35mm フィルムカメラ」の 35mm は照合に使わない
-            if b0 and not _brand_of(seg):
+            if b0 and b0.lower() not in seg.lower():  # 「AF-S DX Zoom-NIKKOR」のようにメーカー名が無い部分には付ける
                 seg = f"{b0} {seg}"
             out.append(seg)
     return out if len(out) >= 2 else []
@@ -1777,7 +1779,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
             item.fetch_note += "検索語を作れません（title か ebay_query を入力） "
             continue
 
-        if "セット品" in item.flags:  # まとめ売りは中身ごとに相場を当てて合計する
+        if "セット品" in item.flags or KIT_RE.search(item.title):  # まとめ売り・レンズキットは中身ごとに相場を当てて合計する
             parts = []
             for seg in set_part_titles(item.title):
                 ms = match_prefer_memo(f"{title_to_query(seg)} {seg}", memo, others)
