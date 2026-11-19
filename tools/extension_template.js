@@ -39,7 +39,8 @@
   const VNORM = C.variantNormalize.map(([p, r]) => [new RegExp(p, "gi"), r]);
   const GENS = new Set(C.generations), PREMIUM = new Set(C.premium), SERIES = new Set(C.series || []);
   // 系統の語（appraise.series_of と同じ）: Zuiko Digital・M.Zuiko と OM Zuiko、Rolleicord と Rolleiflex は別物
-  const seriesOf = (ts, lens) => { const s = new Set([...ts].filter((t) => SERIES.has(t))); if (s.has("m.zuiko")) s.add("digital");
+  const canonL = (ts) => ts.has("l") && ts.has("canon");  // Canon の L レンズ（appraise.canon_l）
+  const seriesOf = (ts, lens) => { const s = new Set([...ts].filter((t) => SERIES.has(t))); if (canonL(ts)) s.add("l"); if (s.has("m.zuiko")) s.add("digital");
     if (!lens) { s.delete("digital"); s.delete("m.zuiko"); } return [...s].sort().join(","); };
   // マウント（appraise.mount_of と同じ）: レンズはマウントの組が両方で同じときだけ相場を当てる
   const MOUNTS = C.mounts || {}, MOUNT_TOKENS = new Set(Object.values(MOUNTS).flatMap((d) => Object.keys(d)));
@@ -83,6 +84,7 @@
     t = t.replace(/\b1\s*:\s*(\d(?:\.\d)?)\b/g, "F$1");
     t = t.replace(/\b(EF-S|EF|RF|FD|XF|FE)(\d)/gi, "$1 $2");
     t = t.replace(/\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b/g, "$1 $2");
+    t = t.replace(/(?<![\d.-])(\d{2,3})-\s+(?=[fF]\d)/g, "$1mm ");  // 「EF 50- F1.2L」→ 50mm（appraise と同じ）
     t = t.replace(/[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+/g, " ");
     let brand = "";
     const allBrands = [];
@@ -324,7 +326,7 @@
     const hasMount = !!mountOf(tokensOf(title));
     const ser = rest.filter((t, i) => (SERIES.has(t.toLowerCase()) || (hasMount && MOUNT_TOKENS.has(t.toLowerCase()))) && rest.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
     const label = (brand ? [brand] : []).concat(ser, (keyToks.some((t) => !gen(t)) ? keyToks : rest.slice(0, 2)).filter((t) => !ser.includes(t)))
-      .concat(vt ? [vt.label] : []).join(" ");
+      .concat(vt ? [vt.label] : [], canonL(tokensOf(title)) ? ["L"] : []).join(" ");
     const norm = label.toLowerCase().split(" ").map((t) => {
       if (/^f\/?\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t)) t = t.replace(/^f\/?/, "");
       return /^\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t) && t.includes(".") ? "f" + t : t;

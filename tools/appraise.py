@@ -680,6 +680,7 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = re.sub(r"\b1\s*:\s*(\d(?:\.\d)?)\b", r"F\1", t)      # 1:1.8 → F1.8
     t = re.sub(r"\b(EF-S|EF|RF|FD|XF|FE)(\d)", r"\1 \2", t, flags=re.I)  # EF135mm → EF 135mm
     t = re.sub(r"\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b", r"\1 \2", t)  # F2L → F2 L
+    t = re.sub(r"(?<![\d.-])(\d{2,3})-\s+(?=[fF]\d)", r"\1mm ", t)  # 「EF 50- F1.2L」→ 50mm（mm の書き忘れ）
     t = re.sub(r"[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+", " ", t)
     brand = ""
     all_brands: list[str] = []
@@ -867,8 +868,15 @@ def mount_of(tokens: set[str]) -> set[str]:
     return out
 
 
+def canon_l(tokens: set[str]) -> bool:
+    """Canon の L レンズ（F1.2L・F4L・L USM）. L の付かないレンズとは相場がまったく違う（2026-11-19 ユーザー指摘）."""
+    return "l" in tokens and "canon" in tokens  # Canon のボディに単独の「L」は無い
+
+
 def series_of(tokens: set[str], lens: bool) -> set[str]:
     s = {t for t in tokens if t in SERIES}
+    if canon_l(tokens):
+        s.add("l")
     if "m.zuiko" in s:
         s.add("digital")
     if not lens:  # ボディの「Digital Camera」は系統ではない
@@ -1943,7 +1951,8 @@ def model_key(title: str) -> tuple[str, str]:
     has_mount = bool(mount_of(_tokens(title)))
     ser = [t for i, t in enumerate(rest) if (t.lower() in SERIES or (has_mount and t.lower() in MOUNT_TOKENS))
            and t.lower() not in [x.lower() for x in rest[:i]]]
-    label = " ".join(([brand] if brand else []) + ser + [t for t in key_toks if t not in ser])
+    label = " ".join(([brand] if brand else []) + ser + [t for t in key_toks if t not in ser]
+                     + (["L"] if canon_l(_tokens(title)) else []))  # Canon の L は機種名・検索語に残す
     norm = []
     for t in label.lower().split():
         t = re.sub(r"^f/?", "", t) if re.fullmatch(r"f/?\d+(\.\d)?(-\d+(\.\d)?)?", t) else t
