@@ -421,3 +421,41 @@ class MemoHitsListing(unittest.TestCase):
         self.assertTrue(out[0][0].lower().startswith("rodenstock"))
         self.assertEqual([ba.model_key(t)[0] for t in self.TITLES], [o[0] for o in out])  # Python と同じ機種名
 
+
+class SeriesWords(unittest.TestCase):
+    """Zuiko Digital（フォーサーズ）と OM Zuiko、Rolleicord と Rolleiflex は別物（2026-11-19 ユーザー指摘）."""
+    TITLES = ["OLYMPUS ZUIKO DIGITAL 25mm F2.8 フォーサーズマウント パンケーキレンズ",
+              "OLYMPUS M.ZUIKO DIGITAL 45mm f1.8",
+              "Rollei ローライ Rolleicord Va type 2 Schneider-Kreuznach Xenar 75mm F3.5",
+              "Rolleiflex 3.5F Planar 75mm F3.5"]
+
+    def _ref(self, title, price=200.0):
+        return {"title": title, "sold_price_usd": price, "_price": price, "_tokens": ba._tokens(title), "source": "相場メモ(Near MINT)"}
+
+    def test_python(self):
+        self.assertIn("DIGITAL", ba.model_key(self.TITLES[0])[0].upper())
+        self.assertIn("M.ZUIKO", ba.model_key(self.TITLES[1])[0].upper())
+        self.assertIn("Rolleicord", ba.model_key(self.TITLES[2])[0])
+        om = self._ref("Olympus 50mm F2")
+        self.assertFalse(ba.match_sales("OLYMPUS ZUIKO DIGITAL 50mm F2 Macro", [om]))      # OM の相場をフォーサーズに当てない
+        self.assertTrue(ba.match_sales("OLYMPUS OM-SYSTEM ZUIKO AUTO-MACRO 50mm F2", [om]))
+        dig = self._ref("Olympus Digital 25mm F2.8")
+        self.assertTrue(ba.match_sales(self.TITLES[0], [dig]))
+        cord = self._ref("Rollei Rolleicord 75mm F3.5")
+        self.assertFalse(ba.match_sales(self.TITLES[3], [cord]))
+        self.assertTrue(ba.match_sales(self.TITLES[2], [cord]))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        pairs = [["Olympus 50mm F2", "OLYMPUS ZUIKO DIGITAL 50mm F2 Macro"], ["Olympus 50mm F2", "OLYMPUS OM-SYSTEM ZUIKO AUTO-MACRO 50mm F2"],
+                 ["Rollei Rolleicord 75mm F3.5", self.TITLES[3]], ["Rollei Rolleicord 75mm F3.5", self.TITLES[2]]]
+        code = ("const P=" + json.dumps(pairs, ensure_ascii=False) + ";console.log(JSON.stringify(P.map(([l,t])=>m.matchRefs(t,[{title:l,price:200,tier:0,"
+                "source:'相場メモ',tokens:[...m.tokensOf(l)],acc:false}]).length)))")
+        self.assertEqual(run_js(data, code), [0, 1, 0, 1])
+        labels = run_js(data, "console.log(JSON.stringify(" + json.dumps(self.TITLES, ensure_ascii=False) + ".map(t=>m.modelKey(t)[0])))")
+        self.assertIn("DIGITAL", labels[0].upper())
+        self.assertIn("Rolleicord", labels[2])
+

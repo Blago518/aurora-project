@@ -7,7 +7,10 @@ function makeCore(DATA) {
   const BRAND_SET = new Set(Object.values(C.brandsEn).map((b) => b.toLowerCase()));
   const NOISE = new Set(C.noise), THIRD = new Set(C.thirdParty), COLORS = new Set(C.colors);
   const VNORM = C.variantNormalize.map(([p, r]) => [new RegExp(p, "gi"), r]);
-  const GENS = new Set(C.generations), PREMIUM = new Set(C.premium);
+  const GENS = new Set(C.generations), PREMIUM = new Set(C.premium), SERIES = new Set(C.series || []);
+  // 系統の語（appraise.series_of と同じ）: Zuiko Digital・M.Zuiko と OM Zuiko、Rolleicord と Rolleiflex は別物
+  const seriesOf = (ts, lens) => { const s = new Set([...ts].filter((t) => SERIES.has(t))); if (s.has("m.zuiko")) s.add("digital");
+    if (!lens) { s.delete("digital"); s.delete("m.zuiko"); } return [...s].sort().join(","); };
   const ACCESSORY_RE = new RegExp(C.accessoryRe, "i");
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
   const KANTEI = DATA.kantei.map((r) => ({ ...r, re: r.patterns.map((p) => { try { return new RegExp(p, "i"); } catch (e) { return null; } }) }));
@@ -162,6 +165,7 @@ function makeCore(DATA) {
       if (pick(qt, PREMIUM) !== pick(rt, PREMIUM)) continue;
       if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
+      if (seriesOf(qt, qmm) !== seriesOf(rt, lensy(rt))) continue;
       if (variantsConflict(qt, rt)) continue;
       // 実績側の英字の語（メーカー・レンズ銘など）が1つも無ければ別物（YASHICA 35mm 2.8 に ALPA 35mm 2.8 が当たっていた）
       if (![...rt].some((t) => !/\d/.test(t) && !COLORS.has(t) && qt.has(t))) continue;
@@ -283,7 +287,8 @@ function makeCore(DATA) {
     const keyToks = rest.filter((t) => (/\d/.test(t) && !code(t)) || gen(t)).filter((t, i, a) => !gen(t) || a.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
     while (keyToks.filter((t) => !gen(t)).length > 3) keyToks.splice(keyToks.findLastIndex((t) => !gen(t)), 1);
     const vt = variantOf(tokensOf(title));
-    const label = (brand ? [brand] : []).concat(keyToks.some((t) => !gen(t)) ? keyToks : rest.slice(0, 2))
+    const ser = rest.filter((t, i) => SERIES.has(t.toLowerCase()) && rest.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
+    const label = (brand ? [brand] : []).concat(ser, (keyToks.some((t) => !gen(t)) ? keyToks : rest.slice(0, 2)).filter((t) => !ser.includes(t)))
       .concat(vt ? [vt.label] : []).join(" ");
     const norm = label.toLowerCase().split(" ").map((t) => {
       if (/^f\/?\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t)) t = t.replace(/^f\/?/, "");
