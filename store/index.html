@@ -106,7 +106,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <input id="name" type="search" placeholder="例: Nikon FM2 / キヤノン New FD 50mm F1.4" autocomplete="off" enterkeyhint="search">
     <label for="price">値札の価格（税込でお店に払う額・円）</label>
     <input id="price" inputmode="numeric" pattern="[0-9]*" placeholder="例: 18000" autocomplete="off">
-    <label class="chk"><input type="checkbox" id="junk"> ジャンク表記がある（想定販売価格を下げて計算）</label>
+    <label class="chk"><input type="checkbox" id="junk"> ジャンク表記がある（記録用。方針でジャンクも割り引かずに計算）</label>
   </div>
 
   <div class="card" id="result" hidden></div>
@@ -323,14 +323,26 @@ function lookup(name, price, junkBox) {
   if (!refs.length) refs = core.matchKantei(name);
   let u = refs.length ? Math.round(core.median(core.conditionAdjusted ? core.conditionAdjusted(refs, name, flags) : refs.map((r) => r.price)) * 100) / 100 : null;
   if (u != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) u = Math.round(u * DATA.cfg.junkFactor * 100) / 100;
-  const it = { price, ship: 0, tax: false, flags };
+  // まとめ売り・レンズキットは中身ごとに相場を当てて合計（拡張機能・appraise.py と同じ。2点以上当たったときだけ）
+  let setParts = [];
+  if (core.setPartTitles && (flags.includes("セット品") || core.KIT_RE.test(name))) {
+    const memoPool = DATA.refs.filter(core.isMemo), otherPool = DATA.refs.filter((r) => !core.isMemo(r));
+    for (const seg of core.setPartTitles(name)) {
+      const ms = core.matchPreferMemo(core.titleToQuery(seg) + " " + seg, memoPool, otherPool);
+      if (ms.length) setParts.push({ label: seg, usd: Math.round(core.median(ms.map((r) => r.price)) * 100) / 100, ref: ms[0] });
+    }
+    if (setParts.length >= 2) { refs = [setParts[0].ref]; u = core.setValue(setParts, DATA.cfg.fx); }
+    else setParts = [];
+  }
+  const it = { title: name, price, ship: 0, tax: false, flags, setParts };  // title: 光学難（カビ・クモリ等）の判定に使う
   it.calc = u != null ? core.calculate(it, u, DATA.cfg.fx) : null;
   const [mark, reason] = core.judge(it);
-  return { q, flags, refs, usd: u, calc: it.calc, mark, reason };
+  return { q, flags, refs, usd: u, calc: it.calc, mark, reason, setParts };
 }
 
 function storeReason(r) {  // 拡張機能（ヤフオク向け）の言葉を店頭向けに
-  return r.replace("基準を満たす入札額なし", "この相場では基準（利益2,500円・10%）を満たす仕入値がない")
+  const g = DATA.cfg;
+  return r.replace("基準を満たす入札額なし", `この相場では基準（利益${(g.minProfit || 0).toLocaleString()}円・${g.minMarginPct}%。売値$${g.lowPriceUsd || 99}以下は${(g.lowPriceMinProfit || 0).toLocaleString()}円）を満たす仕入値がない`)
     .replace("現在価格不明", "値札の価格を入れると判定します").replace("上限超過", "買える上限を超えています");
 }
 
@@ -355,7 +367,7 @@ function renderResult(name, price, r) {
       <dt>この値段以下なら買い（税込）</dt><dd class="g">${yen(c.maxBid)}</dd>
       <dt>損益ゼロになる値段（税込）</dt><dd>${yen(c.breakeven)}</dd>
       <dt>想定販売価格（eBay・送料別）</dt><dd>${nusd(r.usd)}${r.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
-      <dt>根拠</dt><dd>${esc(SRC[tier] || "")} ${r.refs.length}件の中央値</dd>
+      <dt>根拠</dt><dd>${r.setParts && r.setParts.length ? `まとめ売り・キット ${r.setParts.length}点の合計（2点目からは送料・手数料・梱包を引く）<br>${r.setParts.map((p) => `${esc(p.label)} ${nusd(p.usd)}`).join("<br>")}` : `${esc(SRC[tier] || "")} ${r.refs.length}件の中央値`}</dd>
       ${conds(r.refs) ? `<dt>状態</dt><dd>${conds(r.refs)}</dd>` : ""}
       ${core.conditionNote && core.conditionNote(r.refs, name, r.flags) ? `<dt></dt><dd class="s">${esc(core.conditionNote(r.refs, name, r.flags))}</dd>` : ""}
       ${price != null ? `<dt>値札で買ったときの利益</dt><dd class="${c.profit >= 0 ? "g" : "x"}">${yen(c.profit)}（${c.margin}%）</dd>` : ""}
