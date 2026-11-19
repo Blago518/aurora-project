@@ -33,6 +33,8 @@ function makeCore(DATA) {
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
     t = t.replace(BRACKET_CODE, " \u0001$1 ");  // 【L256】→ 管理番号の候補の印（\u0001）を付ける
     t = t.replace(/\d+円[~〜～]?/g, " ");
+    t = t.replace(/[∞¶∩§]\s*\S*/g, " ");  // ストアの管理番号（… ∞ 776BC-16・¶ 7774A-5）
+    t = t.replace(/\b\d{3,4}[A-Z]{1,3}\d{0,2}-\d{1,3}\b/g, " ");  // 同じ形の管理番号（7774A-1・776D1-4）
     t = t.replace(/\b[wW]\s*\/\s*/g, " ");
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
     t = t.replace(/[①-⑳]/g, " ");

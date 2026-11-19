@@ -229,9 +229,27 @@ class ModelKeyGeneration(unittest.TestCase):
             self.skipTest("node がありません")
         data = bx.build_data(CFG, 150.0)
         data["refs"], data["kantei"] = [], []
-        titles = ["期間限定セール ソニー デジタル一眼カメラ Sony α7 II【中古】", "Nikon F3 Limited ボディ", "ニコン Nikon FM2 ブラック"]
+        titles = ["期間限定セール ソニー デジタル一眼カメラ Sony α7 II【中古】", "Nikon F3 Limited ボディ", "ニコン Nikon FM2 ブラック",
+                  "NIKON ニコン コンパクトデジタルカメラ COOLPIX P7000 ∞ 776BC-16", "OLYMPUS 単焦点レンズ M.ZUIKO DIGITAL 45mm f1.8 オリンパス 元箱 7771C-1"]
         out = run_js(data, f"console.log(JSON.stringify({json.dumps(titles, ensure_ascii=False)}.map(t=>m.modelKey(t)[0])))")
-        self.assertEqual(out, ["Sony α7 II", "Nikon F3 Limited", "Nikon FM2"])
+        self.assertEqual(out, ["Sony α7 II", "Nikon F3 Limited", "Nikon FM2"] + [ba.model_key(t)[0] for t in titles[3:]])
+        self.assertTrue(all("776" not in x and "7771" not in x for x in out[3:]))
+
+
+class StoreCodesAndTripods(unittest.TestCase):
+    """リサマイ市場などの管理番号（∞ 776BC-16・7774A-1）は機種名に入れない。三脚・雲台・外部モニターはカメラではない（2026-11-19）."""
+
+    def test_store_codes(self):
+        self.assertEqual(ba.model_key("NIKON ニコン コンパクトデジタルカメラ COOLPIX P7000 ∞ 776BC-16")[0], "Nikon P7000")
+        self.assertNotIn("7771C-1", ba.title_to_query("OLYMPUS 単焦点レンズ M.ZUIKO DIGITAL 45mm f1.8 7771C-1", 20))
+        self.assertIn("X-T2", ba.title_to_query("富士フイルム FUJIFILM X-T2 ボディ", 20))  # 本物の型番は残す
+
+    def test_tripods_are_accessories(self):
+        for t in ["Manfrotto マンフロット MVTTWINMC + MVH608AH カーボンツインビデオ三脚 雲台 ケース付き ¶ 7774A-1",
+                  "GITZO ジッツオ GM4552L カーボン一脚 5段", "リーベック Libec ビデオ雲台 H45 ヘッド"]:
+            self.assertIn("付属品のみ?", ba.detect_flags(t), t)
+        for t in ["Nikon F3 HP ボディ 三脚穴キズあり", "Canon EOS 5D 背面モニター傷あり"]:
+            self.assertNotIn("付属品のみ?", ba.detect_flags(t), t)
 
 
 if __name__ == "__main__":
