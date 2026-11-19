@@ -339,3 +339,14 @@ class ChatworkShipping(unittest.TestCase):
                          "2026-11-01,Nikon FM2,,169,0,11000,,自分の販売実績\n", encoding="utf-8")
             rows = ba.read_sales(p)
             self.assertEqual([r["_price"] for r in rows], [179.0, 169.0])  # 自分の販売実績はそのまま
+
+
+class ResearchTier(unittest.TestCase):
+    """以前の入札分析ファイルのリサーチ（推定）: 鑑定表と同じ「確認してから」の根拠。販売履歴（売れ筋）には数えない（2026-11-19）."""
+
+    def test_tier_and_not_sold(self):
+        r = {"source": "リサーチ(Mint)", "title": "Contax Planar 50mm f/1.4 AEJ"}
+        self.assertEqual(ba.source_tier(r), 3)
+        self.assertGreater(ba.source_tier(r), ba.SURE_TIER)
+        self.assertFalse(ba.is_sold_record(r))
+        self.assertEqual(ba.condition_of(r), ba.condition_of({"source": "相場メモ(Mint)", "title": "x"}))

@@ -552,7 +552,7 @@ def _cond_label(m: re.Match, out: str) -> str:
 def condition_of(row: dict) -> str:
     """過去データの状態. 頒布会リストのコンディション欄・相場メモの状態（source の括弧内）→ 商品名 の順."""
     src = unicodedata.normalize("NFKC", str(row.get("source") or ""))
-    h = re.match(r"^(頒布会リスト|相場メモ)\((.*?)\)?$", src)
+    h = re.match(r"^(頒布会リスト|相場メモ|リサーチ)\((.*?)\)?$", src)
     for t in [h.group(2) if h else "", unicodedata.normalize("NFKC", str(row.get("title") or ""))]:
         for pat, out in COND_RULES:
             m = re.search(pat, t, re.I)
@@ -870,7 +870,7 @@ def ebay_search_query(query: str, title: str = "") -> str:
     return " ".join(dict.fromkeys(words))
 
 
-SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表"]
+SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表・リサーチ（推定）"]
 
 
 def is_sold_record(row: dict) -> bool:
@@ -1098,7 +1098,7 @@ def source_tier(row: dict) -> int:
         return 1
     if src.startswith("頒布会"):
         return 2
-    if src.startswith("鑑定表"):
+    if src.startswith(("鑑定表", "リサーチ")):  # リサーチ = 以前の入札分析ファイルの eBay 売値（推定。2026-11-19 ユーザー決定で相場に使う）
         return 3
     return 0
 
@@ -1157,9 +1157,9 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         score = len(qt & rt) / len(rt)
         if score >= threshold:
             scored.append((score, row))
-    # 自分の実績 → Chatwork（他メンバーの実績）→ 頒布会リスト の順に優先
+    # 自分の実績 → Chatwork（他メンバーの実績）→ 頒布会リスト → リサーチ（推定）の順に優先
     chosen = []
-    for tier in (0, 1, 2):
+    for tier in (0, 1, 2, 3):
         chosen = [x for x in scored if source_tier(x[1]) == tier]
         if chosen:
             break
@@ -1409,7 +1409,7 @@ def assign_price(item: Item, cfg: dict, fx: float) -> None:
         item.expected_price_usd = round(statistics.median(ps), 2)
         src = str(item.history_matches[0].get("source", ""))
         label = SOURCE_LABELS[source_tier(item.history_matches[0])]
-        if src.startswith(("相場メモ", "鑑定表")):
+        if src.startswith(("相場メモ", "鑑定表", "リサーチ")):
             label = src
         item.price_source = f"{label} {len(ps)}件の中央値" if len(ps) > 1 else label
     if item.expected_price_usd is not None and "ジャンク" in item.flags and item.ebay_price_usd is None:
@@ -2064,7 +2064,7 @@ def main(argv: list[str] | None = None) -> int:
     items = read_items(args.input)
     if args.sales is None:
         import_extension_memo()
-        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv"))
+        args.sales = [p for p in (DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv", "research_prices.csv"))
                       if p.exists()]
     sales = [row for p in args.sales for row in read_sales(p)]
     if not args.offline:
