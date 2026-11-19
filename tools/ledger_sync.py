@@ -81,6 +81,10 @@ APPS_SCRIPT = r"""// aurora: 元の古物台帳 → Claude更新版 へ毎日写
 // ・ほかのシートは Claude更新版に「写し_シート名」を作り、Mac が使う列だけを毎回写す（Claude更新版のほかのシートには触らない）
 // ・合言葉が一致したときだけ動く。購入者の名前・住所の列（Buyer…・Ship to…）は返さない
 const KEY = '__KEY__';
+// 店舗アプリ用の鍵（2026-11-20 ユーザー決定）: この鍵では「共有_店舗」に行を足すことしかできない（読む・消す・ほかのシートは不可）
+const STORE_KEY = '__STORE_KEY__';
+const STORE_SHEET = '共有_店舗';
+const STORE_HEAD = ['日時', '種類', '商品名', '値札（税込・円）', '判定', '上限（税込・円）', '想定$（送料別）', '店', 'メモ', 'アプリの版'];
 const BOOK = '__BOOK__';  // Claude更新版（写し先・Mac が読む）
 const SRC = '__SRC__';    // 元の古物台帳（読むだけ）
 const LEDGER = '古物台帳';  // 元の古物台帳（読むだけ）
@@ -187,7 +191,25 @@ function doGet(e) {
   return ContentService.createTextOutput(csvOf(sh.getDataRange().getDisplayValues())).setMimeType(ContentService.MimeType.CSV);
 }
 
+// 店舗アプリ → 共有_店舗 に足す（1回50行まで・1マス200字まで。= + - @ で始まる値は文字として入れる＝数式にしない）
+function storeAdd(e) {
+  let body;
+  try { body = JSON.parse((e.postData && e.postData.contents) || '{}'); } catch (err) { return ContentService.createTextOutput('BAD_JSON'); }
+  const rows = (Array.isArray(body.rows) ? body.rows : []).slice(0, 50).filter(Array.isArray)
+    .map((r) => STORE_HEAD.map((_, i) => { const v = String(r[i] == null ? '' : r[i]).slice(0, 200); return /^[=+\-@]/.test(v) ? "'" + v : v; }));
+  if (!rows.length) return ContentService.createTextOutput('EMPTY');
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const book = SpreadsheetApp.openById(BOOK);
+    let sh = book.getSheetByName(STORE_SHEET);
+    if (!sh) { sh = book.insertSheet(STORE_SHEET); sh.appendRow(STORE_HEAD); }
+    rows.forEach((r) => sh.appendRow(r));
+  } finally { lock.releaseLock(); }
+  return ContentService.createTextOutput('OK:' + rows.length);
+}
+
 function doPost(e) {
+  if (e && e.parameter && STORE_KEY.length >= 16 && e.parameter.store === STORE_KEY) return storeAdd(e);
   if (!e || !e.parameter || e.parameter.key !== KEY) return ContentService.createTextOutput('forbidden');
   const p = e.parameter.sheet || '';
   if (!put(p)) return ContentService.createTextOutput('NO_SHEET:' + p);
@@ -204,11 +226,11 @@ function doPost(e) {
 """
 
 
-def script_text(key: str, book: str, src: str) -> str:
-    """book＝Claude更新版（写し先・Mac が読む）、src＝元の古物台帳（読むだけ）."""
+def script_text(key: str, book: str, src: str, store_key: str = "") -> str:
+    """book＝Claude更新版（写し先・Mac が読む）、src＝元の古物台帳（読むだけ）. store_key＝店舗アプリ用の鍵（共有_店舗に足すだけ）."""
     import json
     extra = json.dumps({k: cols for k, (_, cols) in EXTRA_SHEETS.items()}, ensure_ascii=False)
-    return (APPS_SCRIPT.replace("__KEY__", key).replace("__BOOK__", book).replace("__SRC__", src)
+    return (APPS_SCRIPT.replace("__STORE_KEY__", store_key).replace("__KEY__", key).replace("__BOOK__", book).replace("__SRC__", src)
             .replace("__EXTRA__", extra))
 
 
@@ -867,6 +889,21 @@ def cmd_single() -> None:
     cmd_script()
 
 
+def get_store_key(create: bool = True) -> str:
+    """店舗アプリ用の鍵（キーチェーン）. 無ければ作る."""
+    k = keychain.get(SERVICE, "store_key") or ""
+    if not k and create:
+        k = secrets.token_urlsafe(24)
+        keychain.set(SERVICE, "store_key", k)
+    return k
+
+
+def store_endpoint() -> dict | None:
+    """店舗アプリが「共有_店舗」に行を足す先（build_store.py が暗号化して届ける）. 未設定なら None."""
+    url, k = keychain.get(SERVICE, "url"), get_store_key(create=False)
+    return {"url": url, "key": k} if url and k else None
+
+
 def cmd_script() -> None:
     """スクリプトを新しくしたとき: 貼り替えて新バージョンでデプロイ（URL・合言葉はそのまま）."""
     key = keychain.get(SERVICE, "key")
@@ -877,7 +914,7 @@ def cmd_script() -> None:
     if not (book and src):
         print("先に python3 tools/ledger_sync.py setup を実行してください（Claude更新版と元の古物台帳の URL を聞きます）。")
         sys.exit(1)
-    script = script_text(key, book, src)
+    script = script_text(key, book, src, get_store_key())
     copied = keychain.copy_to_clipboard(script)
     head = "新しいスクリプトをクリップボードにコピーしました。" if copied else "下のスクリプトをコピーしてください:\n" + script
     where = "https://script.google.com/home →「aurora 古物台帳」のプロジェクトを開く"
@@ -913,7 +950,7 @@ def cmd_setup() -> None:
     keychain.set(SERVICE, "src", src)
     key = keychain.get(SERVICE, "key") or secrets.token_urlsafe(24)
     keychain.set(SERVICE, "key", key)
-    script = script_text(key, book, src)
+    script = script_text(key, book, src, get_store_key())
     copied = keychain.copy_to_clipboard(script)
     head = "③ スクリプトをクリップボードにコピーしました。" if copied else "③ 下のスクリプトをコピーしてください:\n" + script
     print(f"\n{head}\n{GUIDE}")

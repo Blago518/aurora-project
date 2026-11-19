@@ -168,6 +168,7 @@ function sheet(book, name, rows, formulas) {
     setValue: (v) => { guard(); writes.push([book, name, r, c, v]); s.rows[r - 1][c - 1] = v; },
     setValues: (vs) => { guard(); vs.forEach((row, i) => { s.rows[r - 1 + i] = row.slice(); }); writes.push([book, name, 'rows', r, vs.length]); } });
   s.clearContents = () => { guard(); s.rows = []; };
+  s.appendRow = (r) => { guard(); s.rows.push(r.slice()); writes.push([book, name, 'append']); };
   return s;
 }
 const BOOKS = {
@@ -222,6 +223,49 @@ console.log(JSON.stringify({ book: BOOKS.BOOK['古物台帳'].rows, copy: BOOKS.
         self.assertIn('"Z9"', out["csv1"])
         self.assertEqual(out["bad"], "forbidden")
         self.assertFalse([w for w in out["writes"] if w[0] == "SRC"])    # 元の古物台帳には一度も書かない
+
+
+class StoreInbox(unittest.TestCase):
+    """店舗アプリ用の鍵（2026-11-20）: 共有_店舗 に行を足すことだけできる。数式は文字にする。元の古物台帳には書かない."""
+    SK = "storekey-0123456789abcdef"
+
+    def run_js(self, run: str, store_key: str = SK) -> dict:
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        code = LedgerCopyScript.MOCK + ls.script_text("k", "BOOK", "SRC", store_key) + run
+        r = subprocess.run(["node", "-e", code], capture_output=True, text=True)
+        self.assertEqual(r.stderr, "")
+        return json.loads(r.stdout)
+
+    def test_append_only(self):
+        out = self.run_js(r"""
+const post = (q, body) => doPost({ parameter: q, postData: { contents: JSON.stringify(body) } }).t;
+const ok = post({ store: '%s' }, { rows: [['2026-11-20 10:00', '買った', '=HYPERLINK("x")', '30000', '○', '31500', '300', 'キタムラ', '+メモ', 'v'],
+                                          ['2026-11-20 10:01', 'あとで調べる', 'Pentax MX']] });
+const bad = post({ store: 'wrong' }, { rows: [['x']] });
+const other = post({ store: '%s', sheet: '入結果' }, { rows: [['y']] });
+const emp = post({ store: '%s' }, { rows: [] });
+const noKey = doGet({ parameter: { store: '%s' } }).t;
+console.log(JSON.stringify({ ok, bad, other, empty: emp, noKey, rows: BOOKS.BOOK['共有_店舗'].rows, writes }));
+""" % (self.SK, self.SK, self.SK, self.SK))
+        self.assertEqual(out["ok"], "OK:2")
+        self.assertEqual(out["bad"], "forbidden")
+        self.assertEqual(out["noKey"], "forbidden")      # 店舗の鍵では読めない
+        self.assertEqual(out["empty"], "EMPTY")
+        rows = out["rows"]
+        self.assertEqual(rows[0][:3], ["日時", "種類", "商品名"])
+        self.assertEqual(rows[1][2], "'=HYPERLINK(\"x\")")  # 数式にしない
+        self.assertEqual(rows[1][8], "'+メモ")
+        self.assertEqual(rows[2][:3], ["2026-11-20 10:01", "あとで調べる", "Pentax MX"])
+        self.assertEqual(len(rows[2]), 10)
+        self.assertEqual(len(rows), 4)                    # other の1行も 共有_店舗 にだけ入る（ほかのシートへは書けない）
+        self.assertFalse([w for w in out["writes"] if w[0] == "SRC" or w[1] != "共有_店舗"])
+
+    def test_empty_store_key_is_off(self):
+        out = self.run_js(r"""
+console.log(JSON.stringify({ r: doPost({ parameter: { store: '' }, postData: { contents: '{"rows":[["x"]]}' } }).t }));
+""", store_key="")
+        self.assertEqual(out["r"], "forbidden")
 
 
 class HanpukaiFiles(unittest.TestCase):

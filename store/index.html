@@ -117,6 +117,16 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
   <div class="card" id="shelf" hidden></div>
   <div class="card" id="result" hidden></div>
+  <div class="card" id="sendBox" hidden>
+    <label for="shopName" style="margin-top:0">いる店（次回も覚えています）</label>
+    <input id="shopName" type="text" placeholder="例: キタムラ 中野" autocomplete="off">
+    <div class="grid2 mt">
+      <button class="btn sec" type="button" data-send="あとで調べる">あとで調べる</button>
+      <button class="btn" type="button" data-send="買った">買った</button>
+    </div>
+    <div class="status" id="sendSt"></div>
+    <p class="s">古物台帳の「共有_店舗」に1行入ります。「あとで調べる」はその夜にゼニガメが相場を調べ、翌朝のデータに入ります。「買った」は台帳に入れる行の下書きになります。</p>
+  </div>
 
   <div class="card">
     <h2>eBayで確認（高い順）</h2>
@@ -254,7 +264,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.20.1";
+  var APP_VERSION = "2026.11.20.2";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -289,7 +299,7 @@ function useData(d) {
   const sales = d.refs.filter((r) => r.tier <= 1).length;
   $("dataSt").textContent = `データ ${d.built}`;
   $("dataInfo").innerHTML = `作成 ${esc(d.built)}／相場 ${d.refs.length.toLocaleString()}件（うち販売実績 ${sales.toLocaleString()}件）／おすすめ候補 ${d.recs.length}機種／為替 1ドル=${d.cfg.fx}円`;
-  renderBrands(); renderRecs(); renderSweet(); calcRender(); look();
+  renderBrands(); renderRecs(); renderSweet(); calcRender(); look(); flushOutbox();
 }
 $("dataBtn").onclick = () => $("dataFile").click();
 $("dataFile").onchange = async (e) => {
@@ -531,10 +541,52 @@ function updateLinks() {
 function look() {
   const name = $("name").value, price = parsePrice($("price").value);
   const r = DATA && name.trim() ? lookup(name, price, $("junk").checked) : null;
+  lastLook = r; $("sendBox").hidden = !name.trim();
   if (!queryTouched) $("query").value = ebayQuery(name);
   updateLinks();
   renderResult(name, price, r);
 }
+// ------------------------------------------------------------ 店から古物台帳へ（2026-11-20 ユーザー決定）
+// 「あとで調べる」「買った」を 古物台帳「共有_店舗」に1行足す。送れないとき（電波なし）はこの iPhone にためて、次に開いたとき送る。
+// 送り先の鍵（DATA.inbox）は「共有_店舗」に行を足すことしかできない（tools/ledger_sync.py の storeAdd）
+let lastLook = null;
+const LS_OUT = "storeOutbox", LS_SHOPN = "storeShopName";
+$("shopName").value = lsGet(LS_SHOPN, "");
+$("shopName").addEventListener("input", () => lsSet(LS_SHOPN, $("shopName").value.trim()));
+function nowJst() {
+  const d = new Date(Date.now() + 9 * 3600e3);
+  return d.toISOString().slice(0, 16).replace("T", " ");
+}
+let flushing = false;
+async function flushOutbox() {
+  const ib = DATA && DATA.inbox, out = lsGet(LS_OUT, []), st = $("sendSt");
+  if (!out.length || flushing) return;
+  if (!ib) { st.className = "status err"; st.textContent = `未送信 ${out.length}件。Mac で python3 tools/ledger_sync.py script を1回実行すると送れるようになります`; return; }
+  flushing = true;
+  try {
+    await fetch(ib.url + (ib.url.includes("?") ? "&" : "?") + "store=" + encodeURIComponent(ib.key),
+      { method: "POST", mode: "no-cors", headers: { "content-type": "text/plain" }, body: JSON.stringify({ rows: out }) });
+    lsSet(LS_OUT, lsGet(LS_OUT, []).slice(out.length));  // 送っている間に増えた分は残す
+    st.className = "status"; st.textContent = `古物台帳に送りました（${out.length}件）`;
+    if (lsGet(LS_OUT, []).length) setTimeout(flushOutbox, 500);  // 送っている間に押された分
+  } catch (e) {
+    st.className = "status err"; st.textContent = `電波が無いため未送信 ${out.length}件。次に開いたとき送ります`;
+  } finally { flushing = false; }
+}
+$("sendBox").addEventListener("click", (e) => {
+  const kind = e.target.dataset.send;
+  if (!kind) return;
+  const name = $("name").value.trim();
+  if (!name) return;
+  const price = parsePrice($("price").value), r = lastLook, c = r && r.calc;
+  const ded = (DATA && DATA.cfg.deductionUsd) || 0;
+  const row = [nowJst(), kind, name, price || "", r ? r.mark : "", c && c.maxBid ? c.maxBid : "",
+    r && r.usd != null ? Math.round((r.usd - ded) * 100) / 100 : "", $("shopName").value.trim(), $("junk").checked ? "ジャンク表記" : "", APP_VERSION];
+  const out = lsGet(LS_OUT, []); out.push(row); lsSet(LS_OUT, out);
+  flushOutbox();
+});
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flushOutbox(); });
+
 function parsePrice(s) { const n = Number(String(s).normalize("NFKC").replace(/[^\d]/g, "")); return n > 0 ? n : null; }
 $("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; look(); });
 $("price").addEventListener("input", look);
