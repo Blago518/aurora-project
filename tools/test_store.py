@@ -506,3 +506,23 @@ class RecsSoldHistory(unittest.TestCase):
         self.assertTrue(fm2)
         self.assertEqual(fm2[0]["sales"], 2)            # 頒布会も販売の回数に入る
         self.assertEqual(fm2[0]["basis"], "Chatwork実績")  # 一番強い根拠の名前
+
+
+class SweetNotes(unittest.TestCase):
+    """スマホアプリの「狙い目」タブ: knowledge/講座/ のまとめを、暗号化して届く相場データに入れる（ページには書かない）."""
+
+    def test_reads_notes(self):
+        import build_store as bs
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d) / "knowledge" / "講座"
+            folder.mkdir(parents=True)
+            (folder / "レンズ狙い目スペック.md").write_text("# 狙い目\n| a | b |\n|---|---|\n| 1 | 2 |\n", encoding="utf-8")
+            notes = bs.sweet_notes(Path(d))
+        self.assertEqual([n["name"] for n in notes], ["レンズ狙い目スペック"])
+        self.assertIn("狙い目", notes[0]["md"])
+
+    def test_not_in_page(self):
+        # 講座資料の中身（世代の順など）をアプリのページ（公開）に書いていないこと
+        page = (Path(__file__).resolve().parent.parent / "store" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("New Nikkor", page)
+        self.assertIn('data-tab="sweet"', page)
