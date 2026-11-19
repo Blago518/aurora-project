@@ -396,3 +396,28 @@ class ResearchTier(unittest.TestCase):
         self.assertGreater(ba.source_tier(r), ba.SURE_TIER)
         self.assertFalse(ba.is_sold_record(r))
         self.assertEqual(ba.condition_of(r), ba.condition_of({"source": "相場メモ(Mint)", "title": "x"}))
+
+
+class MemoHitsListing(unittest.TestCase):
+    """［登録］した相場（機種名＝modelKey）が、その出品自身に必ず当たる（2026-11-19: Rodenstock の登録が当たらなかった）."""
+    TITLES = ["RODENSTOCK ローデンシュトック Apo-sironar-N F5.6 150mm レンズ ∴ 7750D-3",
+              "【良品・元箱付き】Nikon ニコン NIKKOR Z 20mm F1.8 S 単焦点レンズ Zマウント ロ 777CE-8",
+              "Canon EF 50- F1.2L USM キヤノン 単焦点レンズ c 77708-12",
+              "SONY ソニー DSC-WX350 デジタルカメラ 》 777D2-1",
+              "Schneider シュナイダー Xenar 75mm F3.5"]
+
+    def test_js(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        code = ("const T=" + json.dumps(self.TITLES, ensure_ascii=False) + ";console.log(JSON.stringify(T.map(t=>{const [l]=m.modelKey(t);"
+                "const ref={title:l,price:540,tier:0,source:'相場メモ(MINT)',tokens:[...m.tokensOf(l)],acc:false};"
+                "return [l, m.matchRefs(t,[ref]).length, m.titleToQuery(t,20)];})))")
+        out = run_js(data, code)
+        for (label, hits, q), t in zip(out, self.TITLES):
+            self.assertEqual(hits, 1, (t, label))
+            self.assertNotRegex(q, r"\d{3}[0-9A-Z]{1,3}-\d", t)  # 管理番号は検索語に入れない
+        self.assertTrue(out[0][0].lower().startswith("rodenstock"))
+        self.assertEqual([ba.model_key(t)[0] for t in self.TITLES], [o[0] for o in out])  # Python と同じ機種名
+
