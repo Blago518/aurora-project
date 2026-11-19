@@ -34,6 +34,7 @@ function makeCore(DATA) {
     t = t.replace(BRACKET_CODE, " \u0001$1 ");  // 【L256】→ 管理番号の候補の印（\u0001）を付ける
     t = t.replace(/\d+円[~〜～]?/g, " ");
     t = t.replace(/[∞¶∩§]\s*\S*/g, " ");  // ストアの管理番号（… ∞ 776BC-16・¶ 7774A-5）
+    t = t.replace(/\s(?:\S\s+)?\d{3}[0-9A-Z]{1,3}-\d{1,3}\s*$/, " ");  // 末尾の管理番号（… ∴ 7750D-3・》 777D2-1・c 77708-12）
     t = t.replace(/\b\d{3,4}[A-Z]{1,3}\d{0,2}-\d{1,3}\b/g, " ");  // 同じ形の管理番号（7774A-1・776D1-4）
     t = t.replace(/\b[wW]\s*\/\s*/g, " ");
     t = t.replace(/(\d)\s*(mm|㎜)\s*([fF]\s*\/?\s*\d)/g, "$1mm $3");
@@ -271,7 +272,8 @@ function makeCore(DATA) {
 
   function modelKey(title) {
     const toks = titleToQuery(title, 20).split(" ").filter(Boolean);
-    const brand = toks.length && BRAND_SET.has(toks[0].toLowerCase()) ? toks[0] : "";
+    // 知らないメーカーでも、先頭が英字の語ならメーカー名として扱う（Rodenstock Apo-Sironar-N など。無いと相場が当たらない）
+    const brand = toks.length && (BRAND_SET.has(toks[0].toLowerCase()) || (/^[A-Za-z][A-Za-z-]{2,}$/.test(toks[0]) && !/\d/.test(toks[0]))) ? toks[0] : "";
     const rest = brand ? toks.slice(1) : toks;
     // 管理番号らしい語（C-2436・OL4709・IC0144・A-164、レンズの機種名に混ざった 3桁以上の数字）は機種名に入れない
     const isLens = rest.some((t) => /mm$/i.test(t));

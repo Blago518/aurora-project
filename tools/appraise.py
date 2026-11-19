@@ -666,6 +666,7 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = re.sub(BRACKET_CODE_RE, lambda m: " \x01" + m.group(1) + " ", t)  # 【L256】→ 管理番号の候補の印（\x01）を付ける
     t = re.sub(r"\d+円[~〜～]?", " ", t)  # 「1円～」
     t = re.sub(r"[∞¶∩§]\s*\S*", " ", t)  # ストアの管理番号（… ∞ 776BC-16・¶ 7774A-5。リサマイ市場など）
+    t = re.sub(r"\s(?:\S\s+)?\d{3}[0-9A-Z]{1,3}-\d{1,3}\s*$", " ", t)  # 末尾の管理番号（… ∴ 7750D-3・》 777D2-1・c 77708-12）
     t = re.sub(r"\b\d{3,4}[A-Z]{1,3}\d{0,2}-\d{1,3}\b", " ", t)  # 同じ形の管理番号（7774A-1・776D1-4）
     t = re.sub(r"\b[wW]\s*/\s*", " ", t)  # w/case（with）
     t = re.sub(r"(\d)\s*(mm|㎜)\s*([fF]\s*/?\s*\d)", r"\1mm \3", t)  # 75-150mmF4 → 75-150mm F4
@@ -1892,7 +1893,9 @@ def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
 def model_key(title: str) -> tuple[str, str]:
     """相場未登録の出品を機種ごとにまとめるためのキー（表示用の検索語, 比較用キー）."""
     toks = title_to_query(title, 20).split()
-    brand = toks[0] if toks and toks[0].lower() in {b.lower() for b in BRANDS_EN.values()} else ""
+    # 知らないメーカーでも、先頭が英字の語ならメーカー名として扱う（拡張機能の modelKey と同じ）
+    brand = toks[0] if toks and (toks[0].lower() in {b.lower() for b in BRANDS_EN.values()}
+                                 or (re.fullmatch(r"[A-Za-z][A-Za-z-]{2,}", toks[0]) and not re.search(r"\d", toks[0]))) else ""
     rest = toks[1:] if brand else toks
     # 世代（II・III）と限定などの型も機種名に残す（拡張機能の modelKey と同じ考え方）
     gen = lambda t: t.lower() in GENERATIONS or t.lower() in PREMIUM_VARIANTS  # noqa: E731
