@@ -79,6 +79,34 @@ class TrustedThreshold(unittest.TestCase):
         self.assertEqual(out, [self._py(True), self._py(False)])
 
 
+class LowPriceThreshold(unittest.TestCase):
+    """売値（送料込み）$99以下は利益4,000円以上（2026-11-19 ユーザー決定）。$100以上は今までどおり。Python と JS で同じ上限額."""
+
+    def _py(self, usd):
+        it = ba.Item(url="u", title="x", expected_price_usd=usd, current_price_jpy=1000, domestic_shipping_jpy=800)
+        return ba.calculate(it, CFG, 150.0)
+
+    def test_python(self):
+        j = CFG["judge"]
+        low, high = self._py(95.0), self._py(150.0)
+        self.assertEqual(ba.low_price_min_profit(95.0, 2000, j), 4000)
+        self.assertEqual(ba.low_price_min_profit(150.0, 2000, j), 2000)
+        # 同じ売値でも、基準を上げた分だけ上限額が下がる
+        j2 = dict(j, low_price_usd=0)
+        cfg2 = dict(CFG, judge=j2)
+        it = ba.Item(url="u", title="x", expected_price_usd=95.0, current_price_jpy=1000, domestic_shipping_jpy=800)
+        self.assertLess(low["max_bid_jpy"], ba.calculate(it, cfg2, 150.0)["max_bid_jpy"])
+        self.assertGreater(high["max_bid_jpy"], 0)
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        out = run_js(data, "console.log(JSON.stringify([95,150].map(u=>m.calculate({price:1000,ship:800,tax:false},u,150).maxBid)))")
+        self.assertEqual(out, [self._py(95.0)["max_bid_jpy"], self._py(150.0)["max_bid_jpy"]])
+
+
 class TrustedImport(unittest.TestCase):
     def test_import(self):
         with tempfile.TemporaryDirectory() as d:
