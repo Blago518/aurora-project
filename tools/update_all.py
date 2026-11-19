@@ -10,7 +10,9 @@
 2. Chatwork の販売報告を公式 API で取り込む（chatwork_sync.py。未設定なら飛ばす）
 3. 作り直す: reference_prices.csv → 拡張機能（extension/）
    拡張機能で［直す］［登録］した相場（ダウンロード/aurora_price_memo.csv）もここで取り込まれる。
-4. 入札リスト: data/search_urls.txt の検索をまとめて鑑定 → reports/bid_report_*.html を開く（◎○の件数を通知）
+4. 勝ちやすさ（win_score.py）: 入札リスト・売れ筋・負けた機種のヤフオクの終わった出品から、今の上限額以下で終わった割合 → data/win_score.csv
+   入札リスト: data/search_urls.txt の検索をまとめて鑑定（robots.txt で Disallow の引数は外して読む） → reports/bid_report_*.html を開く（◎○の件数を通知）
+   一番上に「今日の予約リスト（目標8本）」→ 古物台帳「Mac_予約リスト」
    → スマホ用データ（store_data.json・iCloud・暗号化して自動配信。入札候補もスマホの「入札」タブに届く）→ ナレッジ
    → eBay の出品中一覧・注文・取引明細（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
 5. 落札相場（拡張機能を作る前）: 前回の入札リスト・拡張機能（ダウンロード/aurora_seen.csv）の ◎○・仮◎○・確認してから の出品を見張り、
@@ -151,6 +153,13 @@ def main(argv=None) -> int:
         yahoo_results.run(downloads=args.downloads)
     except Exception as e:  # noqa: BLE001  記録の失敗で更新全体を止めない
         print(f"  落札相場を記録できませんでした（{e}）")
+    if not args.no_bids:
+        try:
+            import win_score  # 勝ちやすさ（終わった出品のうち今の上限額以下で終わった割合）→ 入札リスト・拡張機能の並び（判定には使わない）
+            print("\n▶ 勝ちやすさ（ヤフオクの終わった出品）")
+            win_score.run()
+        except Exception as e:  # noqa: BLE001  失敗しても今の並びのまま続ける
+            print(f"  勝ちやすさを出せませんでした（{e}）")
     ok &= run("build_extension.py")
     bids = None if args.no_bids else bid_list()
     ok &= run("build_store.py")  # 入札リストの後に（入札候補もスマホに届ける）
@@ -225,9 +234,31 @@ def bid_list() -> int | None:
         ledger_sync.upload_unpriced()  # 相場が無かった機種 → 古物台帳「Mac_未登録機種」（夜にクラウドが下調べ）
     except Exception as e:  # noqa: BLE001  送れなくても入札リストはそのまま
         print(f"  ⚠ 未登録機種を台帳に送れませんでした（{e}）")
+    upload_reserve(reports)
     if sys.platform == "darwin" and html.exists():
         subprocess.call(["open", str(html)])
     return len(good)
+
+
+RESERVE_SHEET = "Mac_予約リスト"  # 今日の予約リスト（目標8本。2026-11-19 ユーザー決定）→ 古物台帳（クラウド・スマホから見る）
+
+
+def upload_reserve(reports: Path, post=None) -> int | None:
+    """一番新しい reports/reserve_list_*.csv → 古物台帳「Mac_予約リスト」（まるごと置き換え）. 送った行数."""
+    files = sorted(reports.glob("reserve_list_*.csv")) if reports.exists() else []
+    if not files:
+        return None
+    body = files[-1].read_text(encoding="utf-8-sig")
+    try:
+        import ledger_sync
+        if not ledger_sync.post_sheet(RESERVE_SHEET, body, post=post):
+            return None
+    except Exception as e:  # noqa: BLE001  送れなくても入札リストはそのまま
+        print(f"  ⚠ 予約リストを台帳に送れませんでした（{e}）")
+        return None
+    n = max(0, body.strip().count("\n"))
+    print(f"   今日の予約リスト: {n}行 → 古物台帳「{RESERVE_SHEET}」")
+    return n
 
 
 def notify(msg: str) -> None:

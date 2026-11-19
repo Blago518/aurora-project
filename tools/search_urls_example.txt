@@ -1,14 +1,15 @@
 # 毎朝の入札リスト（update_all.py → appraise.py）で調べるヤフオクの検索URL。1行に1つ。# で始まる行は無視。
 # data/search_urls.txt にコピーして使う（無ければ python3 tools/update_all.py が使い方を表示）。
-# どれも「カメラ、光学機器」カテゴリ（auccat=23636）・終了が近い順（s1=end&o1=a）・1ページ100件。
+# どれも「カメラ、光学機器」カテゴリ（auccat=23636）。並べ替え（s1・o1）・件数（n）は robots.txt で Disallow なので付けない
+# （付いていても appraise.py が外して読む。終了が近い順の並べ替えは Mac の中で。2026-11-19）。
 # 自分でよく使う検索（出品者ページ・除外語つき検索など）は、ブラウザのアドレス欄の URL をそのまま足せばよい。
-https://auctions.yahoo.co.jp/search/search?p=%E3%83%8B%E3%82%B3%E3%83%B3&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%82%AD%E3%83%A4%E3%83%8E%E3%83%B3&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%82%AA%E3%83%AA%E3%83%B3%E3%83%91%E3%82%B9&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%83%9A%E3%83%B3%E3%82%BF%E3%83%83%E3%82%AF%E3%82%B9&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%83%9F%E3%83%8E%E3%83%AB%E3%82%BF&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%82%B3%E3%83%B3%E3%82%BF%E3%83%83%E3%82%AF%E3%82%B9&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%83%9E%E3%83%9F%E3%83%A4&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%83%A9%E3%82%A4%E3%82%AB&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%83%95%E3%82%B8%E3%83%95%E3%82%A4%E3%83%AB%E3%83%A0&auccat=23636&s1=end&o1=a&n=100
-https://auctions.yahoo.co.jp/search/search?p=%E3%83%8F%E3%83%83%E3%82%BB%E3%83%AB%E3%83%96%E3%83%A9%E3%83%83%E3%83%89&auccat=23636&s1=end&o1=a&n=100
+https://auctions.yahoo.co.jp/search/search?p=%E3%83%8B%E3%82%B3%E3%83%B3&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%82%AD%E3%83%A4%E3%83%8E%E3%83%B3&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%82%AA%E3%83%AA%E3%83%B3%E3%83%91%E3%82%B9&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%83%9A%E3%83%B3%E3%82%BF%E3%83%83%E3%82%AF%E3%82%B9&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%83%9F%E3%83%8E%E3%83%AB%E3%82%BF&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%82%B3%E3%83%B3%E3%82%BF%E3%83%83%E3%82%AF%E3%82%B9&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%83%9E%E3%83%9F%E3%83%A4&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%83%A9%E3%82%A4%E3%82%AB&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%83%95%E3%82%B8%E3%83%95%E3%82%A4%E3%83%AB%E3%83%A0&auccat=23636
+https://auctions.yahoo.co.jp/search/search?p=%E3%83%8F%E3%83%83%E3%82%BB%E3%83%AB%E3%83%96%E3%83%A9%E3%83%83%E3%83%89&auccat=23636

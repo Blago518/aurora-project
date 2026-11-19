@@ -729,10 +729,24 @@
     return m ? Number(m[1]) : null;
   }
 
+  // robots.txt（https://auctions.yahoo.co.jp/robots.txt）で Disallow の引数（n=・s1=・o1=・select= など）を外した URL（2026-11-19 ユーザー決定）。
+  // 規則は Mac の robots.py が拡張機能に入れる（DATA.robotsParams = [パスの正規表現, 引数の末尾]）。引数は「名前=」がその末尾で終われば外す
+  // （robots.txt の文字の当たり方と同じ。robots.safe_url と同じ結果）。ユーザーが開いているページそのものには使わない（続きのページを読むときだけ）
+  const ROBOTS_FALLBACK = [["^/", "n="], ["^/", "s1="], ["^/", "o1="], ["^/", "select="], ["^/", "mode="]];
+  function robotsSafeUrl(href) {
+    const u = new URL(href);
+    if (u.hostname !== "auctions.yahoo.co.jp") return href;
+    const rules = (DATA.robotsParams && DATA.robotsParams.length ? DATA.robotsParams : ROBOTS_FALLBACK).map(([p, t]) => [new RegExp(p), t]);
+    for (const k of [...new Set(u.searchParams.keys())]) {
+      if (rules.some(([re, t]) => re.test(u.pathname) && (k + "=").endsWith(t))) u.searchParams.delete(k);
+    }
+    return u.toString();
+  }
+  const withoutB = (href) => { const u = new URL(href); u.searchParams.delete("b"); return u.toString(); };
+
   async function fetchPage(start) {
-    const u = new URL(location.href);
+    const u = new URL(robotsSafeUrl(location.href));  // 1ページの件数（n=）・並べ替えは付けない（並べ替えは読んだ後に拡張機能の中で）
     u.searchParams.set("b", String(start));
-    u.searchParams.set("n", "100");
     const html = await (await fetch(u.toString(), { credentials: "include" })).text();
     const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
     return m ? JSON.parse(m[1]) : null;
@@ -811,7 +825,23 @@
   // 売れ筋＝根拠の販売実績で利益が出ていた機種（build_extension.py が appraise.sold_hit で付ける）。$99以下は下に回す（2026-11-18）
   const LOW_PRICE_USD = 99;
   const soldHit = (i) => !!(i.refs && i.refs[0] && i.refs[0].hit && !isMemo(i.refs[0]));
-  const bidPrio = (i) => (i.usd != null && i.usd <= LOW_PRICE_USD ? 2 : 0) + (soldHit(i) ? 0 : 1);
+  // 勝ちやすさ（Mac の win_score.py → data/win_score.csv。機種の比較用キーごと）: ヤフオクの終わった出品のうち、今の上限入札額以下で終わった割合。
+  // 1割未満の機種は入札候補の下に回す（appraise.bid_priority と同じ。2026-11-19 ユーザー決定。判定・上限額は変えない）。記録が無い機種は今の並び・表示なし
+  const winOf = (i) => {
+    if (!i || !i.title || (i.setParts && i.setParts.length >= 2)) return null;
+    if (i.wkey === undefined) i.wkey = modelKey(i.title)[1];
+    return (DATA.winScore || {})[i.wkey] || null;
+  };
+  const isLowWin = (i) => { const w = winOf(i); return !!w && w.rate < (DATA.cfg.winLowRate ?? 0.1); };
+  const bidPrio = (i) => (i.usd != null && i.usd <= LOW_PRICE_USD ? 2 : 0) + (soldHit(i) ? 0 : 1) + (isLowWin(i) ? 4 : 0);
+  // 表示: 「勝ちやすさ 46%（直近12件）」（appraise.win_label と同じ）
+  const winText = (i) => { const w = winOf(i); return w && w.n ? `勝ちやすさ ${Math.round(w.rate * 100)}%（直近${w.n}件）` : ""; };
+  const winLine = (i) => {
+    const t = winText(i);
+    if (!t) return "";
+    const low = isLowWin(i);
+    return `<div class="s" title="${esc(`ヤフオクの終わった出品のうち、今の上限入札額以下で終わった割合（Mac が毎朝 終わった出品の検索で集計）。${low ? "1割未満なので入札候補の下に回しています。" : ""}判定・上限額は変えていません`)}">${t}${low ? "・下に" : ""}</div>`;
+  };
   // 根拠が販売履歴（自分・Chatwork・頒布会）なら、元の売値も並べる（自分の分は eBayStock・取引明細の合計と同じ）。
   // Chatwork は報告額（送料$30込み）に戻して出す（appraise.chatwork_gross の逆。2026-11-18）。相場メモは出さない
   const money = (v) => "$" + Number(v).toFixed(2).replace(/\.00$/, "");
@@ -1175,7 +1205,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
 <td class="n">${yen(i.price)}${i.tax ? `<div class="s">（税込）入札額では ${yen(c ? Math.round(c.bidNow) : null)}</div>` : ""}<div class="s">入札${i.bids}・${shipLabel(i)}</div></td>
-<td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}${i.mark === "◎" || i.mark === "○" ? '<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>' : ""}${atMax(i)}${oddsLine(i, c)}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
+<td class="n"><b>${yen(c && c.maxBid)}</b>${bidButton(i, c, i.usd, false)}${i.mark === "◎" || i.mark === "○" ? '<div><span class="okb" title="この金額をヤフオクの入札欄にそのまま入力してください">このまま入札OK</span></div>' : ""}${atMax(i)}${oddsLine(i, c)}${i.mark === "◎" || i.mark === "○" ? winLine(i) : ""}${i.tax && c ? `<div class="s" title="ストアは入札額に消費税10%が上乗せされます">支払い ${yen(Math.round(c.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}（税込）</div>` : ""}<div class="s">分岐 ${yen(c && c.breakeven)}</div></td>
 <td class="n">${yen(c && c.profit)}<div class="s">${c && c.margin != null ? c.margin + "%" : ""}</div></td></tr>`;
     };
     // 安心枠（フォロー中のストア）の行
@@ -1210,7 +1240,7 @@ ${d ? descLine(i.id) : `<button data-a="desc" data-id="${esc(i.id)}">説明文�
 
     root.innerHTML = `<div class="hd"><b>入札鑑定</b><span>${items.length}${state.total ? "/" + state.total : ""}件 ・ 相場あり ${priced}件 ・ 入札候補 ${good.length}件${weak.length + waits.length + pinnedWaits.length ? ` ・ 確認してから ${weak.length + waits.length + pinnedWaits.length}件` : ""}${accN ? ` ・ 付属品など ${accN}件は除外` : ""}</span>
 <span class="sp"></span>${state.loading ? `<span>${esc(state.loading)}</span>` : more ? `<button data-a="all" title="ヤフオクに負担をかけないよう、一度に読むのは1000件まで">続けて鑑定（次の${Math.min(LOAD_STEP, state.total - ((state.next || 1) - 1))}件・残り${state.total - ((state.next || 1) - 1)}件）</button>` : ""}
-${pageSeller() ? `<button data-a="store" title="このストアの全ページの全商品を読み込み、判定付きで終了が近い順に1つの表で表示します（×・相場なしも含む）">${ALL ? "通常の表示に戻す" : "人気ストア"}</button>` : ""}${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="openGood" title="入札候補（◎○）を、並び順（売れ筋・高い物が先）で最大10件、新しいタブにまとめて開きます。上限額の一覧はコピーされるので、メモ帳などに貼って見ながら入札できます（入札はご自身で。自動入札はしません）">◎○をまとめて開く</button><button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
+${pageSeller() ? `<button data-a="store" title="このストアの全ページの全商品を読み込み、判定付きで終了が近い順に1つの表で表示します（×・相場なしも含む）">${ALL ? "通常の表示に戻す" : "人気ストア"}</button>` : ""}${pageSeller() ? `<button data-a="trust" title="このストアを安心枠に入れる／外す（フォロー中のストアは開くと自動で入ります）">${trustedIds().has(pageSeller()) ? "★安心ストア（外す）" : "☆安心ストアに入れる"}</button>` : ""}<button data-a="openGood" title="入札候補（◎○）を、勝ちやすさの高い順（1割未満の機種は最後）で最大10件、新しいタブにまとめて開きます。上限額の一覧はコピーされるので、メモ帳などに貼って見ながら入札できます（入札はご自身で。自動入札はしません）">◎○をまとめて開く</button><button data-a="copy">◎○をコピー</button><button data-a="min">${root.classList.contains("min") ? "開く" : "最小化"}</button></div>
 <div class="bd"><div class="s">為替 1USD=<input data-a="fx" value="${state.fx}">円 ・ 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上（売値$${DATA.cfg.lowPriceUsd || 99}以下は${(DATA.cfg.lowPriceMinProfit || 0).toLocaleString()}円以上）・利益率${DATA.cfg.minMarginPct}%以上 ・ 手数料${DATA.cfg.feePct.toFixed(2)}%+$${DATA.cfg.perOrderUsd} ・ eBayの$は送料別（計算では送料$${SHIP()}込みに戻して手数料を計算）${DATA.cfg.junkFactor < 1 ? ` ・ ジャンク${Math.round(DATA.cfg.junkFactor * 100)}%評価` : ""} ・ 相場データ ${DATA.refs.length}件（${esc(DATA.built)}作成）</div>
 ${ALL ? allTable() : `${instant.length ? `<h4 style="margin:10px 0 4px" class="g">即決で今すぐ買える ${instant.length}件 ― 即決価格が上限額以下。競りにならず確実に買える（確認してからの物は sold を見てから）</h4>
 <table>${head}${instant.map((i) => row(i).replace(/(<td class="m[^>]*>)/, `$1<div class="instant-tag" title="即決 ${yen(i.buyNow)}（上限額 ${yen(i.calc.maxBid)} より ${yen(i.calc.maxBid - i.buyNow)} 安い）。ヤフオクのページで［今すぐ落札する］">即決 ${yen(i.buyNow)}</div>`)).join("")}</table>` : ""}
@@ -1255,7 +1285,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
+    module.exports = { robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 
@@ -1465,8 +1495,10 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     }
     if (a === "openGood") {  // 入札候補（◎○）を最大10件まとめて開き、上限額の一覧をコピー（2026-11-18 ユーザー決定）
       const seen = load(LS_SEEN, {});
+      // 勝ちやすさ順（2026-11-19）: 1割未満の機種は最後、それ以外は勝ちやすさの高い順（記録が無い機種は目安の割合）→ 今の並び → 終了が近い順
+      const wr = (i) => { const w = winOf(i); return w ? w.rate : (DATA.cfg.defaultWinRate ?? 0.2); };
       const good = state.items.filter((i) => (i.mark === "◎" || i.mark === "○") && !seen[i.id])
-        .sort((x, y) => bidPrio(x) - bidPrio(y) || (x.end < y.end ? -1 : 1)).slice(0, 10);
+        .sort((x, y) => isLowWin(x) - isLowWin(y) || wr(y) - wr(x) || bidPrio(x) - bidPrio(y) || (x.end < y.end ? -1 : 1)).slice(0, 10);
       if (!good.length) { btn.textContent = "開く候補がありません"; setTimeout(() => (btn.textContent = "◎○をまとめて開く"), 3000); return; }
       const urls = good.map((i) => `https://auctions.yahoo.co.jp/jp/auction/${i.id}`);
       const txt = good.map((i, n) => `${n + 1}. ${i.mark} 入札上限 ${yen(i.calc.maxBid)}（このまま入札）${i.tax ? `・ストア支払い${yen(Math.round(i.calc.maxBid * (1 + DATA.cfg.storeTaxPct / 100)))}` : ""} ${endStr(i.end)}終了 ${i.title}`).join("\n");
@@ -1495,26 +1527,36 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     }
   });
 
-  // ------------------------------------------------------------------ 全ページの読み込み（100件ずつ、約1秒間隔）
+  // ------------------------------------------------------------------ 全ページの読み込み（ヤフオクの既定の件数ずつ、1.5秒間隔）
   // 続きのページを count 件分だけ読む（一度に読むのは最大1000件。ヤフオクに負担をかけないため。続きはボタンで）
-  const LOAD_STEP = 1000;
+  // robots.txt に合わせ、続きのページは Disallow の引数を外した URL で読む（robotsSafeUrl）。開いているページと並び・件数が違うことがあるので、
+  // そのときは1ページ目から読み、同じ出品は1回だけ数える（並べ替えは表示のときに拡張機能の中で）
+  const LOAD_STEP = 1000, LOAD_DELAY_MS = 1500;
   async function loadAll(count) {
     if (state.loading) return;
     const seen = new Set(state.items.map((i) => i.id));
     const cur = Number(new URL(location.href).searchParams.get("b") || 1);
+    const sameQuery = withoutB(robotsSafeUrl(location.href)) === withoutB(location.href);  // 外す引数が無い＝開いているページと同じ並び・件数
     const from = state.next || 1;
-    const last = Math.min(state.total || 0, from + Math.min(count, LOAD_STEP) - 1);
+    let last = Math.min(state.total || 0, from + Math.min(count, LOAD_STEP) - 1);
     let failed = false;
     try {
-      for (let start = from; start <= last; start += 100) {
-        state.next = start + 100;
-        if (start === cur) continue;  // 今開いているページは読み込み済み
-        state.loading = `読み込み中… ${Math.min(start + 99, last)}/${last}件`; render();
+      for (let start = from; start <= last;) {
+        if (sameQuery && start === cur && state.pageSize) { start += state.pageSize; state.next = start; continue; }  // 今開いているページは読み込み済み
+        state.loading = `読み込み中… ${Math.min(start - 1, last)}/${last}件`; render();
         const json = await fetchPage(start);
+        const l = json && listingFromNextData(json);
+        const size = l ? l.items.length : 0;
+        if (!size) { state.next = (state.total || 0) + 1; break; }
+        if (!sameQuery) {  // 外した引数で件数が変わることがある → 読んだページの件数に合わせる
+          const t = totalFromJson(json);
+          if (t != null) { state.total = t; last = Math.min(t, from + Math.min(count, LOAD_STEP) - 1); }
+        }
+        start += size; state.next = start;
         const fresh = parseItems(json || {}).filter((it) => !seen.has(it.id));
         fresh.forEach((it) => seen.add(it.id));
         state.items.push(...evaluate(fresh, state.fx));  // ページごとに鑑定して順次表示
-        await new Promise((r) => setTimeout(r, 800));
+        await new Promise((r) => setTimeout(r, LOAD_DELAY_MS));
       }
     } catch (e) {
       failed = true;
@@ -1667,6 +1709,7 @@ ${list.length ? `<table><tr><th>判定</th><th>商品（→キタムラ）</th><
     const json = JSON.parse(el.textContent);
     state.items = parseItems(json);
     state.total = totalFromJson(json);
+    { const l = listingFromNextData(json); state.pageSize = l ? l.items.length : 0; }  // 開いているページの件数（続きのページ送りの幅）
     state.done = !state.total || state.total <= state.items.length;
     if (!state.items.length) return;
     if (migrateMemo()) saveMemoFile();  // 直した相場メモを ダウンロード/aurora_price_memo.csv へ（Mac が取り込む）
