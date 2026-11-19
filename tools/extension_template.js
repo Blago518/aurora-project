@@ -39,7 +39,8 @@
   const VNORM = C.variantNormalize.map(([p, r]) => [new RegExp(p, "gi"), r]);
   const GENS = new Set(C.generations), PREMIUM = new Set(C.premium), SERIES = new Set(C.series || []);
   // 系統の語（appraise.series_of と同じ）: Zuiko Digital・M.Zuiko と OM Zuiko、Rolleicord と Rolleiflex は別物
-  const seriesOf = (ts, lens) => { const s = new Set([...ts].filter((t) => SERIES.has(t))); if (s.has("m.zuiko")) s.add("digital");
+  const canonL = (ts) => ts.has("l") && ts.has("canon");  // Canon の L レンズ（appraise.canon_l）
+  const seriesOf = (ts, lens) => { const s = new Set([...ts].filter((t) => SERIES.has(t))); if (canonL(ts)) s.add("l"); if (s.has("m.zuiko")) s.add("digital");
     if (!lens) { s.delete("digital"); s.delete("m.zuiko"); } return [...s].sort().join(","); };
   // マウント（appraise.mount_of と同じ）: レンズはマウントの組が両方で同じときだけ相場を当てる
   const MOUNTS = C.mounts || {}, MOUNT_TOKENS = new Set(Object.values(MOUNTS).flatMap((d) => Object.keys(d)));
@@ -83,6 +84,7 @@
     t = t.replace(/\b1\s*:\s*(\d(?:\.\d)?)\b/g, "F$1");
     t = t.replace(/\b(EF-S|EF|RF|FD|XF|FE)(\d)/gi, "$1 $2");
     t = t.replace(/\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b/g, "$1 $2");
+    t = t.replace(/(?<![\d.-])(\d{2,3})-\s+(?=[fF]\d)/g, "$1mm ");  // 「EF 50- F1.2L」→ 50mm（appraise と同じ）
     t = t.replace(/[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+/g, " ");
     let brand = "";
     const allBrands = [];
@@ -324,7 +326,7 @@
     const hasMount = !!mountOf(tokensOf(title));
     const ser = rest.filter((t, i) => (SERIES.has(t.toLowerCase()) || (hasMount && MOUNT_TOKENS.has(t.toLowerCase()))) && rest.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
     const label = (brand ? [brand] : []).concat(ser, (keyToks.some((t) => !gen(t)) ? keyToks : rest.slice(0, 2)).filter((t) => !ser.includes(t)))
-      .concat(vt ? [vt.label] : []).join(" ");
+      .concat(vt ? [vt.label] : [], canonL(tokensOf(title)) ? ["L"] : []).join(" ");
     const norm = label.toLowerCase().split(" ").map((t) => {
       if (/^f\/?\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t)) t = t.replace(/^f\/?/, "");
       return /^\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t) && t.includes(".") ? "f" + t : t;
@@ -539,8 +541,9 @@
   // ［直す］の状態（2026-11-15 ユーザー指定: Exc+5 より下は使わない。1ランク $10）
   const CONDS = ["Unused", "TOP MINT", "MINT", "Almost MINT", "Near MINT", "Exc+5"];
   function memoInputs(label, attrs, btn) {
-    const cur = memoVal(load(LS_MEMO, {})[label]).cond;
-    return `<input data-memo="${esc(label)}" ${attrs}><select data-cond="${esc(label)}" title="状態（売れた物の状態）"><option value="">状態</option>${
+    const mv = memoVal(load(LS_MEMO, {})[label]), cur = mv.cond;
+    if (mv.usd) attrs = attrs.replace(/value="[^"]*"/, "").replace(/class="sug"/, "") + ` value="${netOf(mv.usd)}"`;  // 登録した額（送料別）を残して見せる
+    return `${mv.usd ? `<span class="okb" title="この機種の相場は登録済み（送料別 $${netOf(mv.usd)}${cur ? "・" + esc(cur) : ""}）。直すときは金額を変えて［登録］">登録済み</span> ` : ""}<input data-memo="${esc(label)}" ${attrs}><select data-cond="${esc(label)}" title="状態（売れた物の状態）"><option value="">状態</option>${
       CONDS.map((c) => `<option${c === cur ? " selected" : ""}>${esc(c)}</option>`).join("")}</select><button data-a="memo" data-k="${esc(label)}">${btn}</button>`;
   }
 
@@ -753,7 +756,7 @@ background:#fff;color:#14263a;border-radius:14px;box-shadow:0 10px 40px #0004;fo
 font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-shadow:0 6px 24px #0005;opacity:0;pointer-events:none;transition:opacity .2s}#yhk-toast.show,#akit-toast.show{opacity:1}#yhk .trustb,#akit .trustb{color:#d4a017;font-weight:900;margin-right:3px}#yhk .tsep.trust,#akit .tsep.trust{background:#e9f6ee;color:#1f5c3a}#yhk .tsep.chal,#akit .tsep.chal{background:#eef3f8;color:#2d4a63}#yhk .tmark,#akit .tmark{display:inline-block;font-size:10px;background:#8a6514;color:#fff;border-radius:4px;padding:0 4px;margin-right:2px;vertical-align:middle}#yhk tr.tent td,#akit tr.tent td{background:#fffaf0}#yhk .tsep,#akit .tsep{background:#fff3d6;color:#6b4e0e;font-size:12px;padding:6px 8px}#yhk .fix,#akit .fix{margin-top:4px;max-width:140px;margin-left:auto}#yhk .fix input,#akit .fix input{width:50px;padding:2px 3px;font-size:12px}#yhk .fix select,#akit .fix select{font-size:11px;padding:1px;margin-left:2px;max-width:62px}#yhk .fix button,#akit .fix button{padding:3px 6px;margin-left:2px}#yhk th,#akit th{font-size:11px;color:#5d7083;font-weight:600}#yhk td:nth-child(2),#akit td:nth-child(2){min-width:240px}#yhk td.n,#akit td.n{text-align:right;white-space:nowrap}#yhk input.sug,#akit input.sug{color:#8a6d1f;font-style:italic}#yhk a,#akit a{color:#0b5d8c;text-decoration:none}#yhk .m,#akit .m{font-size:15px;font-weight:800}#yhk .g,#akit .g{color:#1f7a5c}#yhk .o,#akit .o{color:#1b6387}#yhk .x,#akit .x{color:#a4473a}#yhk .s,#akit .s{font-size:11px;color:#6a7c8e}#yhk details,#akit details{margin-top:10px}#yhk summary,#akit summary{cursor:pointer;font-weight:700}#yhk input,#akit input{width:72px;padding:4px;border:1px solid #c6d3de;border-radius:6px}#yhk a.t,#akit a.t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}#yhk a.usd,#akit a.usd{font-size:15px;font-weight:800;text-decoration:underline dotted}#yhk a.now,#yhk a.pill,#akit a.now,#akit a.pill{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;padding:1px 7px;border:1px solid #9fc0d4;border-radius:6px}#yhk .okb,#akit .okb{display:inline-block;font-size:10px;font-weight:700;color:#1f6b50;background:#e3f4ec;border-radius:5px;padding:0 5px}#yhk .pills,#akit .pills{display:flex;gap:4px;justify-content:flex-end}#yhk button.open3,#akit button.open3{margin-top:3px;font-size:11px;padding:2px 8px}#yhk a.pill.sold,#akit a.pill.sold{background:#1b6387;color:#fff;border-color:#1b6387}#yhk td.m,#akit td.m{white-space:nowrap;width:58px}#yhk td.um,#akit td.um{white-space:normal;min-width:260px}#yhk .setpart,#akit .setpart{margin-top:6px;padding:6px 8px;border-left:3px solid #9fc0d4;background:#f4f8fb;border-radius:6px}#yhk .setpart b,#akit .setpart b{font-size:13px;color:#14263a}#yhk .fix.fixl,#akit .fix.fixl{margin-left:0;max-width:none;margin-top:6px}#yhk .fix.fixl input,#akit .fix.fixl input{width:64px}#yhk tr.soon td,#akit tr.soon td{background:#fff6ec}#yhk .hot,#akit .hot{color:#c0392b;font-weight:700}#yhk table.hist{width:auto;font-size:11px;border:1px solid #e6ecf2;border-radius:6px}#yhk table.hist td,#yhk table.hist th{padding:2px 8px;white-space:nowrap;min-width:0}#yhk .flag.sweet{background:#e3f4ec;color:#1f6b50;font-weight:700}#yhk .flag,#akit .flag{background:#fff3d6;color:#7a5a12;border-radius:6px;padding:0 5px;font-size:11px;margin-left:4px}
 .yhk-badge{display:inline-block;margin:2px 0;padding:2px 7px;border-radius:7px;font:700 12px -apple-system,sans-serif;color:#fff}
 .yhk-badge.g{background:#1f7a5c}.yhk-badge.o{background:#1b6387}.yhk-badge.x{background:#9aa6b2}
-@media (prefers-color-scheme:dark){#yhk tr.soon td,#akit tr.soon td{background:#2a2216}#yhk tr.tent td,#akit tr.tent td{background:#1f2129}#yhk .tsep,#akit .tsep{background:#3a2f17;color:#f2d79a}#yhk .tsep.trust,#akit .tsep.trust{background:#173a28;color:#a8e6c1}#yhk .tsep.chal,#akit .tsep.chal{background:#1c2c3c;color:#b9d3ea}#yhk,#akit{background:#152231;color:#e2eaf2}#yhk th,#yhk td,#akit th,#akit td{border-color:#26394b}#yhk a,#akit a{color:#7cc4ee}#yhk button,#akit button{background:#24384c;color:#d6e6f2}#yhk input,#akit input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}#yhk .setpart,#akit .setpart{background:#1b2c3e;border-left-color:#7cc4ee}#yhk .setpart b,#akit .setpart b{color:#f2f6fa}#yhk select,#akit select{background:#0f1a26;color:#e2eaf2;border:1px solid #36506a}}
+@media (prefers-color-scheme:dark){#yhk tr.soon td,#akit tr.soon td{background:#2a2216}#yhk tr.tent td,#akit tr.tent td{background:#1f2129}#yhk .tsep,#akit .tsep{background:#3a2f17;color:#f2d79a}#yhk .tsep.trust,#akit .tsep.trust{background:#173a28;color:#a8e6c1}#yhk .tsep.chal,#akit .tsep.chal{background:#1c2c3c;color:#b9d3ea}#yhk,#akit{background:#152231;color:#e2eaf2}#yhk th,#yhk td,#akit th,#akit td{border-color:#26394b}#yhk a,#akit a{color:#7cc4ee}#yhk button,#akit button{background:#24384c;color:#d6e6f2}#yhk input,#akit input{background:#0f1a26;color:#e2eaf2;border-color:#36506a}#yhk .setpart,#akit .setpart{background:#1b2c3e;border-left-color:#7cc4ee}#yhk .setpart b,#akit .setpart b{color:#f2f6fa}#yhk select,#akit select{background:#0f1a26;color:#e2eaf2;border:1px solid #36506a}#yhk .okb,#akit .okb{background:#173a28;color:#a8e6c1}}
 #akit tr.kdim td{opacity:.55}
 `;
 
@@ -1097,7 +1100,7 @@ ${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式API�
   const sug = (l) => suggestUsd(state.browse[l]) ? ` class="sug" value="${netOf(suggestUsd(state.browse[l]))}"` : "";
   const line = (l) => `<a class="pill sold" href="${ebay(l).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(l).now}" target="_blank" rel="noopener">now</a> <button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([...yh, ebay(l).sold, ebay(l).now]))}" title="ヤフオクの出品ページ（最大3件）・sold・now を、新しいタブに左からこの順で開きます">全て開く</button> <a class="s" href="${ebay(l).pr}" target="_blank" rel="noopener">Product Research</a>`;
   const body = g.parts && g.parts.length
-    ? `<a href="${yh[0] || "#"}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.ex.slice(0, 70))}</a><div class="s">セット・キット ${g.parts.length}点 ― 中身ごとに相場を登録すると、合計から判定します</div>`
+    ? `<a href="${yh[0] || "#"}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.ex.slice(0, 70))}</a><div class="s">セット・キット ${g.parts.length}点 ― 相場あり ${g.parts.filter((l) => memoVal(load(LS_MEMO, {})[l]).usd).length}/${g.parts.length}点${g.parts.every((l) => memoVal(load(LS_MEMO, {})[l]).usd) ? "（そろいました。上の表で判定されます）" : " ― 全部そろうと合計から判定します"}</div>`
       + g.parts.map((l, n) => `<div class="setpart"><b>${n + 1}. ${esc(l)}</b> ${line(l)}<div class="fix fixl">${memoInputs(l, `placeholder="想定$"${sug(l)}`, "登録")}</div></div>`).join("")
     : `<a href="${yh[0] || ebay(g.label).pr}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.label)}</a> ${line(g.label)}<div class="s">${esc(g.ex.slice(0, 60))}</div><div class="fix fixl">${memoInputs(g.label, `placeholder="想定$"${sug(g.label)}`, "登録")}</div>`;
   return `<tr class="${seenOf(sk) ? "seen" : ""}"><td class="um">${seenBox(sk)}${body}</td>
@@ -1203,7 +1206,8 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const it = state.items.find((x) => x.id === id);
     const a = root && root.querySelector(`a.t[href*="/auction/${CSS.escape(id)}"]`);
     const row = a && a.closest("tr");
-    const where = !it ? "" : !it.calc ? "登録した相場がこの出品に当たりませんでした。機種名が違う可能性があります（サトシに知らせてください）" : `判定 ${it.mark}・入札する上限額 ${it.calc.maxBid ? it.calc.maxBid.toLocaleString() + "円" : "なし"}（この行はこの場所に残します）`;
+    const kitLeft = it && !it.calc && (it.flags.includes("セット品") || KIT_RE.test(it.title)) ? setPartTitles(it.title).filter((p) => !memoVal(load(LS_MEMO, {})[modelKey(p)[0]]).usd).length : 0;
+    const where = !it ? "" : kitLeft ? `登録しました。セット・キットの残り ${kitLeft}点の相場を登録すると、合計から判定します` : !it.calc ? "登録した相場がこの出品に当たりませんでした。機種名が違う可能性があります（サトシに知らせてください）" : `判定 ${it.mark}・入札する上限額 ${it.calc.maxBid ? it.calc.maxBid.toLocaleString() + "円" : "なし"}（この行はこの場所に残します）`;
     state.flash = { id, until: Date.now() + 3000 };
     if (row) {
       const det = row.closest("details");

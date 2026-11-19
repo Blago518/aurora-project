@@ -497,6 +497,47 @@ class MountWords(unittest.TestCase):
             self.assertTrue(ba.match_sales(t, [self._ref(label)]), (t, label))
 
 
+class CanonL(unittest.TestCase):
+    """Canon の L レンズと L の付かないレンズは別物（2026-11-19 ユーザー指摘「Canon の L は大事」）."""
+    PAIRS = [  # (相場の商品名, 出品の商品名, 当たるか)
+        ("Canon EF 50mm F1.2L USM", "Canon EF 50- F1.2L USM キヤノン 単焦点レンズ c 77708-12", True),   # 50- は 50mm の書き忘れ
+        ("Canon EF 50mm F1.2L USM", "キヤノン EF50mm F1.2 L USM", True),
+        ("Canon EF 24-105mm F4L IS USM", "Canon EF 24-105mm F4 L IS USM 標準ズーム", True),
+        ("Canon EF 24-105mm F4L IS USM", "Canon EF 24-105mm F4 IS STM", False),
+        ("Canon EF 24-105mm F4 IS STM", "Canon EF 24-105mm F4L IS USM", False),
+        ("Canon EF 70-200mm F4L USM", "キヤノン EF70-200mm F4 USM", False),
+        ("Canon New FD 50mm F1.2 L", "Canon New FD 50mm F1.2", False),
+        ("Canon New FD 50mm F1.2 L", "Canon NFD 50mm F1.2L", True),
+    ]
+
+    def _ref(self, title):
+        return {"title": title, "sold_price_usd": 500.0, "_price": 500.0, "_tokens": ba._tokens(title), "source": "相場メモ"}
+
+    def test_python(self):
+        for ref, q, ok in self.PAIRS:
+            self.assertEqual(bool(ba.match_sales(q, [self._ref(ref)])), ok, (ref, q))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        code = ("const P=" + json.dumps([[r, q] for r, q, _ in self.PAIRS], ensure_ascii=False) + ";console.log(JSON.stringify(P.map(([l,t])=>m.matchRefs(t,[{title:l,price:500,tier:0,"
+                "source:'相場メモ',tokens:[...m.tokensOf(l)],acc:false}]).length>0)))")
+        self.assertEqual(run_js(data, code), [ok for _, _, ok in self.PAIRS])
+
+    def test_label_keeps_l(self):
+        # 機種名（［登録］・sold/now の検索語）に L と 50mm が残り、その出品自身に当たる
+        t = "Canon EF 50- F1.2L USM キヤノン 単焦点レンズ c 77708-12"
+        label = ba.model_key(t)[0]
+        self.assertEqual(label, "Canon EF 50mm F1.2 L")
+        self.assertTrue(ba.match_sales(t, [self._ref(label)]))
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        if shutil.which("node"):
+            self.assertEqual(run_js(data, "console.log(JSON.stringify(m.modelKey(" + json.dumps(t, ensure_ascii=False) + ")[0]))"), label)
+
+
 class KitParts(unittest.TestCase):
     """レンズキットはボディとレンズの2点に分け、中身ごとに相場を当てる（2026-11-19 ユーザー指定）."""
     T = "NIKON ニコン デジタル一眼レフカメラ D70 レンズキット(AF-S DX Zoom-NIKKOR 18-70mm F3.5-4.5G IF ED) ⑤ 7795B-4"
