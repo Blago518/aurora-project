@@ -38,6 +38,10 @@ function makeCore(DATA) {
   function titleToQuery(title, maxTokens = 7) {
     let t = title.normalize("NFKC");
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
+    // 末尾の管理番号（【9022NT】K11・【K172】K03・【1582-4NT】K17・【25490CK】J26。appraise.title_to_query と同じ。2026-11-19）
+    t = t.replace(/[【\[]\s*[A-Za-z]{0,2}\d{2,6}(?:-\d{1,5})?[A-Za-z]{0,3}\s*[】\]]\s*[A-Z]\d{1,3}\s*$/, " ");
+    t = t.replace(/[【\[]\s*\d{3,6}(?:-\d{1,5})?[A-Za-z]{1,3}\s*[】\]]\s*$/, " ");
+    t = t.replace(/(\d+)\s*[×xX]\s*(\d+)(?![\d.])/g, "$1x$2").replace(/\d+(?:\.\d+)?\s*°/g, " ");  // 7° は視野角（型番ではない）  // 双眼鏡の 6×15・8x30、中判の 6x6 を1語に
     t = t.replace(BRACKET_CODE, " \u0001$1 ");  // 【L256】→ 管理番号の候補の印（\u0001）を付ける
     t = t.replace(/\d+円[~〜～]?/g, " ");
     t = t.replace(/[∞¶∩§]\s*\S*/g, " ");  // ストアの管理番号（… ∞ 776BC-16・¶ 7774A-5）
@@ -287,7 +291,7 @@ function makeCore(DATA) {
     const rest = brand ? toks.slice(1) : toks;
     // 管理番号らしい語（C-2436・OL4709・IC0144・A-164、レンズの機種名に混ざった 3桁以上の数字）は機種名に入れない
     const isLens = rest.some((t) => /mm$/i.test(t));
-    const code = (t) => /^[A-Za-z]{1,2}-\d{3,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || /^\d{4,}-\d{1,3}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
+    const code = (t) => /^[A-Za-z]{1,2}-\d{4,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || /^\d{4,}-\d{1,3}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
     // 世代（II・III・Mark II）と限定・チタンなどの型も機種名に残す（「Sony α7 II」が「Sony α7」になり、［直す］の相場が当たらなかった）
     const gen = (t) => GENS.has(t.toLowerCase()) || PREMIUM.has(t.toLowerCase());
     const keyToks = rest.filter((t) => (/\d/.test(t) && !code(t)) || gen(t)).filter((t, i, a) => !gen(t) || a.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
