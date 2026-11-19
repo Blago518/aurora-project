@@ -112,7 +112,6 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <input id="name" type="search" placeholder="例: Nikon FM2 / キヤノン New FD 50mm F1.4" autocomplete="off" enterkeyhint="search">
     <label for="price">値札の価格（税込でお店に払う額・円）</label>
     <input id="price" inputmode="numeric" pattern="[0-9]*" placeholder="例: 18000" autocomplete="off">
-    <label class="chk"><input type="checkbox" id="junk"> ジャンク表記がある（記録用。方針でジャンクも割り引かずに計算）</label>
   </div>
 
   <div class="card" id="shelf" hidden></div>
@@ -264,7 +263,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.20.2";
+  var APP_VERSION = "2026.11.20.3";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -344,10 +343,9 @@ $("autoDel").onclick = () => { try { localStorage.removeItem(LS_AUTO); } catch (
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoUpdate(false); });
 
 // ------------------------------------------------------------ 調べる
-function lookup(name, price, junkBox) {
+function lookup(name, price) {  // ジャンク表記の欄は外した（2026-11-20 ユーザー指示。方針でジャンクも割り引かない）
   const q = core.titleToQuery(name) || name.trim();
   const flags = core.detectFlags(name);
-  if (junkBox && !flags.includes("ジャンク")) flags.push("ジャンク");
   let refs = core.matchPreferMemo(q + " " + name, DATA.refs.filter(core.isMemo), DATA.refs.filter((r) => !core.isMemo(r)));
   if (!refs.length) refs = core.matchKantei(name);
   let u = refs.length ? Math.round(core.median(core.conditionAdjusted ? core.conditionAdjusted(refs, name, flags) : refs.map((r) => r.price)) * 100) / 100 : null;
@@ -540,7 +538,7 @@ function updateLinks() {
 }
 function look() {
   const name = $("name").value, price = parsePrice($("price").value);
-  const r = DATA && name.trim() ? lookup(name, price, $("junk").checked) : null;
+  const r = DATA && name.trim() ? lookup(name, price) : null;
   lastLook = r; $("sendBox").hidden = !name.trim();
   if (!queryTouched) $("query").value = ebayQuery(name);
   updateLinks();
@@ -581,7 +579,7 @@ $("sendBox").addEventListener("click", (e) => {
   const price = parsePrice($("price").value), r = lastLook, c = r && r.calc;
   const ded = (DATA && DATA.cfg.deductionUsd) || 0;
   const row = [nowJst(), kind, name, price || "", r ? r.mark : "", c && c.maxBid ? c.maxBid : "",
-    r && r.usd != null ? Math.round((r.usd - ded) * 100) / 100 : "", $("shopName").value.trim(), $("junk").checked ? "ジャンク表記" : "", APP_VERSION];
+    r && r.usd != null ? Math.round((r.usd - ded) * 100) / 100 : "", $("shopName").value.trim(), "", APP_VERSION];
   const out = lsGet(LS_OUT, []); out.push(row); lsSet(LS_OUT, out);
   flushOutbox();
 });
@@ -590,7 +588,6 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 function parsePrice(s) { const n = Number(String(s).normalize("NFKC").replace(/[^\d]/g, "")); return n > 0 ? n : null; }
 $("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; look(); });
 $("price").addEventListener("input", look);
-$("junk").addEventListener("change", look);
 $("query").addEventListener("input", () => { queryTouched = true; updateLinks(); });
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.target.blur(); remember(); } });
 for (const id of ["lSold", "lNow", "lPr"]) $(id).addEventListener("click", remember);
@@ -613,7 +610,7 @@ $("hist").onclick = (e) => {
   setInput(x.name, x.price);
 };
 function setInput(name, price) {
-  $("name").value = name; $("price").value = price || ""; $("junk").checked = false; queryTouched = false; catSel = "auto";
+  $("name").value = name; $("price").value = price || ""; queryTouched = false; catSel = "auto";
   look(); showTab("look"); window.scrollTo({ top: 0 });
 }
 
@@ -753,7 +750,7 @@ $("shelfFile").onchange = async (e) => {
           if (!name) continue;
           const k = name.toLowerCase() + "|" + (t.price_tax_included_jpy || "");
           if (seen.has(k)) continue; seen.add(k);
-          rows.push({ name, price: t.price_tax_included_jpy || null, notes: String(t.notes || "").trim(), r: lookup(name, t.price_tax_included_jpy || null, !!t.junk) });
+          rows.push({ name, price: t.price_tax_included_jpy || null, notes: String(t.notes || "").trim(), r: lookup(name, t.price_tax_included_jpy || null) });
         }
       } catch (err) { fail++; st.className = "status err"; st.textContent = err.message; if (/APIキー/.test(err.message)) return; }
     }
@@ -777,7 +774,6 @@ $("camFile").onchange = async (e) => {
     const name = t.search_query || [t.maker, t.model].filter(Boolean).join(" ");
     $("name").value = name; queryTouched = false; catSel = "auto";
     if (t.price_tax_included_jpy) $("price").value = t.price_tax_included_jpy;
-    $("junk").checked = !!t.junk;
     look(); remember();
     const note = String(t.notes || "").trim().replace(/[。.．\s]+$/, "");
     st.textContent = `読み取り: ${name}${t.price_tax_included_jpy ? "／" + yen(t.price_tax_included_jpy) + "（税込）" : "／価格は読めず"}。違っていたら直してください。` +
