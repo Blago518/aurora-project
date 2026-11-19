@@ -14,6 +14,9 @@ function makeCore(DATA) {
     if (!lens) { s.delete("digital"); s.delete("m.zuiko"); } return [...s].sort().join(","); };
   // マウント（appraise.mount_of と同じ）: レンズはマウントの組が両方で同じときだけ相場を当てる
   const MOUNTS = C.mounts || {}, MOUNT_TOKENS = new Set(Object.values(MOUNTS).flatMap((d) => Object.keys(d)));
+  // フィルムの判（appraise.format_of と同じ）: 「Pentax 645 200mm F4」「PENTAX-110 50mm F2.8」に 35mm 判の同じ焦点距離の相場を当てない
+  const FORMATS = C.formats || {};
+  const formatOf = (ts) => [...new Set([...ts].filter((t) => FORMATS[t]).map((t) => FORMATS[t]))].sort().join(",");
   const mountOf = (ts) => { const out = new Set(); for (const [b, w] of Object.entries(MOUNTS)) if (ts.has(b) || (b === "fujifilm" && ts.has("fuji"))) for (const t of ts) if (w[t]) out.add(w[t]); return [...out].sort().join(","); };
   const ACCESSORY_RE = new RegExp(C.accessoryRe, "i");
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
@@ -35,13 +38,19 @@ function makeCore(DATA) {
     if (STOCK_STRONG.some((re) => re.test(tok))) return true;
     return beforeBrand && (bracketed || STOCK_WEAK.some((re) => re.test(tok)));
   }
+  // 商品名の書き方をそろえる・型番でない語を外す表（appraise.TITLE_FIXES と同じ。2026-11-19 監査）
+  const TITLE_FIXES = (C.titleFixes || []).map(([p, r, f]) => [new RegExp(p, "g" + f), r]);
+  const KEEP4_AFTER = new Set(C.keep4After || []);
   function titleToQuery(title, maxTokens = 7) {
     let t = title.normalize("NFKC");
+    for (const [re, rep] of TITLE_FIXES) t = t.replace(re, rep);
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
     // 末尾の管理番号（【9022NT】K11・【K172】K03・【1582-4NT】K17・【25490CK】J26。appraise.title_to_query と同じ。2026-11-19）
     t = t.replace(/[【\[]\s*[A-Za-z]{0,2}\d{2,6}(?:-\d{1,5})?[A-Za-z]{0,3}\s*[】\]]\s*[A-Z]\d{1,3}\s*$/, " ");
     t = t.replace(/[【\[]\s*\d{3,6}(?:-\d{1,5})?[A-Za-z]{1,3}\s*[】\]]\s*$/, " ");
-    t = t.replace(/(\d+)\s*[×xX]\s*(\d+)(?![\d.])/g, "$1x$2").replace(/\d+(?:\.\d+)?\s*°/g, " ");  // 7° は視野角（型番ではない）  // 双眼鏡の 6×15・8x30、中判の 6x6 を1語に
+    // 双眼鏡の 6×15・8x30、中判の 6x6 を1語に（数字だけの語どうし。「ZTC1.4x 1103」「DSC-T2×2」はつなげない）。7° は視野角
+    t = t.replace(/(?<![A-Za-z0-9.\-])(\d+)\s*[×xX]\s*(\d+)(?![\d.])/g, "$1x$2").replace(/\d+(?:\.\d+)?\s*°/g, " ");
+    t = t.replace(/×\s*\d+(?![\d.])/g, " ");  // 残った ×2・×3 は個数
     t = t.replace(BRACKET_CODE, " \u0001$1 ");  // 【L256】→ 管理番号の候補の印（\u0001）を付ける
     t = t.replace(/\d+円[~〜～]?/g, " ");
     t = t.replace(/[∞¶∩§]\s*\S*/g, " ");  // ストアの管理番号（… ∞ 776BC-16・¶ 7774A-5）
@@ -52,11 +61,11 @@ function makeCore(DATA) {
     t = t.replace(/[①-⑳]/g, " ");
     t = t.replace(/非\s*-?\s*A[iI](?![-sS])/g, " nonAi ");
     for (const [re, rep] of VNORM) t = t.replace(re, rep);  // 型の表記をそろえる（Python と同じ）
-    t = t.replace(/[#＃No.]{1,3}\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?\b/g, " ");
+    t = t.replace(/(?<![A-Za-z0-9])N[oO]\.\s*[A-Za-z]{0,3}-?\d{3,}[A-Za-z]?(?![A-Za-z0-9])/g, " ");  // No.10131（以前は「NIKON D850」の「N D850」まで消していた）
     t = t.replace(/(\d)\s*[・･]\s*(\d)/g, "$1.$2");
     t = t.replace(/\b[fF]\s*\/\s*(\d)/g, "F$1");
     t = t.replace(/\b1\s*:\s*(\d(?:\.\d)?)\b/g, "F$1");
-    t = t.replace(/\b(EF-S|EF|RF|FD|XF|FE)(\d)/gi, "$1 $2");
+    t = t.replace(/\b(EF-S|EF|RF|FD|XF|FE)(\d+(?:-\d+)?\s*(?:mm|㎜))/gi, "$1 $2");  // 焦点距離が続くときだけ（Nikon FE2・FE10 は分けない）
     t = t.replace(/\b([fF]\d(?:\.\d)?(?:-\d(?:\.\d)?)?)([LGD])\b/g, "$1 $2");
     t = t.replace(/(?<![\d.-])(\d{2,3})-\s+(?=[fF]\d)/g, "$1mm ");  // 「EF 50- F1.2L」→ 50mm（appraise と同じ）
     t = t.replace(/[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+/g, " ");
@@ -72,11 +81,14 @@ function makeCore(DATA) {
       .concat(found.filter((m) => C.brandsEn[m[0].toLowerCase().replace(/^[.\-]+|[.\-]+$/g, "")]).map((m) => m.index).slice(0, 1));
     // メーカー名が無いタイトルは「先頭の語」だけを頭とみなす（appraise.py と同じ）
     const firstBrand = brandAt.length ? Math.min(...brandAt) : (found.length ? found[0].index + found[0][0].length : 0);
+    const tokAt = {};
     for (const m of found) {
       const tok = m[0];
       const low = tok.toLowerCase().replace(/^[.\-]+|[.\-]+$/g, "");
+      if (!(tok in tokAt)) tokAt[tok] = m.index;
       if (!low || NOISE.has(low)) continue;
-      if (/^\d+$/.test(low) && ((low.length < 2 && maxTokens <= 7) || low.length >= 4)) continue;
+      if (/^\d+$/.test(low) && ((low.length < 2 && maxTokens <= 7) || low.length >= 4)
+        && !(low.length === 4 && tokens.length && KEEP4_AFTER.has(tokens[tokens.length - 1].toLowerCase()))) continue;  // COOLPIX 4500 の4桁は型番
       if (/^no\.?\d+$/.test(low)) continue;
       if (isStockCode(tok, m.index < firstBrand, m.index > 0 && t[m.index - 1] === "\u0001")) continue;  // 出品者の管理番号は検索語に入れない
       const line = low.replace(/^[a-z]\./, "");
@@ -84,12 +96,20 @@ function makeCore(DATA) {
       if (C.brandsEn[low]) {
         brand = brand || C.brandsEn[low];
         allBrands.push(C.brandsEn[low]);
-        if (C.brandsEn[low] !== "Carl") continue;
+        if (C.brandsEn[low] !== "Carl" && low !== "lumix") continue;  // LUMIX はシリーズ名として残す
       }
       if (!tokens.some((x) => x.toLowerCase() === low)) tokens.push(tok);
     }
     const makers = allBrands.filter((b) => C.lensMakers.includes(b.toLowerCase()));
     if (makers.length) brand = makers[0];
+    // 社外レンズ（Rokinon・Viltrox など）は「キャノンマウント」のメーカーではなく、その社名を頭に（appraise.title_to_query と同じ）
+    const tp = tokens.find((x) => THIRD.has(x.toLowerCase()) && !C.lensMakers.includes(x.toLowerCase()));
+    // （社名がメーカー名より前にあるときだけ。「Canon AE-1 おまけレンズ付き TEFNON」のボディは Canon のまま）
+    if (tp && !THIRD.has(brand.toLowerCase()) && !C.lensMakers.includes(brand.toLowerCase()) && (!brandAt.length || (tokAt[tp] || 0) < Math.min(...brandAt))) {
+      if (brand && !allBrands.includes(brand)) allBrands.push(brand);
+      brand = tp;
+      tokens.splice(tokens.indexOf(tp), 1);
+    }
     const toks = maxTokens <= 7 ? tokens.map((x) => (x === "nonAi" ? "Non-Ai" : x)) : tokens;
     const words = (brand ? [brand] : []).concat(toks);
     if (maxTokens > 7) { for (const b of new Set(allBrands)) if (b !== brand) words.push(b); return words.join(" "); }
@@ -123,14 +143,14 @@ function makeCore(DATA) {
     return false;
   }
   // タイトルの型（1つに決まるときだけ）: label は機種名に入れる表記、must/not は eBay出品中の集計で使う
-  const VLABEL = { newfd: "New FD", ssc: "SSC", sc: "SC", nonai: "Non-Ai", ai: "Ai", "ai-s": "Ai-S", aikai: "Ai改" };
+  const VLABEL = C.variantLabels || { newfd: "New FD", ssc: "SSC", sc: "SC", nonai: "Non-Ai", ai: "Ai", "ai-s": "Ai-S", aikai: "Ai改" };  // appraise.VARIANT_LABELS
   function variantOf(toks) {
     for (const g of C.variantGroups) {
       if (!g.ctx.some((c) => toks.has(c))) continue;
       const found = Object.keys(g.vars).filter((v) => toks.has(v));
       if (found.length !== 1) continue;
       const v = found[0];
-      return { label: VLABEL[v] || g.vars[v], must: g.neg ? [g.vars[v]] : [],
+      return { key: v, label: VLABEL[v] || g.vars[v], must: g.neg ? [g.vars[v]] : [],
         not: g.neg ? Object.entries(g.vars).filter(([k]) => k !== v).map(([, d]) => d) : [] };
     }
     return null;
@@ -176,6 +196,7 @@ function makeCore(DATA) {
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
       if (seriesOf(qt, qmm) !== seriesOf(rt, lensy(rt))) continue;
       if (qmm && mountOf(qt) !== mountOf(rt)) continue;
+      if (qmm && formatOf(qt) !== formatOf(rt)) continue;  // 110・645・67 判のレンズと 35mm 判のレンズは別物（appraise.format_of）
       if (variantsConflict(qt, rt)) continue;
       // 実績側の英字の語（メーカー・レンズ銘など）が1つも無ければ別物（YASHICA 35mm 2.8 に ALPA 35mm 2.8 が当たっていた）
       if (![...rt].some((t) => !/\d/.test(t) && !COLORS.has(t) && qt.has(t))) continue;
@@ -284,24 +305,72 @@ function makeCore(DATA) {
     return ["×", pre + "上限超過"];
   }
 
+  // 機種名に残すシリーズ名（appraise.LINE_WORDS と同じ。2026-11-19 ユーザー指摘「Canon Power Shot S110 → Canon S110」）
+  // 機種名（表示・eBay 検索語・相場メモの名前）だけに使い、比較用キー（まとめ方）と相場の当たり方には使わない
+  const LINE_WORDS = C.lineWords || {}, KEEP_NUM_AFTER = new Set(C.keepNumAfter || []), FORMAT_NUMS = new Set(C.formatNums || []);
+  const DISPLAY_WORDS = C.displayWords || {};  // BODY_SKIP は下の modelWord と共通（const の巻き上げで先に使える）
   function modelKey(title) {
     const toks = titleToQuery(title, 20).split(" ").filter(Boolean);
     // 知らないメーカーでも、先頭が英字の語ならメーカー名として扱う（Rodenstock Apo-Sironar-N など。無いと相場が当たらない）
     const brand = toks.length && (BRAND_SET.has(toks[0].toLowerCase()) || (/^[A-Za-z][A-Za-z-]{2,}$/.test(toks[0]) && !/\d/.test(toks[0]))) ? toks[0] : "";
     const rest = brand ? toks.slice(1) : toks;
-    // 管理番号らしい語（C-2436・OL4709・IC0144・A-164、レンズの機種名に混ざった 3桁以上の数字）は機種名に入れない
+    // 管理番号らしい語（C-2436・OL4709・2-2-2441・e8480）、レンズの機種名に混ざった数字（焦点距離と同じ数字・3桁以上。645・110 の判は残す）、
+    // ズーム倍率（3x）は機種名に入れない（appraise.model_key と同じ）
     const isLens = rest.some((t) => /mm$/i.test(t));
-    const code = (t) => /^[A-Za-z]{1,2}-\d{4,}$/.test(t) || /^[A-Za-z]{2,3}\d{4,}$/.test(t) || /^\d{4,}-\d{1,3}$/.test(t) || (isLens && /^\d{3,}$/.test(t));
+    const mmNums = new Set(rest.filter((t) => /mm$/i.test(t)).flatMap((t) => t.match(/\d+/g) || []));
+    const ratio = (t) => /^\d+(?:\.\d+)?x$/i.test(t);
+    const hasModel = rest.some((t) => /\d/.test(t) && !ratio(t));
+    const code = (i, t) => {
+      if (/^(?:[A-Za-z]{1,2}-\d{4,}|[A-Za-z]{2,3}\d{4,}|\d{4,}-\d{1,3}|[a-z]{1,2}\d{3,5})$/.test(t)) return true;
+      if (ratio(t) && hasModel && !/converter|extender|teleplus|テレコン/i.test(title)) return true;
+      if (/^\d+$/.test(t) && isLens) {
+        if (FORMAT_NUMS.has(t) || (i > 0 && (KEEP_NUM_AFTER.has(rest[i - 1].toLowerCase()) || LINE_WORDS[rest[i - 1].toLowerCase().split("-")[0]]))) return false;
+        return t.length >= 3 || mmNums.has(t);
+      }
+      return false;
+    };
     // 世代（II・III・Mark II）と限定・チタンなどの型も機種名に残す（「Sony α7 II」が「Sony α7」になり、［直す］の相場が当たらなかった）
     const gen = (t) => GENS.has(t.toLowerCase()) || PREMIUM.has(t.toLowerCase());
-    const keyToks = rest.filter((t) => (/\d/.test(t) && !code(t)) || gen(t)).filter((t, i, a) => !gen(t) || a.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
+    const keyToks = [];
+    rest.forEach((t, i) => {
+      if ((/\d/.test(t) && !code(i, t)) || gen(t)) {
+        if (!(gen(t) && keyToks.some((x) => x.toLowerCase() === t.toLowerCase()))) keyToks.push(t);
+      }
+    });
     while (keyToks.filter((t) => !gen(t)).length > 3) keyToks.splice(keyToks.findLastIndex((t) => !gen(t)), 1);
+    // シリーズ名（PowerShot・IXY・EOS Kiss・COOLPIX・PEN・mju など）と、そのすぐ後ろの数字の無い型番（EOS RP・PEN F・PEN EE）
+    let lines = [];
+    rest.forEach((t, i) => {
+      const lt = t.toLowerCase();
+      if (LINE_WORDS[lt] || (lt.includes("-") && LINE_WORDS[lt.split("-")[0]] && !/\d/.test(lt))) {  // PEN-FT・mju-II
+        lines.push(LINE_WORDS[lt] || t);
+        const nx = rest[i + 1] || "";
+        if (LINE_WORDS[lt] && /^[A-Z]{1,3}$/.test(nx) && !BODY_SKIP.has(nx.toLowerCase()) && !LINE_WORDS[nx.toLowerCase()]) lines.push(nx);
+      }
+    });
+    if (lines.includes("Kiss") && !lines.includes("EOS") && brand.toLowerCase() === "canon") lines.splice(lines.indexOf("Kiss"), 0, "EOS");
+    if (brand.toLowerCase() === "nikon" && /(?:nikon|ニコン)\s*1\s*(?:[JVS][1-9]|AW1|nikkor)/i.test(title.normalize("NFKC"))) lines.unshift("1");
+    lines = [...new Set(lines)];
     const vt = variantOf(tokensOf(title));
     const hasMount = !!mountOf(tokensOf(title));
     const ser = rest.filter((t, i) => (SERIES.has(t.toLowerCase()) || (hasMount && MOUNT_TOKENS.has(t.toLowerCase()))) && rest.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i);
-    const label = (brand ? [brand] : []).concat(ser, (keyToks.some((t) => !gen(t)) ? keyToks : rest.slice(0, 2)).filter((t) => !ser.includes(t)))
-      .concat(vt ? [vt.label] : [], canonL(tokensOf(title)) ? ["L"] : []).join(" ");
-    const norm = label.toLowerCase().split(" ").map((t) => {
+    const used = new Set(lines.concat(ser).map((x) => x.toLowerCase()));
+    const fallback = rest.slice(0, 2).filter((t, i) => !code(i, t));  // 型番の数字が無い機種
+    const body = (keyToks.some((t) => !gen(t)) ? keyToks : fallback).filter((t) => !used.has(t.toLowerCase()));
+    // シリーズ名が型番の一部になっているとき（mju-7040・mju-II）は、シリーズ名だけの語を重ねない
+    lines = lines.filter((x) => !lines.concat(body).some((y) => y.toLowerCase().startsWith(x.toLowerCase() + "-")));
+    // 商品名に書かれた順に並べる（Canon EOS Kiss X5 EF-S 18-55mm。補った EOS・Nikon 1 の 1 はシリーズ名の前）
+    const pos = {};
+    rest.forEach((t, i) => { if (!(t.toLowerCase() in pos)) pos[t.toLowerCase()] = i; });
+    if (lines.includes("Kiss") && !("eos" in pos)) pos.eos = (pos.kiss || 0) - 0.5;
+    if (!("1" in pos)) pos["1"] = -1;
+    const at = (w) => (w.toLowerCase() in pos ? pos[w.toLowerCase()] : 99);
+    const words = (brand ? [brand] : []).concat([...new Set(lines.concat(ser, body))].sort((a, b) => at(a) - at(b)));
+    if (vt && !words.some((w) => w.toLowerCase() === vt.key)) words.push(vt.label);  // 型（AEJ・MMJ・SSC）も機種名に。New FD を2回書かない
+    if (canonL(tokensOf(title))) words.push("L");  // Canon の L は機種名・検索語に残す
+    const label = [...new Set(words.map((w) => DISPLAY_WORDS[w] || w))].join(" ");  // eBay で通じる書き方に（NewFD → New FD）
+    const lineLow = new Set(lines.map((x) => x.toLowerCase()));
+    const norm = label.toLowerCase().split(" ").filter((t) => !lineLow.has(t)).map((t) => {  // シリーズ名は比較用キーに入れない
       if (/^f\/?\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t)) t = t.replace(/^f\/?/, "");
       return /^\d+(\.\d)?(-\d+(\.\d)?)?$/.test(t) && t.includes(".") ? "f" + t : t;
     });
@@ -422,7 +491,8 @@ function makeCore(DATA) {
     return pieces.filter((x) => x.trim());
   }
   function setPartTitles(title) {
-    const t = normTitle(title), b0 = brandOf(t), out = [];
+    // 末尾のストアの管理番号（…/ジャンク/N031）は区切りで分ける前に外す（分けた後では型番と見分けられない。appraise と同じ）
+    const t = normTitle(title).replace(/\/[A-Z]{1,2}\d{3}\s*$/, " "), b0 = brandOf(t), out = [];
     for (const seg0 of t.split(SET_SPLIT_RE)) {
       for (let seg of splitByModels(seg0.trim())) {
         seg = seg.trim();

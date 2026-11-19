@@ -14,6 +14,7 @@ import argparse
 import json
 import shutil
 import math
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -70,6 +71,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             # 状態1ランクの補正（%）。実績から推定（appraise.condition_step_pct。相場メモは使わない）
             "condStep": ba.condition_step_pct(cfg, [r for r in rows if not ba.is_memo(r)]),
             "activeMinCount": j.get("active_min_count", 5),
+            "suggestMinNetUsd": j.get("suggest_min_net_usd", 0.0),  # 仮の相場の案にする最安値の下限（送料別$）
             "browse": False,  # eBay のキーがあれば main() で True にする
             "autoMaxItems": min(cfg.get("extension", {}).get("auto_max_items", 1000), 1000),  # 一度に読むのは1000件まで
             "browseMaxModels": cfg.get("extension", {}).get("browse_max_models", 400),
@@ -80,12 +82,16 @@ def build_data(cfg: dict, fx: float) -> dict:
             "lensWords": ba.LENS_WORDS, "bodyCodeSkip": sorted(ba.BODY_CODE_SKIP), "bodyCodeOk": sorted(ba.BODY_CODE_OK),
             "filmFormatAfter": ba.FILM_FORMAT_AFTER.pattern,
             "lensLines": ba.LENS_LINES, "lensMakers": sorted(ba.LENS_MAKERS), "noise": sorted(ba.NOISE_TOKENS), "thirdParty": sorted(ba.THIRD_PARTY),
-            "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS), "series": sorted(ba.SERIES), "mounts": ba.MOUNT_WORDS,
+            "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS), "series": sorted(ba.SERIES), "mounts": ba.MOUNT_WORDS, "formats": ba.FORMAT_WORDS,
             "premium": sorted(ba.PREMIUM_VARIANTS), "accessoryRe": ba.ACCESSORY_RE.pattern,
             "flagRules": [[n, p] for n, p in ba.FLAG_RULES],
             "condRules": [[p, o] for p, o in ba.COND_RULES], "condRank": ba.COND_RANK,
             "listingCondRules": [[p, r] for p, r in ba.LISTING_COND_RULES], "listingDefaultRank": ba.LISTING_DEFAULT_RANK,
             "variantNormalize": [[p, r] for p, r in ba.VARIANT_NORMALIZE], "variantGroups": ba.VARIANT_GROUPS,
+            # 商品名の書き方をそろえる表・機種名のシリーズ名（appraise.TITLE_FIXES・model_key と同じ。置き換えの \1 は JS の $1 に）
+            "titleFixes": [[p, re.sub(r"\\(\d)", r"$\1", r), f] for p, r, f in ba.TITLE_FIXES],
+            "keep4After": sorted(ba.KEEP4_AFTER), "lineWords": ba.LINE_WORDS, "keepNumAfter": sorted(ba.KEEP_NUM_AFTER),
+            "formatNums": sorted(ba.FORMAT_NUMS), "variantLabels": ba.VARIANT_LABELS, "displayWords": ba.DISPLAY_WORDS,
             "increments": [[0 if math.isinf(lim) else lim, step] for lim, step in ba.YAHOO_INCREMENTS],
         },
     }
