@@ -978,7 +978,9 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const g = groups.get(key) || { label, n: 0, prices: [], ex: i.title, ids: [] };
       g.n++; if (i.price) g.prices.push(i.price); if (i.id) g.ids.push(i.id); groups.set(key, g);
     }
-    const groupList = [...groups.values()].sort((a, b) => b.n - a.n);
+    // 高い物ほど1件の利益が大きい（実績: $200以上は1件平均6,500円〜、$99以下は344円）ので、ヤフオクの価格が高い機種を上に。同じなら件数の多い順
+    const gp = (g) => (g.prices.length ? median(g.prices) : 0);
+    const groupList = [...groups.values()].sort((a, b) => gp(b) - gp(a) || b.n - a.n);
     const unpriced = groupList.slice(0, 40);
     // sold確認待ち: 相場が未登録の出品を「eBay出品中×係数」で仮に計算し、利益が出る物だけ（登録するまで◎○には入れない）
     const waits = [];
@@ -1073,7 +1075,7 @@ ${weak.length || waits.length || pinnedWaits.length ? `<h4 style="margin:14px 0 
 ${canBrowse() && !waits.length ? `<div class="s">${Object.keys(state.browse).length ? "仮◎○はありません" : "eBay出品中の価格を調べています…（仮◎○）"}</div>` : ""}
 <details><summary>要確認（相場はあるがセット品・光学難・説明文の難などの可能性） ${check.length}件</summary><table>${head}${check.map(row).join("")}</table></details>
 <details><summary>× 見送り ${bad.length}件</summary><table>${head}${bad.map(row).join("")}</table></details>
-<details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（件数順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
+<details ${priced < items.length / 3 ? "open" : ""}><summary>相場が未登録の機種（ヤフオクの価格が高い順） ${groups.size}種類 ― 想定$を入れて登録すると即反映</summary>
 ${canBrowse() ? `<div class="s" style="margin:4px 0">eBay出品中＝公式APIで調べた<b>出品中</b>の価格（米国向け・中古。送料$${SHIP()}を引いた送料別の額で表示）。想定$には最安値（送料無料の出品は出品額−$30）を<b>案</b>として入れています。<b>sold を見て確認してから［登録］</b>してください（登録するまで判定には使いません）。</div>` : ""}
 <table><tr><th title="機種名→ヤフオクの出品ページ（同じ機種が複数あれば1件目）">機種（→ヤフオク）</th><th>件数</th><th>ヤフオク現在値</th>${canBrowse() ? "<th>eBay出品中</th>" : ""}<th>想定$（送料別）</th></tr>${unpriced.map((g) => { const yh = g.ids.slice(0, 3).map((id) => `https://auctions.yahoo.co.jp/jp/auction/${id}`), sk = "m:" + g.label; return `<tr class="${seenOf(sk) ? "seen" : ""}"><td class="m">${seenBox(sk)}<a href="${yh[0] || ebay(g.label).pr}" target="_blank" rel="noopener" title="ヤフオクの出品ページを開く">${esc(g.label)}</a> <a class="pill sold" href="${ebay(g.label).sold}" target="_blank" rel="noopener">sold</a> <a class="pill" href="${ebay(g.label).now}" target="_blank" rel="noopener">now</a> <button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([...yh, ebay(g.label).sold, ebay(g.label).now]))}" title="ヤフオクの出品ページ（最大3件）・sold・now を、新しいタブに左からこの順で開きます">全て開く</button> <a class="s" href="${ebay(g.label).pr}" target="_blank" rel="noopener">Product Research</a><div class="s">${esc(g.ex.slice(0, 60))}</div></td>
 <td class="n">${g.n}</td><td class="n">${yen(g.prices.length ? median(g.prices) : null)}</td>
