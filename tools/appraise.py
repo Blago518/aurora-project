@@ -843,6 +843,18 @@ THIRD_PARTY = {"tamron", "sigma", "tokina", "7artisans", "ttartisan", "brightin"
                "kamlan", "zonlai", "fujian", "rokinon", "vello"}
 COLOR_WORDS = {"black", "silver", "chrome", "white", "red", "blue", "green", "brown"}
 GENERATIONS = {"ii", "iii", "iv", "mkii", "mkiii", "mk2", "mk3", "mark"}
+# 系統の語（2026-11-19）: 同じ焦点距離・F値でも別のレンズ・カメラ。片方にだけあれば別物として扱い、機種名にも残す
+#   digital = Olympus Zuiko Digital（フォーサーズ）、m.zuiko = マイクロフォーサーズ（Digital を含む）、Rolleicord と Rolleiflex
+SERIES = {"digital", "m.zuiko", "rolleicord", "rolleiflex"}
+
+
+def series_of(tokens: set[str], lens: bool) -> set[str]:
+    s = {t for t in tokens if t in SERIES}
+    if "m.zuiko" in s:
+        s.add("digital")
+    if not lens:  # ボディの「Digital Camera」は系統ではない
+        s -= {"digital", "m.zuiko"}
+    return s
 PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定", "whiteface", "af"}
 
 def variants_conflict(qt: set, rt: set) -> bool:
@@ -1143,6 +1155,9 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
             continue
         # II / III などの世代違いは別機種
         if (qt & GENERATIONS) != (rt & GENERATIONS):
+            continue
+        # 系統違い（Zuiko Digital と OM Zuiko、Rolleicord と Rolleiflex）は別物
+        if series_of(qt, _lensy(qt)) != series_of(rt, _lensy(rt)):
             continue
         # 型違い（Contax の MMJ と AEG など）は相場が違う
         if variants_conflict(qt, rt):
@@ -1901,7 +1916,8 @@ def model_key(title: str) -> tuple[str, str]:
     gen = lambda t: t.lower() in GENERATIONS or t.lower() in PREMIUM_VARIANTS  # noqa: E731
     digits = [t for t in rest if re.search(r"\d", t)][:3]
     key_toks = ([t for t in rest if t in digits or gen(t)] if digits else []) or rest[:2]
-    label = " ".join(([brand] if brand else []) + key_toks)
+    ser = [t for i, t in enumerate(rest) if t.lower() in SERIES and t.lower() not in [x.lower() for x in rest[:i]]]
+    label = " ".join(([brand] if brand else []) + ser + [t for t in key_toks if t not in ser])
     norm = []
     for t in label.lower().split():
         t = re.sub(r"^f/?", "", t) if re.fullmatch(r"f/?\d+(\.\d)?(-\d+(\.\d)?)?", t) else t
