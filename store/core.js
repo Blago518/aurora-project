@@ -363,18 +363,18 @@ function makeCore(DATA) {
   const KIT_RE = /キット|\bkit\b/i;
   function brandOf(title) {
     const t = String(title || "").normalize("NFKC");
-    for (const [ja, en] of C.brandsJa) if (t.includes(ja)) return en;
+    for (const [ja, en] of C.brandsJa || []) if (t.includes(ja)) return en;
     for (const w of t.match(/[A-Za-z]+/g) || []) {
       const lw = w.toLowerCase();
       if (C.brandsEn[lw] && !["OM", "Carl"].includes(C.brandsEn[lw])) return C.brandsEn[lw];
-      if (C.lensLines[lw] && C.lensLines[lw] !== "Zeiss") return C.lensLines[lw];
+      if (C.lensLines && C.lensLines[lw] && C.lensLines[lw] !== "Zeiss") return C.lensLines[lw];
     }
     return "";
   }
   // 型の語（appraise.py の norm_title・lens_mm_spans・is_f_number・_model_word・set_part_titles と同じ。2026-11-18）
-  const FILM_AFTER_RE = new RegExp(C.filmFormatAfter.replace("(?i)", ""), "i");
-  const F_BEFORE_RE = new RegExp("(?:\\d+(?:\\.\\d+)?\\s*(?:mm)?|" + C.lensWords + ")\\s*[/,:]?\\s*$", "i");
-  const BODY_SKIP = new Set(C.bodyCodeSkip), BODY_OK = new Set(C.bodyCodeOk);
+  const FILM_AFTER_RE = new RegExp((C.filmFormatAfter || "(?!)").replace("(?i)", ""), "i");  // 古い相場データ（11/18 より前）に無くても止まらない
+  const F_BEFORE_RE = new RegExp("(?:\\d+(?:\\.\\d+)?\\s*(?:mm)?|" + (C.lensWords || "(?!)") + ")\\s*[/,:]?\\s*$", "i");
+  const BODY_SKIP = new Set(C.bodyCodeSkip || []), BODY_OK = new Set(C.bodyCodeOk || []);
   const normTitle = (text) => String(text || "").normalize("NFKC").replace(/(\d)\s*(?:ミリ|㎜)/g, "$1mm");
   function lensMmSpans(text) {
     const t = normTitle(text), out = [];
