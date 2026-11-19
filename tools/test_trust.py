@@ -459,3 +459,40 @@ class SeriesWords(unittest.TestCase):
         self.assertIn("DIGITAL", labels[0].upper())
         self.assertIn("Rolleicord", labels[2])
 
+
+class MountWords(unittest.TestCase):
+    """Canon EF・FD・FL・RF、Nikon Z と F、Sony FE と E、Fujifilm XF と GF は別物。マウントが書いていない側には当てない（2026-11-19）."""
+    PAIRS = [  # (相場の商品名, 出品の商品名, 当たるか)
+        ("Canon EF 50mm F1.8 II", "キヤノン Canon EF50mm F1.8 II 単焦点", True),
+        ("Canon EF 50mm F1.8 II", "Canon New FD 50mm F1.8", False),
+        ("Canon RF 50mm F1.8 STM", "Canon EF 50mm F1.8 STM", False),
+        ("Nikon Ai-s 50mm f/1.8", "Nikon Ai-S Nikkor 50mm F1.8 パンケーキ", True),
+        ("Nikon AF-S NIKKOR 20mm f/1.8G ED", "Nikon NIKKOR Z 20mm F1.8 S", False),
+        ("Nikon Ai-s 50mm f/1.8", "ニコン 50mm f1.8", False),
+        ("SONY FE 50mm F1.8", "SONY E 50mm F1.8 OSS", False),
+        ("FUJIFILM XF 35mm F1.4 R", "フジフイルム FUJIFILM XF35mm F1.4 R", True),
+        ("Olympus OM Zuiko 50mm f1.4", "オリンパス OM ZUIKO 50mm F1.4", True),   # マウント語の無いメーカーは今までどおり
+    ]
+
+    def _ref(self, title):
+        return {"title": title, "sold_price_usd": 200.0, "_price": 200.0, "_tokens": ba._tokens(title), "source": "相場メモ"}
+
+    def test_python(self):
+        for ref, q, ok in self.PAIRS:
+            self.assertEqual(bool(ba.match_sales(q, [self._ref(ref)])), ok, (ref, q))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        code = ("const P=" + json.dumps([[r, q] for r, q, _ in self.PAIRS], ensure_ascii=False) + ";console.log(JSON.stringify(P.map(([l,t])=>m.matchRefs(t,[{title:l,price:200,tier:0,"
+                "source:'相場メモ',tokens:[...m.tokensOf(l)],acc:false}]).length>0)))")
+        self.assertEqual(run_js(data, code), [ok for _, _, ok in self.PAIRS])
+
+    def test_memo_label_keeps_mount(self):
+        # ［登録］の機種名にマウントが残り、その出品自身に当たる
+        for t in ["Canon New FD 50mm F1.4", "Nikon NIKKOR Z 20mm F1.8 S", "SONY FE 50mm F1.8", "FUJIFILM GF 63mm F2.8"]:
+            label = ba.model_key(t)[0]
+            self.assertTrue(ba.match_sales(t, [self._ref(label)]), (t, label))
+

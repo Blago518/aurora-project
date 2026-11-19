@@ -80,7 +80,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "lensWords": ba.LENS_WORDS, "bodyCodeSkip": sorted(ba.BODY_CODE_SKIP), "bodyCodeOk": sorted(ba.BODY_CODE_OK),
             "filmFormatAfter": ba.FILM_FORMAT_AFTER.pattern,
             "lensLines": ba.LENS_LINES, "lensMakers": sorted(ba.LENS_MAKERS), "noise": sorted(ba.NOISE_TOKENS), "thirdParty": sorted(ba.THIRD_PARTY),
-            "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS), "series": sorted(ba.SERIES),
+            "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS), "series": sorted(ba.SERIES), "mounts": ba.MOUNT_WORDS,
             "premium": sorted(ba.PREMIUM_VARIANTS), "accessoryRe": ba.ACCESSORY_RE.pattern,
             "flagRules": [[n, p] for n, p in ba.FLAG_RULES],
             "condRules": [[p, o] for p, o in ba.COND_RULES], "condRank": ba.COND_RANK,
