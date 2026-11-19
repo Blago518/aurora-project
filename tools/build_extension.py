@@ -56,6 +56,10 @@ def build_data(cfg: dict, fx: float) -> dict:
         "winStats": _win_stats(),
         # ヤフオクの落札相場（data/yahoo_results.csv。機種ごとの直近の落札額。表示だけで判定・上限額には使わない）
         "yahooStats": _yahoo_stats(cfg),
+        # 勝ちやすさ（data/win_score.csv。機種の比較用キーごと {rate, n}）。1割未満の機種は入札候補の下に回す（判定・上限額には使わない）
+        "winScore": _win_scores(cfg),
+        # robots.txt で Disallow の引数（［続けて鑑定］で続きのページを読むとき外す）[パスの正規表現, 引数の末尾]
+        "robotsParams": _robots_params(),
         "memoHist": ba.load_memo_history(),  # 相場メモの履歴（拡張機能の「相場の動き」。data/price_memo_history.csv）  # 落札見込み（data/bid_log.csv の結果から。bid_results.win_stats）
         "cfg": {
             "fx": round(fx, 2), "convLossPct": cfg["fx"]["conversion_loss_pct"],
@@ -81,6 +85,9 @@ def build_data(cfg: dict, fx: float) -> dict:
             # 落札相場の見張り（拡張機能 → ダウンロード/aurora_seen.csv）: 1日に足す上限と、表示する期間（日）
             "seenMaxPerDay": cfg.get("yahoo_results", {}).get("seen_max_per_day", 300),
             "yahooDays": cfg.get("yahoo_results", {}).get("market_days", 90),
+            # 勝ちやすさ: この割合未満は下に回す・記録が無い機種に使う割合（［◎○をまとめて開く］の並び）
+            "winLowRate": cfg.get("win_score", {}).get("low_rate", 0.10),
+            "defaultWinRate": cfg.get("win_score", {}).get("default_rate", 0.2),
         },
         "consts": {
             "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN,
@@ -109,6 +116,22 @@ def _yahoo_stats(cfg: dict) -> dict:
         return yahoo_results.load_model_stats(days=int(cfg.get("yahoo_results", {}).get("market_days", 90)))
     except Exception:  # noqa: BLE001  記録が無い・読めない → 出さないだけ
         return {}
+
+
+def _win_scores(cfg: dict) -> dict:
+    try:
+        import win_score
+        return {k: {"rate": v["rate"], "n": v["n"]} for k, v in win_score.load_scores(cfg=cfg).items()}
+    except Exception:  # noqa: BLE001  記録が無い・読めない → 今の並びのまま
+        return {}
+
+
+def _robots_params() -> list:
+    try:
+        import robots
+        return robots.param_rules()
+    except Exception:  # noqa: BLE001  読めなければ拡張機能の予備の規則（n・s1・o1 を外す）
+        return []
 
 
 def _win_stats() -> dict:

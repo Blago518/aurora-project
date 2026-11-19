@@ -116,6 +116,7 @@ class Item:
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
     desc_checked: bool = False  # 説明文を読んだか（check_descriptions）
     tentative: dict = field(default_factory=dict)   # 仮◎○（相場が無いが eBay 出品中の価格なら利益が出る。tentative.py）
+    win: dict = field(default_factory=dict)  # 勝ちやすさ（win_score.py。終わった出品のうち今の上限額以下で終わった割合）{rate, n}
 
 
 # ---------------------------------------------------------------------------
@@ -263,18 +264,26 @@ def find_search_urls(text: str) -> list[str]:
     return out
 
 
-def _with_page(url: str, start: int, per_page: int = 100) -> str:
+def _with_page(url: str, start: int) -> str:
+    """ページ送り（b=）だけを付ける. 1ページの件数（n=）は付けない（robots.txt で Disallow。2026-11-19 ユーザー決定）."""
     parts = urllib.parse.urlsplit(url)
     q = dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
-    q["b"], q["n"] = str(start), str(per_page)
+    q.pop("n", None)
+    q["b"] = str(start)
     return urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(q)))
 
 
 def parse_listing_page(page: str) -> tuple[list[Item], int | None]:
-    """検索結果・出品者ページの __NEXT_DATA__ から出品一覧を読む（1ページ最大100件）."""
+    """検索結果・出品者ページ・終わった出品の検索の __NEXT_DATA__ から出品一覧を読む."""
+    items, total, _ = parse_listing_page_full(page)
+    return items, total
+
+
+def parse_listing_page_full(page: str) -> tuple[list[Item], int | None, int]:
+    """parse_listing_page ＋ そのページの件数（フリマ・重複を外す前。ページ送りの幅に使う）."""
     m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', page, re.S)
     if not m:
-        return [], None
+        return [], None, 0
     data = json.loads(m.group(1))
     listing = None
     for d in _walk(data):
@@ -283,7 +292,7 @@ def parse_listing_page(page: str) -> tuple[list[Item], int | None]:
             listing = d
             break
     if listing is None:
-        return [], None
+        return [], None, 0
     total = None
     t = re.search(r'"totalResultsAvailable"\s*:\s*(\d+)', m.group(1))
     if t:
@@ -315,22 +324,42 @@ def parse_listing_page(page: str) -> tuple[list[Item], int | None]:
             memo="ストア" if (x.get("seller") or {}).get("isStore") else "",
             seller_id=str((x.get("seller") or {}).get("userId") or ""),
         ))
-    return items, total
+    return items, total, len(listing["items"])
 
 
-def fetch_listing(url: str, limit: int, delay: float) -> list[Item]:
-    """検索URLの結果を100件ずつページ送りして最大 limit 件取得する."""
+MIN_DELAY = 1.5  # ヤフオクを読む間隔の下限（秒）
+
+
+def fetch_listing(url: str, limit: int, delay: float, budget: dict | None = None, fetch=None) -> list[Item]:
+    """検索URLの結果をページ送りして最大 limit 件取得する.
+    robots.txt に合わせ、Disallow の引数（n=・s1=・o1= など）を外した形で読む（1ページの件数はヤフオクの既定。
+    並べ替えは読んだ後に Mac の中で）. budget={"pages": 残りページ数} を渡すと、全体で読むページ数の上限を守る."""
+    import robots
+    live = fetch is None  # テスト（fetch を渡したとき）は待たない
+    fetch = fetch or http_get
+    safe = robots.check(url)
+    if safe is None:
+        return []
     out: list[Item] = []
     start = 1
     while len(out) < limit:
-        items, total = parse_listing_page(http_get(_with_page(url, start)))
-        if not items:
+        if budget is not None:
+            if budget.get("pages", 0) <= 0:
+                break
+            budget["pages"] -= 1
+        page_url = _with_page(safe, start)
+        if not robots.allowed(page_url):
+            print(f"⚠ robots.txt で読まない形の URL なので読みません: {page_url[:120]}", file=sys.stderr)
+            break
+        items, total, size = parse_listing_page_full(fetch(page_url))
+        if not size:
             break
         out += items
-        start += 100
+        start += size
         if total is not None and start > total:
             break
-        time.sleep(delay)
+        if live:
+            time.sleep(max(MIN_DELAY, delay))
     return out[:limit]
 
 
@@ -1159,8 +1188,8 @@ def lost_models(bid_rows: list[dict], days: int = 60) -> list[tuple[str, str]]:
 
 def _model_url(brand: str, word: str) -> str:
     ja = [j for j, en in BRANDS_JA if en == brand]
-    q = urllib.parse.urlencode({"va": word, "vo": " ".join([brand] + ja), "auccat": "23636", "aucminprice": "1000",
-                                "s1": "end", "o1": "a", "n": "100"})
+    # 並べ替え（s1・o1）・件数（n）は robots.txt で Disallow → 付けない（終了が近い順は Mac の中で並べる。2026-11-19）
+    q = urllib.parse.urlencode({"va": word, "vo": " ".join([brand] + ja), "auccat": "23636", "aucminprice": "1000"})
     return f"https://auctions.yahoo.co.jp/search/search?{q}"
 
 
@@ -1234,11 +1263,23 @@ def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30,
 
 # 入札候補の並び（2026-11-18 ユーザー決定）: 売値（送料込み）が $99 以下の候補は下に回す（実績では1件あたりの利益が小さい）
 LOW_PRICE_USD = 99.0
+# 勝ちやすさ（win_score.py）がこの割合未満の機種は、入札候補の下に回す（2026-11-19 ユーザー決定。判定・上限額は変えない。config.toml [win_score] low_rate）
+LOW_WIN_RATE = 0.10
 
 
-def bid_priority(price_usd: float | None, hit: bool) -> int:
-    """小さいほど上: 0=売れ筋で$99超 1=$99超 2=売れ筋で$99以下 3=$99以下. 同じ順位の中は終了が近い順."""
-    return (2 if price_usd is not None and price_usd <= LOW_PRICE_USD else 0) + (0 if hit else 1)
+def bid_priority(price_usd: float | None, hit: bool, win_rate: float | None = None, low_win: float | None = None) -> int:
+    """小さいほど上: 0=売れ筋で$99超 1=$99超 2=売れ筋で$99以下 3=$99以下. 同じ順位の中は終了が近い順.
+    勝ちやすさが low_win（既定 1割）未満の機種は +4（全部の下）. 勝ちやすさの記録が無い機種は今までどおり."""
+    low = LOW_WIN_RATE if low_win is None else low_win
+    base = (2 if price_usd is not None and price_usd <= LOW_PRICE_USD else 0) + (0 if hit else 1)
+    return base + (4 if win_rate is not None and win_rate < low else 0)
+
+
+def win_label(rate: float | None, n: int | None) -> str:
+    """表示: 「勝ちやすさ 46%（直近12件）」. 記録が無ければ ""（拡張機能の winLine と同じ）."""
+    if rate is None or not n:
+        return ""
+    return f"勝ちやすさ {round(rate * 100)}%（直近{n}件）"
 
 
 def source_tier(row: dict) -> int:
@@ -1971,6 +2012,8 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                     for m in it.history_matches[:5]),
                 "想定販売価格USD": it.expected_price_usd,
                 "売れ筋": "売れ筋" if it.sold_hit else "",
+                "勝ちやすさ": it.win.get("rate") if it.win else None,
+                "勝ちやすさの件数": it.win.get("n") if it.win else None,
                 "価格の根拠": it.price_source,
                 "Net販売価格USD": c.get("net_sale_usd"),
                 "仕入価格(現在+国内送料)": c.get("purchase_jpy"),
@@ -1992,11 +2035,122 @@ def rows_for_output(items: list[Item]) -> list[dict]:
         )
     order = {"◎": 0, "○": 1, "要確認": 2, "×": 3}
     # ◎○は 売れ筋・$99超 を上に（bid_priority）、同じ順位の中は終了が近い順（入札の段取り順）。それ以外は余裕の大きい順
+    # 勝ちやすさが1割未満の機種は ◎○ の下に回す（2026-11-19 ユーザー決定。判定・上限額は変えない）
     rows.sort(key=lambda r: (order[r["判定"]],
-                             bid_priority(r["想定販売価格USD"], bool(r["売れ筋"])) if r["判定"] in ("◎", "○") else 0,
+                             bid_priority(r["想定販売価格USD"], bool(r["売れ筋"]), r["勝ちやすさ"]) if r["判定"] in ("◎", "○") else 0,
                              r["終了"] if r["判定"] in ("◎", "○") else "",
                              -(r["上限までの余裕"] or -10**9)))
     return rows
+
+
+# ---- 今日の予約リスト（2026-11-19 ユーザー決定: 1日8本の入札を目標。予約はユーザーがオークファンなどで入れる。プログラムは入札しない）
+# ◎○（根拠が販売履歴＝確認不要）のうち、終了が今日〜明日の出品を「勝ちやすさ × 利益（今の価格で落札したとき）」の大きい順に target 本。
+# 勝ちやすさの記録が無い機種は default_rate（全体の勝ちやすさの目安）で並べる。即決価格が上限額以下の出品は別枠で先頭（数えない）。
+# 1日の予約額の合計には上限を付けない（2026-11-19 ユーザー決定）
+RESERVE_FIELDS = ["順", "区分", "判定", "勝ちやすさ", "上限入札額(入札欄に入れる額)", "支払い額(ストアは税込)", "現在価格",
+                  "即決価格", "利益(今の価格で落札)", "終了", "商品名", "ヤフオク"]
+
+
+def _end_dt(s: str):
+    try:
+        d = datetime.fromisoformat(str(s).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    from datetime import timedelta, timezone
+    return d if d.tzinfo else d.replace(tzinfo=timezone(timedelta(hours=9)))
+
+
+def _is_acc(r: dict) -> bool:
+    return any(f in (r.get("注意") or "") for f in ("付属品のみ?", "アダプター等"))
+
+
+def reserve_list(rows: list[dict], now: datetime | None = None, target: int = 8, days: int = 2,
+                 default_rate: float = 0.2) -> tuple[list[dict], list[dict]]:
+    """(即決の別枠, 予約の候補 target 本). rows は rows_for_output の行."""
+    from datetime import timedelta, timezone
+    jst = timezone(timedelta(hours=9))
+    now = (now or datetime.now(jst)).astimezone(jst)
+    until = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days)  # 今日〜明日の終わりまで
+    cand = [r for r in rows if r["判定"] in ("◎", "○") and r.get("根拠の強さ") == "確認不要" and not _is_acc(r)
+            and r.get("上限入札額")]
+    instant = [r for r in cand if r.get("即決価格") and r["即決価格"] <= r["上限入札額"]]  # 拡張機能の「即決で今すぐ買える」と同じ
+    instant.sort(key=lambda r: -(r["上限入札額"] - r["即決価格"]))
+    ids = {r["ヤフオクURL"] for r in instant}
+    picks = []
+    for r in cand:
+        end = _end_dt(r.get("終了") or "")
+        if r["ヤフオクURL"] in ids or end is None or not (now < end < until):
+            continue
+        picks.append(r)
+    rate = lambda r: r["勝ちやすさ"] if r.get("勝ちやすさ") is not None else default_rate  # noqa: E731
+    picks.sort(key=lambda r: (-(rate(r) * max(0, r.get("利益(現在価格)") or 0)), r.get("終了") or ""))
+    return instant, picks[:max(0, target)]
+
+
+def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 10.0) -> list[dict]:
+    """予約リストの表（CSV・古物台帳「Mac_予約リスト」・レポートの一番上）."""
+    out = []
+    for kind, lst in (("即決（今すぐ買える）", instant), ("予約", picks)):
+        for r in lst:
+            mb = r["上限入札額"]
+            store = str(r.get("入札額の税", "")).startswith("ストア")
+            out.append({
+                "順": len(out) + 1, "区分": kind, "判定": r["判定"],
+                "勝ちやすさ": win_label(r.get("勝ちやすさ"), r.get("勝ちやすさの件数")).replace("勝ちやすさ ", "") or "記録なし",
+                "上限入札額(入札欄に入れる額)": mb,
+                "支払い額(ストアは税込)": round(mb * (1 + store_tax_pct / 100)) if store else mb,
+                "現在価格": r.get("現在価格"), "即決価格": r.get("即決価格"),
+                "利益(今の価格で落札)": r.get("利益(現在価格)"), "終了": r.get("終了") or "",
+                "商品名": r.get("タイトル") or "", "ヤフオク": r["ヤフオクURL"],
+            })
+    return out
+
+
+def write_reserve_csv(rows: list[dict], path: Path) -> None:
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=RESERVE_FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+
+
+def reserve_html(rows: list[dict], target: int) -> str:
+    e = html.escape
+    n_pick = sum(1 for r in rows if r["区分"] == "予約")
+    body = "".join(
+        f'<tr><td>{r["順"]}</td><td>{e(r["区分"])}<br><b>{e(r["判定"])}</b></td>'
+        f'<td><a href="{e(r["ヤフオク"])}" target="_blank" rel="noopener">{e(r["商品名"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small></td>'
+        f'<td><b>{_yen(r["上限入札額(入札欄に入れる額)"])}</b><br><small>支払い {_yen(r["支払い額(ストアは税込)"])}'
+        f'{"（税込）" if r["支払い額(ストアは税込)"] != r["上限入札額(入札欄に入れる額)"] else ""}</small></td>'
+        f'<td>{_yen(r["現在価格"])}{("<br><small>即決 " + _yen(r["即決価格"]) + "</small>") if r["即決価格"] else ""}</td>'
+        f'<td>{_yen(r["利益(今の価格で落札)"])}</td><td><small>{e(r["勝ちやすさ"])}</small></td></tr>' for r in rows)
+    return (f'<h2>今日の予約リスト（目標{target}本）: 予約 {n_pick}本'
+            f'{"・即決 " + str(len(rows) - n_pick) + "件" if len(rows) > n_pick else ""}</h2>'
+            '<p class="summary">◎○（根拠が販売履歴）のうち終了が今日〜明日の出品を、勝ちやすさ×利益の大きい順に。'
+            '「上限入札額」をオークファンなどの予約にそのまま入れてください（入札・予約はご自身で。プログラムは入札しません）。'
+            'ストアは入札額が税抜で、支払いは税込。即決は上限額以下で今すぐ買える出品（予約の本数には数えない）。</p>'
+            '<table class="tbl"><tr><th>#</th><th>区分</th><th>商品</th><th>上限入札額（入札欄に入れる額）</th><th>現在</th>'
+            f'<th>利益（今の価格）</th><th>勝ちやすさ</th></tr>{body}</table>'
+            if rows else f'<h2>今日の予約リスト（目標{target}本）</h2><p class="summary">今日〜明日に終わる ◎○（確認不要）はありません。</p>')
+
+
+def attach_win_scores(items: list[Item], cfg: dict, scores: dict | None = None) -> int:
+    """勝ちやすさ（data/win_score.csv）を機種（model_key の比較用キー）ごとに付ける. 付けた件数."""
+    if scores is None:
+        try:
+            import win_score
+            scores = win_score.load_scores(cfg=cfg)
+        except Exception as e:  # noqa: BLE001  無い・読めない → 今の並びのまま
+            print(f"勝ちやすさを読めませんでした（{e}）", file=sys.stderr)
+            scores = {}
+    n = 0
+    for it in items:
+        if not it.title or it.set_parts:
+            continue
+        w = scores.get(model_key(it.title)[1])
+        if w:
+            it.win = {"rate": w["rate"], "n": w["n"]}
+            n += 1
+    return n
 
 
 def write_csv(rows: list[dict], path: Path) -> None:
@@ -2006,11 +2160,21 @@ def write_csv(rows: list[dict], path: Path) -> None:
         w.writerows(rows)
 
 
-def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float) -> None:
+def write_markdown(rows: list[dict], path: Path, cfg: dict, fx: float, reserve: list[dict] | None = None,
+                   reserve_target: int = 8) -> None:
     j = cfg["judge"]
     lines = [
         f"# ヤフオク入札判断レポート（{datetime.now():%Y-%m-%d %H:%M}）",
         "",
+    ]
+    if reserve is not None:
+        lines += [f"## 今日の予約リスト（目標{reserve_target}本）", "",
+                  "上限入札額＝入札欄（予約）に入れる額。ストアは入札額が税抜、支払いは税込。入札・予約はご自身で。", ""]
+        lines += [f"{r['順']}. [{r['区分']}] {r['判定']} 上限 {_yen(r['上限入札額(入札欄に入れる額)'])}"
+                  f"（支払い {_yen(r['支払い額(ストアは税込)'])}） 終了 {r['終了'] or '-'} 勝ちやすさ {r['勝ちやすさ']} "
+                  f"{r['商品名'][:60]} {r['ヤフオク']}" for r in reserve] or ["今日〜明日に終わる ◎○（確認不要）はありません。"]
+        lines.append("")
+    lines += [
         f"- 為替: 1 USD = {fx:.2f} 円（円転ロス {cfg['fx']['conversion_loss_pct']}%）",
         f"- 基準: 利益 {j['min_profit_jpy']:,}円以上 かつ 利益率 {j['min_margin_pct']}%以上",
         f"- eBay手数料: FVF {cfg['ebay']['final_value_fee_pct']}% + 海外 {cfg['ebay']['international_fee_pct']}%"
@@ -2186,7 +2350,7 @@ def write_unpriced_csv(models: list[dict], path: Path) -> None:
 
 
 def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
-               unpriced: list[dict] | None = None) -> None:
+               unpriced: list[dict] | None = None, reserve: list[dict] | None = None, reserve_target: int = 8) -> None:
     e = html.escape
     j = cfg["judge"]
     cards: dict[str, list[str]] = {"安心": [], "チャレンジ": [], "要確認": [], "確認": []}
@@ -2212,7 +2376,7 @@ def write_html(rows: list[dict], path: Path, cfg: dict, fx: float,
   <p class="reason">{e(r['理由'])}{(' ・ ⚠ ' + e(r['注意'])) if r['注意'] else ''}</p>
   <div class="grid">
     <div><label>現在価格</label><b>{_yen(r['現在価格']) or '-'}</b><small>入札{r['入札数'] if r['入札数'] is not None else '-'}・即決{_yen(r['即決価格']) or '-'}</small></div>
-    <div class="hl"><label>入札する上限額（このまま入札）</label><b>{_yen(r['上限入札額']) or '-'}</b><small>{e(r["入札額の税"])} ・ 損益分岐 {_yen(r['損益分岐入札額']) or '-'}</small></div>
+    <div class="hl"><label>入札する上限額（このまま入札）</label><b>{_yen(r['上限入札額']) or '-'}</b><small>{e(r["入札額の税"])} ・ 損益分岐 {_yen(r['損益分岐入札額']) or '-'}{(' ・ ' + e(win_label(r.get('勝ちやすさ'), r.get('勝ちやすさの件数'))) + ('（1割未満なので下に）' if r.get('勝ちやすさ') is not None and r['勝ちやすさ'] < LOW_WIN_RATE else '')) if win_label(r.get('勝ちやすさ'), r.get('勝ちやすさの件数')) else ''}</small></div>
     <div><label>eBay相場（送料別）</label><b>{_usd(r['Net販売価格USD']) or '-'}</b><small>{e(r['価格の根拠'] or '根拠なし')} ・ 送料込み {_usd(r['想定販売価格USD'])}</small></div>
     <div><label>利益（現在価格）</label><b>{_yen(r['利益(現在価格)']) or '-'}</b><small>利益率 {r['利益率%'] if r['利益率%'] is not None else '-'}%</small></div>
     <div><label>仕入価格</label><b>{_yen(r['仕入価格(現在+国内送料)']) or '-'}</b><small>現在価格＋国内送料（{e(r["国内送料の根拠"])}）</small></div>
@@ -2250,7 +2414,9 @@ h2{{font-size:16px;margin:22px 0 6px}}details{{margin:12px 0}}.mini{{font-size:1
 <p class="summary">{datetime.now():%Y-%m-%d %H:%M} 作成 ・ {len(rows_all)}件（◎{counts['◎']} ○{counts['○']} 要確認{counts['要確認']} ×{counts['×']} ・ 付属品など{counts['付属品など']}件は除外）<br>
 為替 1USD={fx:.2f}円（円転ロス{cfg['fx']['conversion_loss_pct']}%） ・ 基準: 利益{j['min_profit_jpy']:,}円以上かつ利益率{j['min_margin_pct']}%以上 ・
 eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['international_fee_pct']}%+広告{cfg['ebay']['ad_rate_pct']}%+${cfg['ebay']['per_order_fee_usd']}<br>
-上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの相場は自動取得しません（規約順守）。soldリンク・Product Researchで確認してください。</p>
+上限入札額＝この金額で落札しても基準の利益が残る最大額（ヤフオクの入札単位で切り捨て）。eBayの相場は自動取得しません（規約順守）。soldリンク・Product Researchで確認してください。<br>
+勝ちやすさ＝ヤフオクの終わった出品のうち、今の上限入札額以下で終わった割合（{int(LOW_WIN_RATE * 100)}%未満の機種は下に。判定・上限額は変えていません）。</p>
+{reserve_html(reserve or [], reserve_target) if reserve is not None else ''}
 <h2>★ 安心枠（フォロー中のストア）{len(cards['安心'])}件</h2>
 <p class="summary">基準: 利益{j.get('trusted_min_profit_jpy', j['min_profit_jpy']):,}円以上かつ利益率{j.get('trusted_min_margin_pct', j['min_margin_pct'])}%以上（2026-11-16 から全体と同じ基準）。終了が近い順。</p>
 {''.join(cards['安心']) or '<p class="summary">ありません（ストアのページを開くと、フォロー中なら拡張機能が自動で安心ストアに登録します）。</p>'}
@@ -2299,7 +2465,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", type=Path, help="設定ファイル（既定: config.toml）")
     ap.add_argument("--fx", type=float, help="為替 1USD=何円（指定すると自動取得しない）")
     ap.add_argument("--offline", action="store_true", help="通信しない（手入力値と販売実績のみで計算）")
-    ap.add_argument("--delay", type=float, default=1.5, help="通信の間隔（秒）")
+    ap.add_argument("--delay", type=float, default=None, help="通信の間隔（秒。既定は config.toml [yahoo_search] delay_sec。1.5 未満にはしない）")
     ap.add_argument("--hit-searches", type=int, default=0,
                     help="売れ筋（販売実績で利益が出ていた機種）を名指しで探す検索を、利益の大きい順に何本足すか（1本100件。0で足さない）")
     ap.add_argument("--max-per-search", type=int, default=2000, help="検索URL1つあたりに調べる出品数（上から。100件ごとに1回アクセス）")
@@ -2307,6 +2473,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
+    ys = cfg.get("yahoo_search", {}) or {}
+    args.delay = max(MIN_DELAY, float(args.delay if args.delay is not None else ys.get("delay_sec", MIN_DELAY)))
+    global LOW_WIN_RATE
+    ws = cfg.get("win_score", {}) or {}
+    LOW_WIN_RATE = float(ws.get("low_rate", LOW_WIN_RATE))
     fx = args.fx
     if fx is None and cfg["fx"].get("auto_fetch") and not args.offline:
         fx = fetch_fx()
@@ -2334,10 +2505,18 @@ def main(argv: list[str] | None = None) -> int:
             hits = hit_search_urls(sales, cfg, fx, args.hit_searches, lost_models(bid_rows))
             print(f"売れ筋・負けた機種の検索: {len(hits)}本（{', '.join(lbl for _, lbl in hits[:8])}{' …' if len(hits) > 8 else ''}）",
                   file=sys.stderr)
-            searches += [(u, 100) for u, _ in hits]  # 1本100件（終了が近い順の1ページ）
+            searches += [(u, 100) for u, _ in hits]  # 1本100件
+        import robots
+        fixed = [(su, robots.removed_params(su)) for su, _ in searches]
+        fixed = [(su, ps) for su, ps in fixed if ps]
+        if fixed:
+            names = sorted({k for _, ps in fixed for k in ps})
+            print(f"robots.txt に合わせて引数（{'・'.join(names)}）を外して読む検索URL: {len(fixed)}本／{len(searches)}本"
+                  "（並べ替えは読んだ後に Mac の中で）", file=sys.stderr)
+        budget = {"pages": int(ys.get("max_pages_total", 300))}  # 1回に読む検索ページの合計の上限
         for su, lim in searches:
             try:
-                got = fetch_listing(su, lim, args.delay)
+                got = fetch_listing(su, lim, args.delay, budget)
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
                 print(f"検索URLを開けません({e.__class__.__name__}): {su}", file=sys.stderr)
                 continue
@@ -2348,6 +2527,9 @@ def main(argv: list[str] | None = None) -> int:
                     items.append(it)
                     new += 1
             print(f"検索URLから {new}件 抽出: {su[:80]}", file=sys.stderr)
+            if budget["pages"] <= 0:
+                print(f"検索ページの上限（{ys.get('max_pages_total', 300)}ページ）に達したので、残りの検索URLは読みません", file=sys.stderr)
+                break
             time.sleep(args.delay)
     if not items:
         print("ヤフオクのURLが見つかりません。", file=sys.stderr)
@@ -2377,14 +2559,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"仮◎○: {t}件（sold を見て、拡張機能で［登録］すると ◎○ に）", file=sys.stderr)
 
 
+    attach_win_scores(items, cfg)
     rows = rows_for_output(items)
     args.out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     unpriced = unpriced_models(items)
+    rs = cfg.get("reserve", {}) or {}
+    target = int(rs.get("target", 8))
+    instant, picks = reserve_list(rows, target=target, days=int(rs.get("days", 2)),
+                                  default_rate=float(ws.get("default_rate", 0.2)))
+    reserve = reserve_rows(instant, picks, cfg["yahoo"]["store_tax_pct"])
+    write_reserve_csv(reserve, args.out / f"reserve_list_{stamp}.csv")
+    print(f"今日の予約リスト: 予約 {len(picks)}本（目標{target}本）・即決 {len(instant)}件 → reserve_list_{stamp}.csv", file=sys.stderr)
     write_csv(rows, args.out / f"bid_report_{stamp}.csv")
     write_markdown([r for r in rows if r["判定"] != "要確認" or r["想定販売価格USD"]],
-                   args.out / f"bid_report_{stamp}.md", cfg, fx)
-    write_html(rows, args.out / f"bid_report_{stamp}.html", cfg, fx, unpriced)
+                   args.out / f"bid_report_{stamp}.md", cfg, fx, reserve, target)
+    write_html(rows, args.out / f"bid_report_{stamp}.html", cfg, fx, unpriced, reserve, target)
     write_unpriced_csv(unpriced, args.out / f"unpriced_models_{stamp}.csv")
 
     priced = sum(1 for it in items if it.expected_price_usd is not None)

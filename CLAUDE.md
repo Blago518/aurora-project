@@ -27,7 +27,9 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 ## プログラム（tools/）
 | ファイル | 役割 |
 |---|---|
-| `appraise.py` | 鑑定の本体。検索URL→出品一覧→相場照合→利益・上限入札額→レポート |
+| `appraise.py` | 鑑定の本体。検索URL→出品一覧→相場照合→利益・上限入札額→レポート。一番上に「今日の予約リスト（目標8本）」（◎○・確認不要・終了が今日〜明日を 勝ちやすさ×利益 の順。即決で上限以下は別枠）→ `reports/reserve_list_*.csv` → 古物台帳「Mac_予約リスト」 |
+| `robots.py`・`yahoo_robots.txt` | ヤフオクの robots.txt で読む前に URL を検査し、Disallow の引数（n=・s1=・o1=・select= など）を外す（7日ごとに robots.txt を取り直して data/ に保存。読めなければ同梱の写し）。appraise.py・win_score.py・拡張機能の［続けて鑑定］が使う |
+| `win_score.py` | **勝ちやすさ**: 入札リストの ◎○・売れ筋・負けた機種について、ヤフオクの終わった出品（`/closedsearch/closedsearch?p=`、Allow の形）を読み、今の判定ロジックの上限入札額以下で終わった割合・月の件数を `data/win_score.csv` に（1回30機種・1機種2ページ・3秒間隔・同じ機種は7日ごと）。1割未満の機種は入札リスト・拡張機能の下に回す（判定・上限額は変えない） |
 | `extension_template.js` | Chrome拡張機能の中身（判定は appraise.py と同一） |
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv`。台帳に豪ドル・ポンドのまま記入された販売金額は、eBay の取引レポート（data/ebay_report.csv）の換算レートでドルに直す |
@@ -56,6 +58,7 @@ python3 tools/build_extension.py             # 拡張機能を作り直す → c
 python3 tools/build_store.py                 # 店舗アプリのデータ → iCloud Drive › aurora › store_data.json
 python3 tools/build_knowledge.py             # 相場ノート・機種ノートを更新
 python3 tools/build_dashboard.py             # 数字のグラフ → reports/dashboard.html を開く
+python3 tools/win_score.py --max-models 5    # 勝ちやすさ（ふだんは update_all.py が毎朝）
 python3 -m unittest discover -s tools        # テスト
 ```
 
@@ -66,4 +69,5 @@ python3 -m unittest discover -s tools        # テスト
 
 ## 環境メモ
 - クラウド環境からは eBay がアクセスを拒否する（403）。eBay の相場はリンクを出すか、ユーザーのMacで取得する。
-- ヤフオクの検索結果ページは `__NEXT_DATA__`（JSON）に1ページ100件分の価格・入札数・送料・終了時刻が入っている。
+- ヤフオクの検索結果ページは `__NEXT_DATA__`（JSON）に1ページ分（既定50件）の価格・入札数・送料・終了時刻が入っている。
+- ヤフオクは robots.txt の Allow の形だけ読む（2026-11-19 ユーザー決定）。`/search/`・`/seller/` の n=・s1=・o1= などは付けない（`tools/robots.py`）。ページ送り b= は可。`/closedsearch/closedsearch?p=` は Allow。
