@@ -383,6 +383,17 @@ class SheetMemoAndKnowledge(unittest.TestCase):
         text = "機種,相場$（送料別）,状態,日付\nNikon FM2,$190,MINT,2026-11-18\n空欄,,,\nCanon AE-1,abc,,\n"
         self.assertEqual(ls.sheet_memo_rows(text, 40.0), {"Nikon FM2": (230.0, "相場メモ(MINT)")})
 
+    def test_research_rows(self):
+        # 講師価格を優先、無ければ売値$。送料無料とみなして −$30 し、計算用に送料 $40 を足す（2026-11-19）
+        text = ("品名,売値$,講師価格,状態,日付\nContax Planar 50mm f/1.4 AEJ,189.99,,Mint,2026/7/20\n"
+                "Canon FD 35mm f/3.5 S.C.,79.00,60.00,N Mint,2026/7/21\n空,,,,\nNikon X,20,,,\n")
+        rows = ls.research_rows(text, 40.0, 30.0)
+        self.assertEqual([(r["title"], r["sold_price_usd"], r["source"]) for r in rows],
+                         [("Contax Planar 50mm f/1.4 AEJ", 199.99, "リサーチ(Mint)"), ("Canon FD 35mm f/3.5 S.C.", 70.0, "リサーチ(N Mint)")])
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(ls, "fetch", return_value=text):
+            self.assertEqual(ls.sync_research("u", "k", dest=Path(d) / "r.csv"), 2)
+            self.assertIn("リサーチ(Mint)", (Path(d) / "r.csv").read_text(encoding="utf-8-sig"))
+
     def test_knowledge(self):
         text = '"ファイル名","本文"\n"狙い目スペック","# 狙い目\n50mm は f/1.2 より明るい"\n"a/b","x"\n'
         with tempfile.TemporaryDirectory() as d, mock.patch.object(ls, "fetch", return_value=text):

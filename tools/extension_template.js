@@ -201,7 +201,7 @@
       const score = inter(qt, rt) / rt.size;
       if (score >= 0.6) scored.push([score, r]);
     }
-    for (const tier of [0, 1, 2]) {
+    for (const tier of [0, 1, 2, 3]) {  // 3 = リサーチ（推定）
       const c = scored.filter(([, r]) => r.tier === tier);
       if (c.length) return c.sort((a, b) => b[0] - a[0]).slice(0, 10).map(([, r]) => r);
     }
@@ -338,7 +338,7 @@
   function conditionOf(r) {
     // 頒布会リストのコンディション欄・手で直した相場の状態（source の括弧内。例: 頒布会リスト(Near Mint 小傷)・相場メモ(MINT)）を先に、
     // 無ければ商品名を見る
-    const h = String(r.source || "").normalize("NFKC").match(/^(頒布会リスト|相場メモ)\((.*?)\)?$/);
+    const h = String(r.source || "").normalize("NFKC").match(/^(頒布会リスト|相場メモ|リサーチ)\((.*?)\)?$/);
     for (const t of [h ? h[2] : "", String(r.title || "").normalize("NFKC")]) {
       for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return out.includes("$1") ? out.replace("$1", m[1]) : out; }
     }
@@ -1426,7 +1426,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const rank = (i) => (i.acc ? 9 : i.mark === "◎" ? 0 : i.mark === "○" ? 1 : i.mark === "要確認" && i.calc ? 2 : i.calc ? 3 : 4);
     const list = all.sort((a, b) => rank(a) - rank(b) || (b.calc && b.calc.profit || 0) - (a.calc && a.calc.profit || 0));
     const buy = list.filter((i) => rank(i) <= 1).length, buyWeak = list.filter((i) => rank(i) <= 1 && (i.tent || (i.refs[0] && i.refs[0].tier >= 3))).length;
-    const tier = (r) => (r == null ? "" : ["自分の販売実績", "Chatwork実績", "頒布会リスト（出品価格）", "鑑定表（推定）"][r] || "");
+    const tier = (r) => (r == null ? "" : ["自分の販売実績", "Chatwork実績", "頒布会リスト", "鑑定表・リサーチ（推定）"][r] || "");
     const row = (i) => {
       const c = i.acc ? null : i.calc, r = i.refs[0] || {}, e = ebay(i.q);
       const cls = i.mark === "◎" ? "g" : i.mark === "○" ? "o" : "x";

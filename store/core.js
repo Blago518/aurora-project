@@ -171,7 +171,7 @@ function makeCore(DATA) {
       const score = inter(qt, rt) / rt.size;
       if (score >= 0.6) scored.push([score, r]);
     }
-    for (const tier of [0, 1, 2]) {
+    for (const tier of [0, 1, 2, 3]) {  // 3 = リサーチ（推定）
       const c = scored.filter(([, r]) => r.tier === tier);
       if (c.length) return c.sort((a, b) => b[0] - a[0]).slice(0, 10).map(([, r]) => r);
     }
@@ -308,7 +308,7 @@ function makeCore(DATA) {
   function conditionOf(r) {
     // 頒布会リストのコンディション欄・手で直した相場の状態（source の括弧内。例: 頒布会リスト(Near Mint 小傷)・相場メモ(MINT)）を先に、
     // 無ければ商品名を見る
-    const h = String(r.source || "").normalize("NFKC").match(/^(頒布会リスト|相場メモ)\((.*?)\)?$/);
+    const h = String(r.source || "").normalize("NFKC").match(/^(頒布会リスト|相場メモ|リサーチ)\((.*?)\)?$/);
     for (const t of [h ? h[2] : "", String(r.title || "").normalize("NFKC")]) {
       for (const [re, out] of COND_RULES) { const m = t.match(re); if (m) return out.includes("$1") ? out.replace("$1", m[1]) : out; }
     }

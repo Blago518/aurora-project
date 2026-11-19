@@ -61,6 +61,8 @@ BID_SHEET = "入札結果"
 SEARCH_SHEET = "検索URL"
 PAST_BIDS_SHEET = "共有_過去の入札"  # 以前の「入札分析」ファイルの入札履歴（自分の入札額・最終落札価格）。Claude が値だけ写した
 PAST_BIDS = DATA / "bid_history.csv"
+RESEARCH_SHEET = "共有_リサーチ相場"  # 以前の入札分析ファイル「リサーチ貼付」の品名・eBay 売値$・講師価格・状態（Claude が値だけ写した）→ data/research_prices.csv
+RESEARCH = DATA / "research_prices.csv"
 MEMO_SHEET = "共有_相場メモ"  # チャットで決めた相場（Claude が書く: 機種・相場$（送料別）・状態・日付）→ data/price_memo.csv
 KNOWLEDGE_SHEET = "共有_ナレッジ"  # 講座資料などの要点（Claude が書く: ファイル名・本文）→ knowledge/講座/〈ファイル名〉.md
 UNPRICED_SHEET = "Mac_未登録機種"
@@ -278,6 +280,7 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_decisions(url, key, dry_run)
     sync_search_urls(url, key, dry_run)
     sync_past_bids(url, key, dry_run)
+    sync_research(url, key, dry_run)
     sync_sheet_memo(url, key, dry_run)
     sync_knowledge(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
@@ -584,6 +587,56 @@ def sync_past_bids(url: str, key: str, dry_run: bool = False, dest: Path | None 
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         w.writerows(rows)
+    return len(rows)
+
+
+def research_rows(text: str, ship_usd: float, free_ship_usd: float) -> list[dict]:
+    """「共有_リサーチ相場」の CSV → reference_prices と同じ形の行. 講師価格があれば講師価格、無ければ売値$.
+    売れた額か送料込みかが分からないので保守的に、送料無料の出品とみなして −free_ship_usd を商品代（送料別）とし、
+    計算用に一律の送料 ship_usd を足して送料込みにする（2026-11-19 ユーザー決定: 確認してから入札の扱い）."""
+    out = []
+    for r in pick_columns(text, ["品名", "売値$", "講師価格", "状態", "日付"]) or []:
+        title = (r.get("品名") or "").strip()
+        v = None
+        for k in ("講師価格", "売値$"):
+            try:
+                v = float(str(r.get(k, "")).replace("$", "").replace(",", "").strip())
+                if v > 0:
+                    break
+            except ValueError:
+                v = None
+        if not title or not v or v <= free_ship_usd:
+            continue
+        cond = (r.get("状態") or "").strip()
+        out.append({"date": (r.get("日付") or "").strip(), "title": title,
+                    "sold_price_usd": round(v - free_ship_usd + ship_usd, 2), "shipping_charged_usd": 0,
+                    "source": f"リサーチ({cond})" if cond else "リサーチ"})
+    return out
+
+
+def sync_research(url: str, key: str, dry_run: bool = False, dest: Path | None = None) -> int | None:
+    """古物台帳「共有_リサーチ相場」→ data/research_prices.csv（まるごと置き換え）. 相場の根拠「リサーチ（推定）」."""
+    import appraise as ba
+    try:
+        text = fetch(url, key, RESEARCH_SHEET)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"リサーチ相場: 読み込めませんでした（{e}）", file=sys.stderr)
+        return None
+    if text.startswith("NO_SHEET:") or "品名" not in text[:300]:
+        return None
+    cfg = ba.load_config(None)
+    rows = research_rows(text, float(cfg["shipping"].get("deduction_usd", 0)),
+                         float(cfg["judge"].get("active_free_ship_deduction_usd", 30)))
+    if dry_run or not rows:
+        return len(rows)
+    dest = dest or RESEARCH
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cols = ["date", "title", "ebay_query", "sold_price_usd", "shipping_charged_usd", "purchase_jpy", "ebay_url", "source"]
+    with open(dest, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+    print(f"リサーチ相場: {len(rows)}件 → data/research_prices.csv", file=sys.stderr)
     return len(rows)
 
 
