@@ -244,6 +244,14 @@ def build(cfg: dict, fx: float) -> dict:
     data["recs"] = recommendations(rows, cfg, fx)
     data["bids"] = bid_candidates()
     data["kind"] = "aurora-store"
+    # 店舗アプリ →「共有_店舗」（あとで調べる・買った）の送り先。鍵は共有_店舗に行を足すことしかできない（ledger_sync.store_endpoint）
+    try:
+        import ledger_sync
+        ep = ledger_sync.store_endpoint()
+    except Exception:  # キーチェーンの無い環境（テスト・クラウド）
+        ep = None
+    if ep:
+        data["inbox"] = ep
     return data
 
 
