@@ -107,3 +107,31 @@ class JstDates(unittest.TestCase):
         self.assertEqual(ebay_api.jst_date("2026-11-19T10:00:00.123456+00:00"), "2026-11-19")
         self.assertEqual(ebay_api.jst_date("2026-11-16"), "2026-11-16")
         self.assertEqual(ebay_api.jst_date(""), "")
+
+
+class NewestMemoWins(unittest.TestCase):
+    """2026-11-20 ユーザー指摘: 相場メモ「Canon X10 $540」と新しく直した「$320」の真ん中 $430 で計算され、直しても変わらなかった."""
+
+    def test_python(self):
+        rows = [{"title": "Canon X10", "price": 580.0, "date": "2026-10-01", "source": "相場メモ"},
+                {"title": "Canon EOS Kiss X10", "price": 360.0, "date": "2026-11-20", "source": "相場メモ"}]
+        for r in rows:
+            r["_tokens"] = ba._tokens(r["title"])
+        m = ba.match_prefer_memo(ba.title_to_query("Canon EOS Kiss X10 ボディ"), rows, [])
+        self.assertEqual([r["price"] for r in m], [360.0])
+
+    def test_js_local_newest(self):
+        import shutil
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        from test_trust import run_js
+        data = bx.build_data(CFG, 150.0)
+        got = run_js(data, (
+            "const tok=(t)=>[...m.tokensOf(t)];"
+            "const data={title:'Canon X10',price:580,tier:0,source:'相場メモ',tokens:tok('Canon X10'),d:'2026-10-01'};"
+            "const old={title:'Canon EOS Kiss X10',price:400,tier:0,source:'相場メモ',tokens:tok('Canon EOS Kiss X10'),local:true,t:1};"
+            "const neu={title:'Canon Kiss X10',price:360,tier:0,source:'相場メモ',tokens:tok('Canon Kiss X10'),local:true,t:2};"
+            "const q=m.titleToQuery('Canon EOS Kiss X10 ボディ')+' Canon EOS Kiss X10 ボディ';"
+            "console.log(JSON.stringify(m.matchPreferMemo(q,[data,old,neu],[]).map(r=>r.price)));"))
+        self.assertEqual(got, [360])

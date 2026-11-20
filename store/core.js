@@ -386,9 +386,18 @@ function makeCore(DATA) {
   const median = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
   // 相場メモ（手で直した相場）は過去データより優先する。appraise.py の analyze() と同じ
   const isMemo = (r) => String(r.source || "").startsWith("相場メモ");
+  // 相場メモ（手で直した相場）が同じ出品に2つ以上当たったら、いちばん新しい1つだけを使う（2026-11-20 ユーザー指摘:
+  // 「Canon X10 $540」と新しく［直す］した「$320」の真ん中 $430 で計算され、直しても変わらなかった）。
+  // 新しさ: このブラウザで直したもの（t＝直した時刻）＞ Mac の相場メモ（d＝日付）。appraise.match_prefer_memo と同じ
+  function newestMemo(m) {
+    if (m.length < 2) return m;
+    const key = (r) => [r.local ? 1 : 0, r.t || 0, String(r.d || "")];
+    const best = m.reduce((a, b) => { const x = key(a), y = key(b); return (y[0] - x[0] || y[1] - x[1] || (y[2] > x[2] ? 1 : y[2] < x[2] ? -1 : 0)) > 0 ? b : a; });
+    return [best];
+  }
   function matchPreferMemo(query, memoRefsList, otherRefs) {
     const m = matchRefs(query, memoRefsList);
-    return m.length ? m : matchRefs(query, otherRefs);
+    return m.length ? newestMemo(m) : matchRefs(query, otherRefs);
   }
 
   // 過去データの状態（商品名の MINT・Exc+++ など。頒布会リストはコンディション欄）。表示用
