@@ -416,9 +416,18 @@
   const median = (a) => { const s = [...a].sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
   // 相場メモ（手で直した相場）は過去データより優先する。appraise.py の analyze() と同じ
   const isMemo = (r) => String(r.source || "").startsWith("相場メモ");
+  // 相場メモ（手で直した相場）が同じ出品に2つ以上当たったら、いちばん新しい1つだけを使う（2026-11-20 ユーザー指摘:
+  // 「Canon X10 $540」と新しく［直す］した「$320」の真ん中 $430 で計算され、直しても変わらなかった）。
+  // 新しさ: このブラウザで直したもの（t＝直した時刻）＞ Mac の相場メモ（d＝日付）。appraise.match_prefer_memo と同じ
+  function newestMemo(m) {
+    if (m.length < 2) return m;
+    const key = (r) => [r.local ? 1 : 0, r.t || 0, String(r.d || "")];
+    const best = m.reduce((a, b) => { const x = key(a), y = key(b); return (y[0] - x[0] || y[1] - x[1] || (y[2] > x[2] ? 1 : y[2] < x[2] ? -1 : 0)) > 0 ? b : a; });
+    return [best];
+  }
   function matchPreferMemo(query, memoRefsList, otherRefs) {
     const m = matchRefs(query, memoRefsList);
-    return m.length ? m : matchRefs(query, otherRefs);
+    return m.length ? newestMemo(m) : matchRefs(query, otherRefs);
   }
 
   // 過去データの状態（商品名の MINT・Exc+++ など。頒布会リストはコンディション欄）。表示用
@@ -686,7 +695,8 @@
   function memoRefs() {
     return Object.entries(load(LS_MEMO, {})).map(([title, v]) => {
       const m = memoVal(v);
-      return { title, price: m.usd, tier: 0, source: memoSource(m.cond), tokens: [...tokensOf(title)], acc: false };
+      return { title, price: m.usd, tier: 0, source: memoSource(m.cond), tokens: [...tokensOf(title)], acc: false,
+        local: true, t: (v && typeof v === "object" && v.t) || 0 };
     });
   }
   // ［直す］［登録］の入力欄（金額＋状態）
@@ -1487,7 +1497,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       const v = Math.round((vNet + SHIP()) * 100) / 100;  // 入力は送料別 → 保存は送料込み
       const memo = load(LS_MEMO, {});
       addMemoHist(k, memo[k], v, sel ? sel.value : "");  // 上書きする前の相場も残す（相場の上がり下がりを見る）
-      memo[k] = { usd: v, cond: sel ? sel.value : "" }; save(LS_MEMO, memo);
+      memo[k] = { usd: v, cond: sel ? sel.value : "", t: Date.now() }; save(LS_MEMO, memo);  // t: 直した時刻（新しい相場メモを優先）
       // 押した行の出品: 選んだ状態＝この出品の状態（入れた金額がそのままこの行の相場になる）。行は今の欄に残す
       const link = btn.closest("tr") && btn.closest("tr").querySelector('a[href*="/auction/"]');
       const id = link ? (link.getAttribute("href").match(/auction\/([^/?#]+)/) || [])[1] : "";

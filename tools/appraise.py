@@ -1970,7 +1970,11 @@ def is_memo(row: dict) -> bool:
 
 
 def match_prefer_memo(query: str, memo: list[dict], others: list[dict]) -> list[dict]:
-    return match_sales(query, memo) or match_sales(query, others)
+    """相場メモが2つ以上当たったら、いちばん新しい1つだけ（2026-11-20: 古い登録と新しい登録の真ん中で計算されていた）. 拡張機能の newestMemo と同じ."""
+    m = match_sales(query, memo)
+    if len(m) > 1:
+        return [max(m, key=lambda r: norm_date(r.get("date", "")))]
+    return m or match_sales(query, others)
 
 
 def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline: bool,
@@ -1982,7 +1986,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
     for i, item in enumerate(items, 1):
         if not item.prefilled:
             print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)
-        elif i % 1000 == 0 or i == len(items):  # 検索結果の出品は数が多く静かなので、進み具合を出す（2026-11-20 ユーザー「止まってる？」）
+        elif len(items) >= 1000 and (i % 1000 == 0 or i == len(items)):  # 検索結果の出品は数が多く静かなので、進み具合を出す（2026-11-20 ユーザー「止まってる？」）
             print(f"相場に照らし中… {i:,}/{len(items):,}件", file=sys.stderr)
         if not offline and not item.prefilled:
             enrich_from_yahoo(item)
