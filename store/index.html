@@ -282,7 +282,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.9";
+  var APP_VERSION = "2026.11.21.10";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -412,13 +412,11 @@ function conds(refs) {
     .map((x) => `${esc(core.conditionOf(x) || "記載なし")} ${nusd(x.price)}${core.isMemo(x) ? "（直した相場）" : ""}`).join("<br>");
 }
 // 出せる額が1,000円未満は「購入しない」と出す（40円まで出せる、のような使えない数字を出さない。2026-11-21 ユーザー指摘。言葉は同日ユーザー指定。表示だけで判定は同じ）
+// ただし値札が入っていて基準を満たす（緑）ときは、1,000円未満でもその額を出す（ジャンクかごの数百円の値札で色と言葉が食い違わないように）
 const TINY_MAX = 1000;
-const canPay = (c) => c && c.maxBid >= TINY_MAX;
-// その品に当たる利益の基準（売値$99以下の安い物は4,000円。core.calculate と同じ）
-function minProfitFor(usd) {
-  const g = DATA.cfg, rev = usd + g.buyerShippingUsd;
-  return g.lowPriceUsd && rev <= g.lowPriceUsd ? Math.max(g.minProfit || 0, g.lowPriceMinProfit || 0) : (g.minProfit || 0);
-}
+const canPay = (c, ok) => !!c && c.maxBid > 0 && (c.maxBid >= TINY_MAX || !!ok);
+// 利益の基準は計算した側（core.calculate の minProfit。売値・送料込み$99以下は4,000円）をそのまま出す
+const lowNote = (c) => (c.minProfit > (DATA.cfg.minProfit || 0) ? `（売値$${DATA.cfg.lowPriceUsd}以下・送料込みの安い物）` : "");
 function renderResult(name, price, r) {
   const el = $("result");
   if (!name.trim()) { el.hidden = true; return; }
@@ -427,24 +425,24 @@ function renderResult(name, price, r) {
   $("capRow").hidden = false;
   const c = r.calc, ok = r.mark === "◎" || r.mark === "○";
   // 利益を主役に（2026-11-21 ユーザー決定「利益を一番大きく」）。言葉（買い・見送り）と ◎○× は出さない。色: 緑＝基準を満たす／赤＝満たさない／橙＝要確認
-  const cls = !c ? "w" : ok || (price == null && canPay(c)) ? "g" : r.mark === "要確認" ? "w" : "x";
+  const cls = !c ? "w" : ok || (price == null && canPay(c, ok)) ? "g" : r.mark === "要確認" ? "w" : "x";
   const sw = core.sweetSpot ? core.sweetSpot(name) : "";
   const sign = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP") + "円";
   const why = !c ? "販売実績に無い機種。下の Sold で調べて、右の欄に額を入れる"
-    : price == null && canPay(c) ? "値札を入れると利益を出します"
+    : price == null && canPay(c, ok) ? "値札を入れると利益を出します"
     : r.mark === "要確認" ? storeReason(r.reason).replace(/^ジャンク・/, "")
     : /光学難/.test(r.reason) ? storeReason(r.reason).replace(/^ジャンク・/, "")
-    : !canPay(c) ? `この相場${minProfitFor(r.usd) > (DATA.cfg.minProfit || 0) ? `（売値$${DATA.cfg.lowPriceUsd}以下の安い物）` : ""}では利益${minProfitFor(r.usd).toLocaleString()}円の基準に届かない`
+    : ok && price != null ? `値札 ${yen(price)} で買ったときの利益`
+    : !canPay(c, ok) ? `この相場${lowNote(c)}では利益${c.minProfit.toLocaleString()}円の基準に届かない`
     : price == null ? "値札を入れると利益を出します"
-    : ok ? `値札 ${yen(price)} で買ったときの利益`
-    : `値札 ${yen(price)} では基準（利益${minProfitFor(r.usd).toLocaleString()}円・${DATA.cfg.minMarginPct}%）に届かない`;
-  const head = !c ? "相場なし" : price != null ? sign(c.profit) : canPay(c) ? yen(c.maxBid) + "まで" : "購入しない";
+    : `値札 ${yen(price)} では基準（利益${c.minProfit.toLocaleString()}円・${DATA.cfg.minMarginPct}%）に届かない`;
+  const head = !c ? "相場なし" : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない";
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
     <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
   // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
-    : (canPay(c) ? (price != null ? `<b>${yen(c.maxBid)}</b> まで出せる` : "") + (m ? `<span class="s">この額で利益 ${yen(m.profit)}</span>` : "")
+    : (canPay(c, ok) ? (price != null ? `<b>${yen(c.maxBid)}</b> まで出せる` : "") + (m ? `<span class="s">この額で利益 ${yen(m.profit)}</span>` : "")
       : `<b>購入しない</b>`)
       + (sold ? `<span class="s">Sold $${pick.sold.usd}${pick.sold.cond ? "（" + esc(pick.sold.cond) + "）" : ""} で計算</span>` : "");
   $("resTop").innerHTML = h;
@@ -793,9 +791,9 @@ function renderShelf(note) {
   const buy = rows.filter((x) => x.r.calc && (x.r.mark === "◎" || x.r.mark === "○")).length;
   el.innerHTML = `<div class="row" style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">読み取り ${rows.length}件 ― 基準を満たす ${buy}件</h2><button class="mini" data-clear="1" type="button">新しい棚</button></div>${note ? `<div class="s">${esc(note)}</div>` : ""}` + rows.map((x, i) => {
     const r = x.r, c = r.calc, ok = r.mark === "◎" || r.mark === "○", cls = !c ? "w" : ok ? "g" : r.mark === "要確認" ? "w" : "x";
-    const big = !c ? "相場なし" : x.price == null ? (canPay(c) ? yen(c.maxBid) + "まで" : "購入しない")
+    const big = !c ? "相場なし" : x.price == null ? (canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない")
       : (c.profit > 0 ? "+" : c.profit < 0 ? "−" : "") + Math.abs(Math.round(c.profit)).toLocaleString("ja-JP") + "円";
-    const sub = !c ? "" : x.price == null ? "値札が読めない" : `値札 ${yen(x.price)}／${canPay(c) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;
+    const sub = !c ? "" : x.price == null ? "値札が読めない" : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;
     return `<div class="shelf"><div class="tt"><b>${core.sweetSpot && core.sweetSpot(x.name) ? "★ " : ""}${esc(x.name)}</b><span class="s">${esc(sub)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
       <div class="pf ${cls}">${esc(big)}</div>
       <button data-shelf="${i}">見る</button></div>`;
