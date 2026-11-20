@@ -43,6 +43,61 @@ DATA = ROOT / "data"
 BACKUP = DATA / "backup"
 sys.path.insert(0, str(HERE))
 
+# ---- 更新の記録 → 古物台帳「Mac_更新ログ」（2026-11-20: Mac で止まっても、クラウドのサトシが毎朝自分で気づけるように）
+LOG_SHEET = "Mac_更新ログ"
+LOG_LINES: list[str] = []
+PROBLEM_RE = re.compile(r"⚠|Traceback|Error|エラー|できませんでした|送れませんでした|失敗")
+NOISE_RE = re.compile(r"落札相場: 読めませんでした|HTTP Error 404")  # 終わって消えた出品（毎日ある）は問題にしない
+SUMMARY_RE = re.compile(r"^(=====|今日の予約リスト|説明文チェック|仮◎○|📋 入札リスト|eBay の取引|返品の一覧|落札相場:|勝ちやすさ:|"
+                        r"相場メモ|出力:|✅ 完了|入札結果:|直近\d+日の(注文|取引)|古物台帳:)")
+
+
+class _Tee:
+    """画面に出しつつ、1行ずつ LOG_LINES にためる（Mac_更新ログ に送る）."""
+
+    def __init__(self, base):
+        self.base, self.buf = base, ""
+
+    def write(self, t):
+        self.base.write(t)
+        self.buf += t
+        while "\n" in self.buf:
+            line, self.buf = self.buf.split("\n", 1)
+            LOG_LINES.append(line.rstrip())
+        return len(t)
+
+    def flush(self):
+        self.base.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.base, name)
+
+
+def log_csv(ok: bool, started: datetime) -> str:
+    """Mac_更新ログ の中身: 日時・結果、問題の行、まとめの行（新しい問題を先に）."""
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["種類", "内容"])
+    w.writerow(["日時", f"{started:%Y-%m-%d %H:%M}〜{datetime.now():%H:%M}"])
+    w.writerow(["結果", "完了" if ok else "一部でエラー"])
+    lines = [x.strip() for x in LOG_LINES if x.strip()]
+    probs = [x for x in lines if PROBLEM_RE.search(x) and not NOISE_RE.search(x)]
+    for x in probs[:80]:
+        w.writerow(["問題", x[:300]])
+    for x in [x for x in lines if SUMMARY_RE.search(x) and not NOISE_RE.search(x)][:80]:
+        w.writerow(["まとめ", x[:300]])
+    return buf.getvalue()
+
+
+def upload_log(ok: bool, started: datetime) -> None:
+    try:
+        import ledger_sync
+        ledger_sync.post_sheet(LOG_SHEET, log_csv(ok, started))
+    except Exception as e:  # noqa: BLE001  送れなくても更新は終わっている
+        print(f"  ⚠ 更新の記録を台帳に送れませんでした（{e}）")
+
 
 def _text_head(path: Path, n: int = 4000) -> str:
     raw = path.read_bytes()[:n * 3]
@@ -110,7 +165,13 @@ def run(script: str, *args: str) -> bool:
     if not p.exists():
         return True
     print(f"\n▶ {script}")
-    ok = subprocess.call([sys.executable, str(p), *args], cwd=ROOT) == 0
+    # 子のプログラムの表示も Mac_更新ログ に残すため、1行ずつ受け取って画面に出す（すぐ出るよう PYTHONUNBUFFERED）
+    import os
+    proc = subprocess.Popen([sys.executable, str(p), *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace", env={**os.environ, "PYTHONUNBUFFERED": "1"})
+    for line in proc.stdout:
+        sys.stdout.write(line)
+    ok = proc.wait() == 0
     if not ok:
         print(f"  ⚠ {script} でエラーが出ました（上の表示を Claude に送ってください）")
     return ok
@@ -130,6 +191,9 @@ def main(argv=None) -> int:
     ap.add_argument("--notify", action="store_true", help="終わったら Mac の通知を出す（自動実行用）")
     ap.add_argument("--no-bids", action="store_true", help="入札リスト（data/search_urls.txt の鑑定）を作らない")
     args = ap.parse_args(argv)
+    started = datetime.now()
+    if not isinstance(sys.stdout, _Tee):
+        sys.stdout, sys.stderr = _Tee(sys.stdout), _Tee(sys.stderr)
 
     print(f"===== {datetime.now():%Y-%m-%d %H:%M} 相場データの更新 =====")
     print("▶ 古物台帳（スプレッドシート）")
@@ -175,6 +239,8 @@ def main(argv=None) -> int:
     if not args.dry_run:
         ledger_sync.upload_bids()  # 入札の記録 → 古物台帳「入札結果」（ゼニガメが負け方を学ぶ）
     print("\n" + ("✅ 完了" if ok else "⚠ 一部でエラーがありました"))
+    if not args.dry_run:
+        upload_log(ok, started)  # → 古物台帳「Mac_更新ログ」（サトシが毎朝確かめる）
     print("  Chrome: 新しい相場はヤフオクのページを開き直すだけで反映（↻ は拡張機能のプログラムを新しくしたときだけ）")
     if args.notify:
         msg = "相場データを更新しました" if ok else "相場データの更新で一部エラー（reports/update_all.log）"

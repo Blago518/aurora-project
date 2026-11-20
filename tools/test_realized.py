@@ -135,3 +135,20 @@ class NewestMemoWins(unittest.TestCase):
             "const q=m.titleToQuery('Canon EOS Kiss X10 ボディ')+' Canon EOS Kiss X10 ボディ';"
             "console.log(JSON.stringify(m.matchPreferMemo(q,[data,old,neu],[]).map(r=>r.price)));"))
         self.assertEqual(got, [360])
+
+
+class UpdateLog(unittest.TestCase):
+    """Mac_更新ログ（2026-11-20）: Mac の更新で出た問題をクラウドのサトシが毎朝見られる."""
+
+    def test_log_csv(self):
+        import update_all as u
+        from datetime import datetime
+        u.LOG_LINES[:] = ["===== 2026-11-20 13:00 相場データの更新 =====",
+                          "  落札相場: 読めませんでした s1（HTTP Error 404: Not Found）",
+                          "Traceback (most recent call last):", "SyntaxError: f-string: unmatched '('",
+                          "  ⚠ グラフを作れませんでした", "今日の予約リスト: 予約 8本（目標8本）・即決 2件"]
+        body = u.log_csv(False, datetime(2026, 11, 20, 13, 0))
+        self.assertIn("結果,一部でエラー", body)
+        self.assertIn("問題,SyntaxError", body)
+        self.assertIn("まとめ,今日の予約リスト", body)
+        self.assertNotIn("404", body)  # 終わって消えた出品は毎日あるので載せない
