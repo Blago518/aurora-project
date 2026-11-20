@@ -44,7 +44,10 @@ font-size:16px;font-weight:800;text-decoration:none;cursor:pointer;padding:0 12p
 .nums{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.num{background:var(--soft);border-radius:12px;padding:10px 12px;min-width:0}
 .num .l{display:block;font-size:12px;color:var(--sub);font-weight:700}.num b{display:block;font-size:21px;font-weight:900;line-height:1.25;white-space:nowrap}.num .s{display:block}
 .cond{display:flex;align-items:center;gap:8px;margin-top:12px}.cond .l{font-size:12px;color:var(--sub);font-weight:700;white-space:nowrap}.cond .chips{flex-wrap:nowrap}.cond .chip{padding:8px 10px;font-size:13px}
-.sweet{display:inline-block;margin-top:4px;font-size:13px;font-weight:800;color:#8a5a00;background:#fff3d6;border-radius:8px;padding:2px 8px}
+.sweet{display:inline-block;margin-top:0;font-size:13px;font-weight:800;color:#8a5a00;background:#fff3d6;border-radius:8px;padding:2px 8px}
+.hero{font-size:44px;font-weight:900;line-height:1.1;letter-spacing:-.01em;font-variant-numeric:tabular-nums;margin-top:4px}
+.hero.small{font-size:26px}
+.why{font-size:13px;color:var(--sub);margin-top:2px}.cap{margin-top:10px;font-size:15px;font-weight:700}.cap b{font-size:20px}.cap .s{display:block;font-weight:400}
 .g{color:var(--good)}.o{color:var(--ok)}.x{color:var(--bad)}.w{color:var(--warn)}
 .big{font-size:22px;font-weight:900}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:12px;font-size:14px}
@@ -58,6 +61,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .chip[aria-pressed=true] .s{color:#d6eaf5}
 .shelf{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.shelf:last-child{border:0}
 .shelf .mk{font-size:22px;font-weight:900;min-width:30px;text-align:center}.shelf .tt{flex:1;min-width:0}.shelf .tt b{display:block;font-size:14px}
+.shelf .pf{font-size:17px;font-weight:900;white-space:nowrap;font-variant-numeric:tabular-nums}
 .shelf button{border:0;background:var(--soft);color:#14415a;border-radius:8px;padding:8px 10px;font-weight:700;white-space:nowrap}
 .rec{padding:12px 0;border-bottom:1px solid var(--line)}.rec:last-child{border:0}
 .rec .t{display:flex;gap:8px;align-items:baseline}.rec .t b{flex:1;font-size:15px}.rec .n{color:var(--sub);font-size:12px;width:22px}
@@ -265,7 +269,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.3";
+  var APP_VERSION = "2026.11.21.4";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -395,23 +399,26 @@ function renderResult(name, price, r) {
   if (!name.trim()) { el.hidden = true; return; }
   el.hidden = false;
   if (!DATA) { el.innerHTML = `<div class="empty">設定タブで相場データを読み込むと、利益と判定が出ます。<br>eBayのリンクは下から使えます。</div>`; return; }
-  const cls = { "◎": "g", "○": "o", "×": "x" }[r.mark] || "w";
-  const c = r.calc;
-  // 判定の言葉（2026-11-21 ユーザー指摘「買い候補・ジャンク・余裕ありは初見で分からない」）。下の行は狙い目スペックに当たるか
-  const word = !c ? "相場なし" : { "◎": "買い", "○": "買い（上限ぎりぎり）", "×": "見送り" }[r.mark] || "要確認";
+  const c = r.calc, ok = r.mark === "◎" || r.mark === "○";
+  // 利益を主役に（2026-11-21 ユーザー決定「利益を一番大きく」）。言葉（買い・見送り）と ◎○× は出さない。色: 緑＝基準を満たす／赤＝満たさない／橙＝要確認
+  const cls = !c ? "w" : ok || (price == null && c.maxBid > 0) ? "g" : r.mark === "要確認" ? "w" : "x";
   const sw = core.sweetSpot ? core.sweetSpot(name) : "";
+  const sign = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP") + "円";
   const why = !c ? "販売実績に無い機種。下の eBay 販売済みで確認"
-    : r.mark === "◎" || r.mark === "○" ? "" : storeReason(r.reason).replace(/^ジャンク・/, "");
-  let h = `<div class="verdict"><div class="mark ${cls}">${esc(r.mark === "要確認" ? "？" : r.mark)}</div>
-    <div><div class="big ${cls}">${esc(word)}</div>
-    ${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
-    ${why ? `<div class="s">${esc(why)}</div>` : ""}</div></div>`;
+    : price == null && c.maxBid > 0 ? "値札を入れると利益を出します"
+    : r.mark === "要確認" ? storeReason(r.reason).replace(/^ジャンク・/, "")
+    : /光学難/.test(r.reason) ? storeReason(r.reason).replace(/^ジャンク・/, "")
+    : c.maxBid <= 0 ? "この相場では基準を満たす値段がない"
+    : price == null ? "値札を入れると利益を出します"
+    : ok ? `値札 ${yen(price)} で買ったときの利益`
+    : `値札 ${yen(price)} では基準（${(DATA.cfg.minProfit || 0).toLocaleString()}円・${DATA.cfg.minMarginPct}%）に届かない`;
+  const head = !c ? "相場なし" : price != null ? sign(c.profit) : c.maxBid > 0 ? yen(c.maxBid) + "まで" : "買えない";
+  let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
+    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>`;
   if (c) {
     const tier = r.refs[0] ? r.refs[0].tier : 3, m = r.atMax;
-    h += `<div class="nums">
-      <div class="num"><span class="l">上限（税込）</span><b class="g">${c.maxBid > 0 ? yen(c.maxBid) : "なし"}</b>${m ? `<span class="s">この額で買うと利益 ${yen(m.profit)}</span>` : ""}</div>
-      ${price != null ? `<div class="num"><span class="l">値札 ${yen(price)} なら</span><b class="${r.mark === "◎" || r.mark === "○" ? "g" : "x"}">利益 ${yen(c.profit)}</b><span class="s">利益率 ${c.margin}%${r.mark === "◎" || r.mark === "○" ? "" : `（基準 ${(DATA.cfg.minProfit || 0).toLocaleString()}円・${DATA.cfg.minMarginPct}% に届かない）`}</span></div>` : `<div class="num"><span class="l">値札</span><b class="s">価格を入れる</b></div>`}
-    </div>`;
+    if (c.maxBid > 0 && price != null) h += `<div class="cap"><b>${yen(c.maxBid)}</b> まで出せる${m ? `<span class="s">（この額で利益 ${yen(m.profit)}）</span>` : ""}</div>`;
+    else if (c.maxBid > 0 && m) h += `<div class="cap"><span class="s">この額で買うと利益 ${yen(m.profit)}</span></div>`;
     h += rankChips();
     if (tier >= 2) h += `<div class="note">根拠が弱い（${esc(SRC[tier])}）→ 下の eBay 販売済みで確認</div>`;
     const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
@@ -742,12 +749,13 @@ function renderShelf(note) {
   rows.sort((a, b) => (a.r && a.r.calc ? 0 : 1) - (b.r && b.r.calc ? 0 : 1) || (SHELF_ORDER[a.r.mark] ?? 4) - (SHELF_ORDER[b.r.mark] ?? 4)
     || ((b.r.calc && b.r.calc.profit) ?? -1e9) - ((a.r.calc && a.r.calc.profit) ?? -1e9));
   const buy = rows.filter((x) => x.r.calc && (x.r.mark === "◎" || x.r.mark === "○")).length;
-  el.innerHTML = `<div class="row" style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">読み取り ${rows.length}件 ― 買い ${buy}件</h2><button class="mini" data-clear="1" type="button">新しい棚</button></div>${note ? `<div class="s">${esc(note)}</div>` : ""}` + rows.map((x, i) => {
-    const r = x.r, c = r.calc, cls = { "◎": "g", "○": "o", "×": "x" }[r.mark] || "w";
-    const what = !c ? "相場データなし" : x.price == null ? `${yen(c.maxBid)} 以下なら買い（価格読めず）`
-      : `値札 ${yen(x.price)} → 利益 ${yen(c.profit)}（上限 ${yen(c.maxBid)}）`;
-    return `<div class="shelf"><div class="mk ${cls}">${esc(!c ? "－" : r.mark === "要確認" ? "？" : r.mark)}</div>
-      <div class="tt"><b>${core.sweetSpot && core.sweetSpot(x.name) ? "★ " : ""}${esc(x.name)}</b><span class="s">${esc(what)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
+  el.innerHTML = `<div class="row" style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">読み取り ${rows.length}件 ― 基準を満たす ${buy}件</h2><button class="mini" data-clear="1" type="button">新しい棚</button></div>${note ? `<div class="s">${esc(note)}</div>` : ""}` + rows.map((x, i) => {
+    const r = x.r, c = r.calc, ok = r.mark === "◎" || r.mark === "○", cls = !c ? "w" : ok ? "g" : r.mark === "要確認" ? "w" : "x";
+    const big = !c ? "相場なし" : x.price == null ? (c.maxBid > 0 ? yen(c.maxBid) + "まで" : "買えない")
+      : (c.profit > 0 ? "+" : c.profit < 0 ? "−" : "") + Math.abs(Math.round(c.profit)).toLocaleString("ja-JP") + "円";
+    const sub = !c ? "" : x.price == null ? "値札が読めない" : `値札 ${yen(x.price)}／${c.maxBid > 0 ? yen(c.maxBid) + "まで出せる" : "買えない"}`;
+    return `<div class="shelf"><div class="tt"><b>${core.sweetSpot && core.sweetSpot(x.name) ? "★ " : ""}${esc(x.name)}</b><span class="s">${esc(sub)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
+      <div class="pf ${cls}">${esc(big)}</div>
       <button data-shelf="${i}">見る</button></div>`;
   }).join("");
   el.onclick = (e) => {
