@@ -47,9 +47,9 @@ sys.path.insert(0, str(HERE))
 LOG_SHEET = "Mac_更新ログ"
 LOG_LINES: list[str] = []
 PROBLEM_RE = re.compile(r"⚠|Traceback|Error|エラー|できませんでした|送れませんでした|失敗")
-NOISE_RE = re.compile(r"落札相場: 読めませんでした|HTTP Error 404")  # 終わって消えた出品（毎日ある）は問題にしない
+NOISE_RE = re.compile(r"落札相場: 読めませんでした|HTTP Error 404|^[◎○×]\s")  # 終わって消えた出品（毎日ある）と、入札リストの行（商品名の「エラー」）は問題にしない
 SUMMARY_RE = re.compile(r"^(=====|今日の予約リスト|説明文チェック|仮◎○|📋 入札リスト|eBay の取引|返品の一覧|落札相場:|勝ちやすさ:|"
-                        r"相場メモ|出力:|✅ 完了|入札結果:|直近\d+日の(注文|取引)|古物台帳:)")
+                        r"相場メモ|出力:|✅ 完了|入札結果:|直近\d+日の(注文|取引)|古物台帳:|スマホへの自動配信)")
 
 
 class _Tee:
@@ -84,10 +84,11 @@ def log_csv(ok: bool, started: datetime) -> str:
     w.writerow(["結果", "完了" if ok else "一部でエラー"])
     lines = [x.strip() for x in LOG_LINES if x.strip()]
     probs = [x for x in lines if PROBLEM_RE.search(x) and not NOISE_RE.search(x)]
+    cell = lambda x: ("'" + x if x[:1] in "=+-@" else x)[:300]   # 「=====」などが式と読まれて #ERROR! にならないように
     for x in probs[:80]:
-        w.writerow(["問題", x[:300]])
+        w.writerow(["問題", cell(x)])
     for x in [x for x in lines if SUMMARY_RE.search(x) and not NOISE_RE.search(x)][:80]:
-        w.writerow(["まとめ", x[:300]])
+        w.writerow(["まとめ", cell(x)])
     return buf.getvalue()
 
 
