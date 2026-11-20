@@ -112,6 +112,24 @@ class MemoAndCondition(unittest.TestCase):
             out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
         self.assertEqual(json.loads(out), [139.99, None, 265.0])
 
+    def test_min_profit_shown(self):
+        """店舗アプリが出す利益の基準は計算の基準と同じ（売値・送料込み$99以下は4,000円。2026-11-21）."""
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        import build_extension as bx
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        with tempfile.TemporaryDirectory() as d:
+            dp = Path(d) / "d.json"
+            dp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            code = (f"const {{makeCore}}=require({json.dumps(str(bs.CORE_JS))});const c=makeCore(require({json.dumps(str(dp))}));"
+                    "console.log(JSON.stringify([88,99,150].map(u=>c.calculate({price:3000,ship:0,tax:false},u,150).minProfit)))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        low = int(CFG["judge"].get("low_price_min_profit_jpy", 4000))
+        self.assertEqual(json.loads(out), [low, low, int(CFG["judge"]["min_profit_jpy"])])
+        html = (bs.ROOT / "store" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("c.minProfit.toLocaleString()", html)   # 表示は計算の値をそのまま使う（同じ式を2か所に持たない）
+
     def test_condition(self):
         if not shutil.which("node"):
             self.skipTest("node がありません")

@@ -258,7 +258,7 @@ function makeCore(DATA) {
     const minM = it.trusted ? (g.trustedMinMarginPct ?? g.minMarginPct) : g.minMarginPct;
     const maxBid = Math.max(0, roundDown(Math.min((fixed - minP) / k, (fixed - minM / 100 * revJpy) / k)));
     const be = Math.max(0, roundDown(fixed / k));
-    const out = { tax: !!it.tax, maxBid, breakeven: be, fees: Math.round(fees * fx), intl, dom, net: Math.round(net), netUsd: usd - g.deductionUsd };
+    const out = { tax: !!it.tax, maxBid, minProfit: minP, breakeven: be, fees: Math.round(fees * fx), intl, dom, net: Math.round(net), netUsd: usd - g.deductionUsd };
     if (it.price != null) {
       out.bidNow = it.price / tm;
       const p = fixed - out.bidNow * k;
