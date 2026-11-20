@@ -60,6 +60,22 @@ FIELDS = ["app_id", "cert_id", "ru_name", "refresh_token"]
 # 秘密情報の保存（Mac: キーチェーン / それ以外: data/.ebay_secrets.json 権限600）
 # ---------------------------------------------------------------------------
 
+
+def jst_date(iso: str) -> str:
+    """eBay の日時（世界標準時。例 2026-11-19T16:30:00.000Z）→ 日本時間の日付 2026-11-20. 読めなければ先頭10文字."""
+    t = (iso or "").strip()
+    if not t:
+        return ""
+    base = re.sub(r"\.\d+", "", t.replace("Z", "+00:00"))  # Python 3.9 は小数秒の桁数にうるさいので落とす
+    try:
+        d = datetime.fromisoformat(base)
+    except ValueError:
+        return t[:10]
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d.astimezone(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+
+
 def _is_mac() -> bool:
     return platform.system() == "Darwin"
 
@@ -222,7 +238,7 @@ def fetch_orders(days: int) -> list[dict]:
                 total_d = (o.get("pricingSummary") or {}).get("total")
                 fee_d = o.get("totalMarketplaceFee")
                 rows.append({
-                    "date": o.get("creationDate", "")[:10],
+                    "date": jst_date(o.get("creationDate", "")),  # 日本時間の日付（2026-11-20 ユーザー決定）
                     "order_id": o.get("orderId", ""),
                     "title": li.get("title", ""),
                     "sku": li.get("sku", ""),
@@ -423,7 +439,8 @@ def cmd_fees(args) -> None:
                 intl = sum(_money(f.get("amount")) for li in t.get("orderLineItems", []) or []
                            for f in li.get("marketplaceFees", []) or [] if "INTERNATIONAL" in f.get("feeType", ""))
                 rows.append({
-                    "date": (t.get("transactionDate") or "")[:10],
+                    "date": jst_date(t.get("transactionDate") or ""),  # 日本時間の日付（2026-11-20 ユーザー決定: 月は日本時間で分ける）
+                    "datetime": t.get("transactionDate") or "",  # eBay の元の日時（世界標準時）
                     "type": t.get("transactionType", ""),
                     "booking": t.get("bookingEntry", ""),  # CREDIT=入金 / DEBIT=引き落とし
                     "order_id": t.get("orderId", ""),
@@ -505,7 +522,7 @@ def _find(o, key: str):
 
 def _date(d) -> str:
     v = d.get("value") if isinstance(d, dict) else d
-    return str(v or "")[:10]
+    return jst_date(str(v or ""))  # 日本時間の日付（2026-11-20 ユーザー決定）
 
 
 def post_order_get(path: str, params: dict | None = None) -> dict:

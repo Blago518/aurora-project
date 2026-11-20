@@ -95,3 +95,15 @@ class InstantLaneJunk(unittest.TestCase):
                 {"判定": "◎", "根拠の強さ": "確認不要", "上限入札額": 100000, "即決価格": 60000, "ヤフオクURL": "b", "終了": ""}]
         instant, _ = ba.reserve_list(rows)
         self.assertEqual([r["ヤフオクURL"] for r in instant], ["b"])
+
+
+class JstDates(unittest.TestCase):
+    """月は日本時間で分ける（2026-11-20 ユーザー決定）。eBay の日時（世界標準時）→ 日本時間の日付."""
+
+    def test_jst_date(self):
+        import ebay_api
+        self.assertEqual(ebay_api.jst_date("2026-08-31T16:30:00.000Z"), "2026-09-01")  # 日本では9月1日 1:30
+        self.assertEqual(ebay_api.jst_date("2026-08-31T14:59:59.000Z"), "2026-08-31")
+        self.assertEqual(ebay_api.jst_date("2026-11-19T10:00:00.123456+00:00"), "2026-11-19")
+        self.assertEqual(ebay_api.jst_date("2026-11-16"), "2026-11-16")
+        self.assertEqual(ebay_api.jst_date(""), "")
