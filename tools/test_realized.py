@@ -59,12 +59,16 @@ class InstantLaneJunk(unittest.TestCase):
         "新品 HASSELBLAD ハッセルブラッド Planar C 80mm F2.8 クロームレンズ用 シャッタースピードスケール 補修用パーツ",
         "極上品☆Nikon MB-D16 MS-D14EN マルチバッテリーパワーパック グリップ D750用 ##14505",
         "フェイクライカ Luftwaffen ボディ ELMAR エルマー 50mm F3.5 #5824W0992",
+        # 2026-11-21 予約リストに ◎ で出ていた（全角の mm／改造の受付）
+        "【 美品 】OLYMPUS 24ｍｍ/2.8用 メタルフード 元箱付き オリンパス [管7874OL-0206-LP",
+        "天体改造します：Canon EOS 6D(フルサイズ) 60D,70D,80D系(APS-C)デジタル一眼機",
     ]
     BODY = [  # 付属品が「付き」の本体は付属品扱いしない
         "Nikon F3 HP フォーカシングスクリーン付",
         "Nikon AF-S 80-400mm 三脚座付き 美品",
         "Nikon F3 カメラバッグ付き",
         "Leica Summicron 50mm F2 沈胴 ケース付",
+        "Nikon D750 ボディ 同梱承ります 即決",   # 「承ります」は本体の商品名にもあるので付属品扱いしない
     ]
 
     def test_python(self):
