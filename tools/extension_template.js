@@ -832,8 +832,8 @@
     ? `まとめ売り ${i.setParts.length}点: ` + i.setParts.map((p) => `${esc(p.label)} ${nd(p.usd)}`).join(" ＋ ") +
       `（相場が分かった中身だけ。2点目からは送料$${SHIP()}・手数料・梱包を引いて合計）`
     : "");
-  // 売れ筋＝根拠の販売実績で利益が出ていた機種（build_extension.py が appraise.sold_hit で付ける）。$99以下は下に回す（2026-11-18）
-  const LOW_PRICE_USD = 99;
+  // 売れ筋＝根拠の販売実績で利益が出ていた機種（build_extension.py が appraise.sold_hit で付ける）。$200未満は下に回す（2026-11-18・11-20）
+  const SORT_DOWN_USD = 200;  // 売値（送料込み）$200 未満は下に回す（2026-11-20 ユーザー決定。appraise.SORT_DOWN_USD）
   const soldHit = (i) => !!(i.refs && i.refs[0] && i.refs[0].hit && !isMemo(i.refs[0]));
   // 勝ちやすさ（Mac の win_score.py → data/win_score.csv。機種の比較用キーごと）: ヤフオクの終わった出品のうち、今の上限入札額以下で終わった割合。
   // 1割未満の機種は入札候補の下に回す（appraise.bid_priority と同じ。2026-11-19 ユーザー決定。判定・上限額は変えない）。記録が無い機種は今の並び・表示なし
@@ -843,7 +843,7 @@
     return (DATA.winScore || {})[i.wkey] || null;
   };
   const isLowWin = (i) => { const w = winOf(i); return !!w && w.rate < (DATA.cfg.winLowRate ?? 0.1); };
-  const bidPrio = (i) => (i.usd != null && i.usd <= LOW_PRICE_USD ? 2 : 0) + (soldHit(i) ? 0 : 1) + (isLowWin(i) ? 4 : 0);
+  const bidPrio = (i) => (i.usd != null && i.usd < SORT_DOWN_USD ? 2 : 0) + (soldHit(i) ? 0 : 1) + (isLowWin(i) ? 4 : 0);
   // 表示: 「勝ちやすさ 46%（直近12件）」（appraise.win_label と同じ）
   const winText = (i) => { const w = winOf(i); return w && w.n ? `勝ちやすさ ${Math.round(w.rate * 100)}%（直近${w.n}件）` : ""; };
   const winLine = (i) => {

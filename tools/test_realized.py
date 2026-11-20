@@ -135,3 +135,42 @@ class NewestMemoWins(unittest.TestCase):
             "const q=m.titleToQuery('Canon EOS Kiss X10 ボディ')+' Canon EOS Kiss X10 ボディ';"
             "console.log(JSON.stringify(m.matchPreferMemo(q,[data,old,neu],[]).map(r=>r.price)));"))
         self.assertEqual(got, [360])
+
+
+class UpdateLog(unittest.TestCase):
+    """Mac_更新ログ（2026-11-20）: Mac の更新で出た問題をクラウドのサトシが毎朝見られる."""
+
+    def test_log_csv(self):
+        import update_all as u
+        from datetime import datetime
+        u.LOG_LINES[:] = ["===== 2026-11-20 13:00 相場データの更新 =====",
+                          "  落札相場: 読めませんでした s1（HTTP Error 404: Not Found）",
+                          "Traceback (most recent call last):", "SyntaxError: f-string: unmatched '('",
+                          "  ⚠ グラフを作れませんでした", "今日の予約リスト: 予約 8本（目標8本）・即決 2件"]
+        body = u.log_csv(False, datetime(2026, 11, 20, 13, 0))
+        self.assertIn("結果,一部でエラー", body)
+        self.assertIn("問題,SyntaxError", body)
+        self.assertIn("まとめ,今日の予約リスト", body)
+        self.assertNotIn("404", body)  # 終わって消えた出品は毎日あるので載せない
+
+
+class SortDown200(unittest.TestCase):
+    """2026-11-20 ユーザー決定「下に回すだけ」: 売値（送料込み）$200 未満の候補は入札候補・予約リストの下に（判定・上限額は同じ）."""
+
+    def test_bid_priority(self):
+        self.assertEqual(ba.bid_priority(250, True), 0)
+        self.assertEqual(ba.bid_priority(199, True), 2)
+        self.assertEqual(ba.bid_priority(150, False), 3)
+        self.assertEqual(ba.bid_priority(200, False), 1)
+
+    def test_reserve_order(self):
+        from datetime import datetime, timedelta, timezone
+        jst = timezone(timedelta(hours=9))
+        now = datetime(2026, 11, 20, 9, 0, tzinfo=jst)
+        end = (now + timedelta(hours=10)).isoformat()
+        rows = [{"判定": "◎", "根拠の強さ": "確認不要", "上限入札額": 9000, "ヤフオクURL": "cheap", "終了": end,
+                 "想定販売価格USD": 120, "利益(現在価格)": 9000, "勝ちやすさ": None},
+                {"判定": "◎", "根拠の強さ": "確認不要", "上限入札額": 30000, "ヤフオクURL": "big", "終了": end,
+                 "想定販売価格USD": 300, "利益(現在価格)": 3000, "勝ちやすさ": None}]
+        _, picks = ba.reserve_list(rows, now=now)
+        self.assertEqual([r["ヤフオクURL"] for r in picks], ["big", "cheap"])

@@ -1287,17 +1287,19 @@ def hit_search_urls(sales: list[dict], cfg: dict, fx: float, limit: int = 30,
     return out
 
 
-# 入札候補の並び（2026-11-18 ユーザー決定）: 売値（送料込み）が $99 以下の候補は下に回す（実績では1件あたりの利益が小さい）
-LOW_PRICE_USD = 99.0
+# 入札候補の並び（2026-11-18 ユーザー決定）: 安い候補は下に回す（実績では1件あたりの利益が小さい）。
+# 2026-11-20 ユーザー決定「下に回すだけ」: $99 以下 → 売値（送料込み）$200 未満に広げた（自分の販売実績で $200 未満は合計で赤字、
+# $200 以上は黒字だった。数字は knowledge/ の意思決定ログ）。判定・上限額は変えない
+SORT_DOWN_USD = 200.0
 # 勝ちやすさ（win_score.py）がこの割合未満の機種は、入札候補の下に回す（2026-11-19 ユーザー決定。判定・上限額は変えない。config.toml [win_score] low_rate）
 LOW_WIN_RATE = 0.10
 
 
 def bid_priority(price_usd: float | None, hit: bool, win_rate: float | None = None, low_win: float | None = None) -> int:
-    """小さいほど上: 0=売れ筋で$99超 1=$99超 2=売れ筋で$99以下 3=$99以下. 同じ順位の中は終了が近い順.
+    """小さいほど上: 0=売れ筋で$200以上 1=$200以上 2=売れ筋で$200未満 3=$200未満（売値・送料込み）. 同じ順位の中は終了が近い順.
     勝ちやすさが low_win（既定 1割）未満の機種は +4（全部の下）. 勝ちやすさの記録が無い機種は今までどおり."""
     low = LOW_WIN_RATE if low_win is None else low_win
-    base = (2 if price_usd is not None and price_usd <= LOW_PRICE_USD else 0) + (0 if hit else 1)
+    base = (2 if price_usd is not None and price_usd < SORT_DOWN_USD else 0) + (0 if hit else 1)
     return base + (4 if win_rate is not None and win_rate < low else 0)
 
 
@@ -2161,7 +2163,9 @@ def reserve_list(rows: list[dict], now: datetime | None = None, target: int = 8,
             continue
         picks.append(r)
     rate = lambda r: r["勝ちやすさ"] if r.get("勝ちやすさ") is not None else default_rate  # noqa: E731
-    picks.sort(key=lambda r: (-(rate(r) * max(0, r.get("利益(現在価格)") or 0)), r.get("終了") or ""))
+    # 売値（送料込み）$200 以上を先に（2026-11-20 ユーザー決定「下に回すだけ」）、その中は 勝ちやすさ×利益 の大きい順
+    cheap = lambda r: (r.get("想定販売価格USD") or 0) < SORT_DOWN_USD  # noqa: E731
+    picks.sort(key=lambda r: (cheap(r), -(rate(r) * max(0, r.get("利益(現在価格)") or 0)), r.get("終了") or ""))
     return instant, picks[:max(0, target)]
 
 
