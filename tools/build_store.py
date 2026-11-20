@@ -63,13 +63,24 @@ def core_js() -> str:
 # ---------------------------------------------------------------------------
 
 BRAND_NAMES = {b.lower(): b for b in ba.BRANDS_EN.values()}
+# おすすめのメーカー（2026-11-20 ユーザー指摘「カールツァイスがない」）: Carl・Zeiss は「Carl Zeiss」に。
+# 判定（appraise.py）には使わない、おすすめの並べ方だけの読み替え
+BRAND_NAMES.update({"carl": "Carl Zeiss", "zeiss": "Carl Zeiss", "leitz": "Leica", "asahi": "Pentax", "zenza": "Bronica",
+                    "fujica": "Fujifilm", "nippon": "Nikon", "topcon": "Topcon", "kowa": "Kowa", "schneider": "Schneider",
+                    "angenieux": "Angenieux", "meyer": "Meyer-Optik", "pentacon": "Pentacon", "linhof": "Linhof",
+                    "plaubel": "Plaubel", "graflex": "Graflex", "petri": "Petri", "miranda": "Miranda", "cosina": "Cosina",
+                    "horseman": "Horseman", "polaroid": "Polaroid", "konica": "Konica", "kodak": "Kodak", "panasonic": "Panasonic"})
+BRAND_SKIP = {"carl", "zeiss", "asahi", "zenza", "nippon", "kogaku", "optik", "ikon"}  # メーカー名の続き（機種名には入れない）
 
 
 CAMERA_WORDS = {"slr", "camera", "body", "rangefinder", "tlr", "film", "compact", "point"}
 # レンズの機種を分ける語（マウント・世代）。例: Canon FD 50mm F1.4 と Canon EF 50mm F1.4 は別機種
 LENS_LINE_WORDS = {"fd", "newfd", "new", "ef", "ef-s", "rf", "ai", "ai-s", "nonai", "af", "af-s", "af-d", "smc",
                    "takumar", "m42", "md", "mc", "xf", "fe", "l", "macro", "planar", "sonnar", "summicron",
-                   "summilux", "elmarit", "noctilux"}
+                   "summilux", "elmarit", "noctilux",
+                   # Carl Zeiss の系統（2026-11-20）
+                   "distagon", "tessar", "biogon", "makro-planar", "vario-sonnar", "jena", "biotar", "flektogon", "pancolar",
+                   "otus", "batis", "loxia", "milvus", "zm", "zf", "ze", "zf.2", "hexanon", "rokkor", "zuiko", "xenar", "symmar"}
 CAMERA_LINE_WORDS = ba.GENERATIONS | {"program", "pro", "super", "classic", "dx", "quartz", "date"}
 
 
@@ -78,7 +89,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     toks = ba.title_to_query(title, 20).split()
     if not toks or toks[0].lower() not in BRAND_NAMES:
         return None
-    brand, rest = BRAND_NAMES[toks[0].lower()], toks[1:]
+    brand, rest = BRAND_NAMES[toks[0].lower()], [t for t in toks[1:] if t.lower() not in BRAND_SKIP]
     def norm(t: str) -> list[str]:
         t = t.lower()
         return ["newfd"] if t in ("nfd", "fdn") else ["ai-s"] if t == "ais" else [t]
@@ -99,7 +110,11 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
             keep += ks
             shown.append(orig)
     if not any(re.search(r"\d", t) for t in keep):
-        return None
+        # 数字の無い機種名（Spotmatic・Hexar・Contaflex など）は、カメラだけ、名前の語を2つまで使う（2026-11-20）
+        names = [t for t in rest if t.lower() not in CAMERA_WORDS | ba.NOISE_TOKENS and len(t) >= 2 and not re.search(r"\d", t)]
+        if kind != "camera" or not names:
+            return None
+        keep, shown = [t.lower() for t in names[:2]], names[:2]
     label = " ".join([brand] + shown)
     return label, " ".join([brand.lower()] + keep), kind
 
