@@ -1901,9 +1901,15 @@ def check_descriptions(items: list[Item], delay: float, cfg: dict | None = None,
     """◎○の出品だけ出品ページを読み、説明文にカビ・クモリ等があれば要確認にする. 検索結果に送料が無ければ、
     出品ページの送料で計算し直す（無ければ既定の額のまま）. 読んだ件数を返す."""
     n = 0
+    todo = sum(1 for it in items if it.auction_id and judge(it)[0] in ("◎", "○"))
+    print(f"説明文を読みます: ◎○ {todo}件（1件ごとに間をあけるので、数分かかります）", file=sys.stderr)
+    seen = 0
     for it in items:
         if not it.auction_id or judge(it)[0] not in ("◎", "○"):
             continue
+        seen += 1
+        if seen % 50 == 0:
+            print(f"説明文を確認中… {seen}/{todo}件", file=sys.stderr)
         try:
             page = http_get(it.url)
             text, cond = read_description(page)
@@ -1976,6 +1982,8 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
     for i, item in enumerate(items, 1):
         if not item.prefilled:
             print(f"[{i}/{len(items)}] {item.auction_id} {item.title[:40]}", file=sys.stderr)
+        elif i % 1000 == 0 or i == len(items):  # 検索結果の出品は数が多く静かなので、進み具合を出す（2026-11-20 ユーザー「止まってる？」）
+            print(f"相場に照らし中… {i:,}/{len(items):,}件", file=sys.stderr)
         if not offline and not item.prefilled:
             enrich_from_yahoo(item)
             time.sleep(delay)
