@@ -572,7 +572,15 @@ FLAG_RULES = [
                    r"(?:レンズ|カメラ)型|ノベルティ|ステッカー|バッジ|ピンバッジ|"
                    # 三脚・雲台・外部モニターなど（カメラ・レンズではない。2026-11-19 相場未登録の表に三脚や雲台が並んでいた）
                    r"(?<!穴)三脚(?!穴|座|付|あり)|一脚|雲台|ジンバル|スタビライザー|ビデオヘッド|カメラモニター|フィールドモニター|外部モニター|"
-                   r"マンフロット|manfrotto|ジッツオ|\bgitzo\b|リーベック|\blibec\b"),
+                   r"マンフロット|manfrotto|ジッツオ|\bgitzo\b|リーベック|\blibec\b|"
+                   # 2026-11-20 予約リストの即決に並んだ付属品・部品・本・別物（高い本体の相場が当たっていた）
+                   r"箱だけ|[\[【(（]\s*箱\s*[\]】)）]|シューカバー|スクリーン(?![\s　]?[^\s　]{0,6}(?:付|あり|有))|"
+                   r"三脚座(?![\s　]?[^\s　]{0,6}(?:付|あり|有))|tripod\s*(?:collar|mount\s*ring)|"
+                   r"補修用|修理用|部品のみ|パーツのみ|スケール|"
+                   r"バッテリーパック|パワーパック|バッテリーグリップ|\bMB-D\d+|\bBG-E\d+|"
+                   r"(?:バッグ|リュック|\bbag\b)(?![\s　]?[^\s　]{0,6}(?:付|あり|有))|"
+                   r"の使い方|ガイドブック|入門書|教本|日本カメラ社|"
+                   r"フェイク|レプリカ|模造|\bfake\b|\breplica\b"),
 ]
 
 
@@ -980,7 +988,9 @@ THIRD_PARTY = {"tamron", "sigma", "tokina", "7artisans", "ttartisan", "brightin"
                "samyang", "yongnuo", "kipon", "fotodiox", "neewer", "commlite", "sg-image", "pergear",
                "kamlan", "zonlai", "fujian", "rokinon", "vello",
                # 2026-11-19 監査: 「Seagull 24mm ミノルタマウント」が Minolta の相場に、「Leotax Leonon 5cm F2 ライカLマウント」が Leica に当たり得た
-               "oshiro", "astrhori", "seagull", "panagor", "shoten", "komura", "leotax", "tefnon", "mitakon", "zhongyi", "sirui"}
+               "oshiro", "astrhori", "seagull", "panagor", "shoten", "komura", "leotax", "tefnon", "mitakon", "zhongyi", "sirui",
+               # 2026-11-20: 旧ソ連製（「インダスター10 … エルマー5cm パルナックライカ」に Leica の相場が当たっていた）
+               "industar", "induster", "jupiter", "zorki", "fed", "helios", "kmz"}
 COLOR_WORDS = {"black", "silver", "chrome", "white", "red", "blue", "green", "brown"}
 GENERATIONS = {"ii", "iii", "iv", "mkii", "mkiii", "mk2", "mk3", "mark"}
 # 系統の語（2026-11-19）: 同じ焦点距離・F値でも別のレンズ・カメラ。片方にだけあれば別物として扱い、機種名にも残す
@@ -2112,6 +2122,9 @@ def _end_dt(s: str):
     return d if d.tzinfo else d.replace(tzinfo=timezone(timedelta(hours=9)))
 
 
+INSTANT_MIN_RATIO = 0.4  # 即決の別枠に出す下限（即決価格 ÷ 上限額）。win_score の「上限の4割未満の安値は数えない」と同じ考え
+
+
 def _is_acc(r: dict) -> bool:
     return any(f in (r.get("注意") or "") for f in ("付属品のみ?", "アダプター等"))
 
@@ -2125,7 +2138,8 @@ def reserve_list(rows: list[dict], now: datetime | None = None, target: int = 8,
     until = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days)  # 今日〜明日の終わりまで
     cand = [r for r in rows if r["判定"] in ("◎", "○") and r.get("根拠の強さ") == "確認不要" and not _is_acc(r)
             and r.get("上限入札額")]
-    instant = [r for r in cand if r.get("即決価格") and r["即決価格"] <= r["上限入札額"]]  # 拡張機能の「即決で今すぐ買える」と同じ
+    # 拡張機能の「即決で今すぐ買える」と同じ。即決が上限額の4割未満のものは、付属品・別物の取り違えが多いので出さない（2026-11-20）
+    instant = [r for r in cand if r.get("即決価格") and INSTANT_MIN_RATIO * r["上限入札額"] <= r["即決価格"] <= r["上限入札額"]]
     instant.sort(key=lambda r: -(r["上限入札額"] - r["即決価格"]))
     ids = {r["ヤフオクURL"] for r in instant}
     picks = []
