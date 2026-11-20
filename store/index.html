@@ -266,12 +266,9 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <h2>③ 値札読み取り（Claude API）</h2>
     <label for="apiKey" style="margin-top:0">APIキー（sk-ant- で始まる）</label>
     <input id="apiKey" type="password" placeholder="未設定" autocomplete="off">
-    <div class="grid2 mt">
-      <button class="btn" id="keySave" type="button">保存</button>
-      <button class="btn sec" id="keyDel" type="button">削除</button>
-    </div>
+    <button class="btn mt" id="keySave" type="button">保存</button>
     <div class="status" id="keyMsg"></div>
-    <p class="s">モデル: Claude Haiku 5.5（1枚 約0.03〜0.05円）。キーはこの iPhone の中だけに保存し、写真と一緒に Anthropic（api.anthropic.com）にだけ送ります。</p>
+    <p class="s">キーを替えるときは、新しいキーを貼って［保存］（上書きされます）。モデル: Claude Haiku 5.5（1枚 約0.05〜0.2円）。キーはこの iPhone の中だけに保存し、写真と一緒に Anthropic（api.anthropic.com）にだけ送ります。</p>
   </div>
   <div class="card">
     <h2>アプリの版</h2>
@@ -283,7 +280,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.5";
+  var APP_VERSION = "2026.11.21.6";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -833,7 +830,8 @@ $("keySave").onclick = () => {
   if (!k.startsWith("sk-ant-")) { $("keyMsg").className = "status err"; $("keyMsg").textContent = "sk-ant- で始まるキーを貼り付けてください"; return; }
   lsSet(LS_KEY, k); $("apiKey").value = "••••••••（保存済み）"; $("keyMsg").className = "status"; $("keyMsg").textContent = "保存しました";
 };
-$("keyDel").onclick = () => { try { localStorage.removeItem(LS_KEY); } catch (e) {} $("apiKey").value = ""; $("keyMsg").textContent = "削除しました"; };
+// 削除のボタンは置かない（2026-11-21 オーナー「誤って削除してしまった。削除ボタンは消して」）。キーを替えるときは新しいキーを入れて［保存］
+$("apiKey").onblur = () => { if (!$("apiKey").value.trim() && lsGet(LS_KEY, "")) $("apiKey").value = "••••••••（保存済み）"; };   // 触っただけで消えたように見えないよう戻す
 
 // ------------------------------------------------------------ おすすめ
 const recSel = Object.assign({ brand: "", kind: "camera", high: true }, lsGet(LS_REC, {}));
