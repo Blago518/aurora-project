@@ -33,3 +33,15 @@ class Realized(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OldPythonConfig(unittest.TestCase):
+    """Mac の Python 3.9（tomllib なし）用の読み取りが、tomllib と同じ結果になる（2026-11-20: 配列で止まった）."""
+
+    def test_simple_toml_matches_tomllib(self):
+        try:
+            import tomllib
+        except ImportError:
+            self.skipTest("tomllib がありません")
+        path = Path(__file__).parent / "config.toml"
+        self.assertEqual(ba._parse_simple_toml(path.read_text(encoding="utf-8")), tomllib.loads(path.read_text(encoding="utf-8")))

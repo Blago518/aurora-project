@@ -68,6 +68,7 @@ python3 -m unittest discover -s tools        # テスト
 - Obsidian の保管庫: `~/aurora/knowledge`
 
 ## 環境メモ
+- **Mac の python3 は 3.9**（2026-11-20 に f-string の書き方で止まった）。tomllib が無い（`appraise._parse_simple_toml` で読む）、f-string の `{}` の中で外と同じ引用符を使えない、`X | None` の型は `from __future__ import annotations` が要る。直したら `uv python install 3.9` の Python 3.9 でもテストを通す（`$(uv python find 3.9) -m unittest discover -s tools`）。
 - クラウド環境からは eBay がアクセスを拒否する（403）。eBay の相場はリンクを出すか、ユーザーのMacで取得する。
 - ヤフオクの検索結果ページは `__NEXT_DATA__`（JSON）に1ページ分（既定50件）の価格・入札数・送料・終了時刻が入っている。
 - ヤフオクは robots.txt の Allow の形だけ読む（2026-11-19 ユーザー決定）。`/search/`・`/seller/` の n=・s1=・o1= などは付けない（`tools/robots.py`）。ページ送り b= は可。`/closedsearch/closedsearch?p=` は Allow。

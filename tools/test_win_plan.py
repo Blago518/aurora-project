@@ -1,5 +1,7 @@
 """robots.txt に合わせた読み方・勝ちやすさ・並べ方・今日の予約リストのテスト（2026-11-19 ユーザー決定）.
 python3 -m unittest discover -s tools で実行."""
+from __future__ import annotations
+
 import json
 import shutil
 import tempfile

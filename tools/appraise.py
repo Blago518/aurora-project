@@ -44,12 +44,23 @@ AUCTION_ID_RE = re.compile(r"auctions\.yahoo\.co\.jp/(?:jp/)?auction/([a-z]?\d{6
 # ---------------------------------------------------------------------------
 
 
+def _strip_comment(line: str) -> str:
+    """# から後ろを消す（"…" の中の # は残す）."""
+    quoted = False
+    for i, ch in enumerate(line):
+        if ch == '"':
+            quoted = not quoted
+        elif ch == "#" and not quoted:
+            return line[:i]
+    return line
+
+
 def _parse_simple_toml(text: str) -> dict:
     """tomllib が無い Python 3.9/3.10 用。config.toml 程度の単純な書式だけ読む."""
     data: dict = {}
     section = data
     for raw in text.splitlines():
-        line = raw.split("#", 1)[0].strip()
+        line = _strip_comment(raw).strip()
         if not line:
             continue
         if line.startswith("[") and line.endswith("]"):
@@ -61,6 +72,9 @@ def _parse_simple_toml(text: str) -> dict:
             v = val == "true"
         elif val.startswith('"') and val.endswith('"'):
             v = val[1:-1]
+        elif val.startswith("[") and val.endswith("]"):  # 文字列・数の1行の配列（例: sellers = ["バイセル"]）
+            import json
+            v = json.loads(val)
         else:
             v = float(val) if any(c in val for c in ".eE") else int(val)
         section[key.strip()] = v
@@ -2151,12 +2165,17 @@ def write_reserve_csv(rows: list[dict], path: Path) -> None:
         w.writerows(rows)
 
 
+def _caution_html(r: dict, e) -> str:
+    """予約リストの行の注意（Mac の Python 3.9 でも読めるよう、f-string の中で同じ引用符を使わない）."""
+    return '<br><small style="color:#a4473a">⚠ ' + e(r["注意"]) + "</small>" if r.get("注意") else ""
+
+
 def reserve_html(rows: list[dict], target: int) -> str:
     e = html.escape
     n_pick = sum(1 for r in rows if r["区分"] == "予約")
     body = "".join(
         f'<tr><td>{r["順"]}</td><td>{e(r["区分"])}<br><b>{e(r["判定"])}</b></td>'
-        f'<td><a href="{e(r["ヤフオク"])}" target="_blank" rel="noopener">{e(r["商品名"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small>{('<br><small style="color:#a4473a">⚠ ' + e(r["注意"]) + '</small>') if r.get("注意") else ""}</td>'
+        f'<td><a href="{e(r["ヤフオク"])}" target="_blank" rel="noopener">{e(r["商品名"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small>{_caution_html(r, e)}</td>'
         f'<td><b>{_yen(r["上限入札額(入札欄に入れる額)"])}</b><br><small>支払い {_yen(r["支払い額(ストアは税込)"])}'
         f'{"（税込）" if r["支払い額(ストアは税込)"] != r["上限入札額(入札欄に入れる額)"] else ""}</small></td>'
         f'<td>{_yen(r["現在価格"])}{("<br><small>即決 " + _yen(r["即決価格"]) + "</small>") if r["即決価格"] else ""}</td>'
