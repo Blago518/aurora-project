@@ -282,7 +282,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.10";
+  var APP_VERSION = "2026.11.21.11";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -402,7 +402,7 @@ const taxBack = (pay) => (pay ? Math.round(pay * (DATA ? DATA.cfg.storeTaxPct : 
 
 function storeReason(r) {  // 拡張機能（ヤフオク向け）の言葉を店頭向けに
   const g = DATA.cfg;
-  return r.replace("基準を満たす入札額なし", `この相場では基準（利益${(g.minProfit || 0).toLocaleString()}円・${g.minMarginPct}%。売値$${g.lowPriceUsd || 99}以下は${(g.lowPriceMinProfit || 0).toLocaleString()}円）を満たす仕入値がない`)
+  return r.replace("基準を満たす入札額なし", `この相場では基準（利益${g.minMarginPct}%・${(g.minProfit || 0).toLocaleString()}円。売値$${g.lowPriceUsd || 99}以下は${(g.lowPriceMinProfit || 0).toLocaleString()}円）を満たす仕入値がない`)
     .replace("現在価格不明", "値札の価格を入れると判定します").replace("上限超過", "買える上限を超えています");
 }
 
@@ -435,7 +435,7 @@ function renderResult(name, price, r) {
     : ok && price != null ? `値札 ${yen(price)} で買ったときの利益`
     : !canPay(c, ok) ? `この相場${lowNote(c)}では利益${c.minProfit.toLocaleString()}円の基準に届かない`
     : price == null ? "値札を入れると利益を出します"
-    : `値札 ${yen(price)} では基準（利益${c.minProfit.toLocaleString()}円・${DATA.cfg.minMarginPct}%）に届かない`;
+    : `値札 ${yen(price)} では基準（利益${DATA.cfg.minMarginPct}%・${c.minProfit.toLocaleString()}円）に届かない`;
   const head = !c ? "相場なし" : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない";
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
     <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>`;
@@ -905,7 +905,7 @@ function calcRender() {
   $("cResult").innerHTML = `
     ${pay == null ? "" : `<div class="s">利益（仕入れ値 ${yen(pay)}（税込）${ex ? `＝${yen(raw)}（税抜）×1.1` : ""}）</div>
     <div class="big ${cls}" style="font-size:30px">${yen(c.profit)}</div>
-    <div class="s">利益率 ${c.margin}%（送料込みの売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? ` ・ 基準（利益${g.minProfit.toLocaleString()}円・${g.minMarginPct}%）に届かない` : " ・ 基準クリア"}</div>
+    <div class="s">利益率 ${c.margin}%（送料込みの売上に対して）${c.profit < g.minProfit || c.margin < g.minMarginPct ? ` ・ 基準（利益${g.minMarginPct}%・${g.minProfit.toLocaleString()}円）に届かない` : " ・ 基準クリア"}</div>
     <div class="s">消費税の還付を足すと ${yen(c.profit + taxBack(pay))}（店舗・ストアで買った場合。個人からの仕入れは還付なし。表示だけ）</div>`}
     <dl class="kv">
       <dt>上限価格（税込）</dt><dd class="g">${c.maxBid ? yen(c.maxBid) : "買わない"}</dd>
