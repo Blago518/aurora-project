@@ -45,3 +45,53 @@ class OldPythonConfig(unittest.TestCase):
             self.skipTest("tomllib がありません")
         path = Path(__file__).parent / "config.toml"
         self.assertEqual(ba._parse_simple_toml(path.read_text(encoding="utf-8")), tomllib.loads(path.read_text(encoding="utf-8")))
+
+
+class InstantLaneJunk(unittest.TestCase):
+    """2026-11-20 予約リストの即決に並んだ付属品・部品・本・別物（実際の商品名）. Python と拡張機能（flagRules）で同じ."""
+    ACC = [
+        "[箱だけ] Leica SUMMICRON M 50mm F2 BLACK 11826 ライカ",
+        "10銅製　ホットシューカバー　Leica Q3 M11 M10 MP M3 Nikon Zf DF FUJI X-T5 X100VI富士フイルム",
+        "新品 Rolleiflex ローライ 二眼 2.8F/3.5F/FW用 スプリット イメージ スクリーン",
+        "ニコンDf WORLD 原点回帰。写真の楽しみ無限大 日本カメラ社 Dfの使い方と一眼レフの基礎/最新ニッコールレンズベストセレクション",
+        "CHQ788#防水一眼レフカメラバッグ写真ニコン D5600 D5300 D5500 D3400 D3300 D3100 D750 D7200",
+        "★純正品★ニコン NIKON 三脚座 AF-S NIKKOR 80-400mm F4.5-5.6G ED VR用 #11244",
+        "新品 HASSELBLAD ハッセルブラッド Planar C 80mm F2.8 クロームレンズ用 シャッタースピードスケール 補修用パーツ",
+        "極上品☆Nikon MB-D16 MS-D14EN マルチバッテリーパワーパック グリップ D750用 ##14505",
+        "フェイクライカ Luftwaffen ボディ ELMAR エルマー 50mm F3.5 #5824W0992",
+    ]
+    BODY = [  # 付属品が「付き」の本体は付属品扱いしない
+        "Nikon F3 HP フォーカシングスクリーン付",
+        "Nikon AF-S 80-400mm 三脚座付き 美品",
+        "Nikon F3 カメラバッグ付き",
+        "Leica Summicron 50mm F2 沈胴 ケース付",
+    ]
+
+    def test_python(self):
+        for t in self.ACC:
+            self.assertIn("付属品のみ?", ba.detect_flags(t), t)
+        for t in self.BODY:
+            self.assertNotIn("付属品のみ?", ba.detect_flags(t), t)
+
+    def test_js_same(self):
+        import json
+        import shutil
+        import subprocess
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        rules = [[n, p] for n, p in ba.FLAG_RULES]
+        code = ("const R=%s;const T=%s;console.log(JSON.stringify(T.map(t=>R.filter(([n,p])=>new RegExp(p,'i').test(t)).map(([n])=>n))));"
+                % (json.dumps(rules), json.dumps(self.ACC + self.BODY)))
+        out = json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True).stdout)
+        self.assertEqual(out, [ba.detect_flags(t) for t in self.ACC + self.BODY])
+
+    def test_soviet_lens_not_leica(self):
+        q = ba.title_to_query("インダスター10 50mm f3.5 旧ソ連製 Lライカマウント FED INDUSTER-10 エルマー5cm パルナックライカ")
+        refs = [{"title": "Leica Elmar 50mm F3.5", "price": 300.0, "tier": 0, "source": "販売実績", "_tokens": ba._tokens("Leica Elmar 50mm F3.5")}]
+        self.assertEqual(ba.match_sales(q, refs), [], q)
+
+    def test_instant_lane_skips_too_cheap(self):
+        rows = [{"判定": "◎", "根拠の強さ": "確認不要", "上限入札額": 100000, "即決価格": 30000, "ヤフオクURL": "a", "終了": ""},
+                {"判定": "◎", "根拠の強さ": "確認不要", "上限入札額": 100000, "即決価格": 60000, "ヤフオクURL": "b", "終了": ""}]
+        instant, _ = ba.reserve_list(rows)
+        self.assertEqual([r["ヤフオクURL"] for r in instant], ["b"])

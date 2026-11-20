@@ -1147,7 +1147,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const check = items.filter((i) => secOf(i) === "check");
     // 即決で今すぐ買える出品（2026-11-19 ユーザー「利益商品を本当に落札できない」）: 即決価格が上限額以下なら、競りにならず確実に買える。
     // 判定・上限額は変えない（今の ◎○・確認してから の中から、即決価格 ≦ 上限額 のものを一番上に並べ直すだけ）
-    const instant = items.filter((i) => (secOf(i) === "good" || secOf(i) === "weak") && i.buyNow && i.calc && i.calc.maxBid && i.buyNow <= i.calc.maxBid)
+    const instant = items.filter((i) => (secOf(i) === "good" || secOf(i) === "weak") && i.buyNow && i.calc && i.calc.maxBid && i.buyNow <= i.calc.maxBid && i.buyNow >= 0.4 * i.calc.maxBid)  // 4割未満は付属品・別物の取り違えが多い（appraise.INSTANT_MIN_RATIO）
       .sort((a, b) => (b.calc.maxBid - b.buyNow) - (a.calc.maxBid - a.buyNow));
     const bad = items.filter((i) => secOf(i) === "bad");
     const pinnedWaits = items.filter((i) => secOf(i) === "wait" && i.calc);  // 仮◎○の行で［登録］した物
