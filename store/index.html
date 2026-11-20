@@ -244,13 +244,12 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   <div class="card">
     <h2>① 自動更新（おすすめ）</h2>
     <div id="autoInfo" class="s">未設定。設定すると、アプリを開くたびに最新の相場データを自動で読み込みます（②の手作業が不要）。</div>
+    <div class="status" id="autoMsg"></div>
+    <details id="autoBox" class="mt"><summary>設定コードを入れる・入れ直す</summary>
     <label for="autoCode">設定コード（AURORA1: で始まる）</label>
     <input id="autoCode" type="text" placeholder="AURORA1: で始まるコードを貼り付け" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <div class="grid2 mt">
-      <button class="btn" id="autoSave" type="button">保存して読み込む</button>
-      <button class="btn sec" id="autoDel" type="button">解除</button>
-    </div>
-    <div class="status" id="autoMsg"></div>
+    <button class="btn mt" id="autoSave" type="button">保存して読み込む</button>
+    </details>
     <p class="s">データは暗号化されて届き、この iPhone の中で合言葉を使って元に戻します。合言葉は外へ送りません。</p>
   </div>
   <div class="card">
@@ -264,10 +263,13 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   </div>
   <div class="card">
     <h2>③ 値札読み取り（Claude API）</h2>
-    <label for="apiKey" style="margin-top:0">APIキー（sk-ant- で始まる）</label>
+    <div class="s" id="keySt"></div>
+    <div class="status" id="keyMsg"></div>
+    <details id="keyBox" class="mt"><summary>APIキーを入れる・入れ直す</summary>
+    <label for="apiKey">APIキー（sk-ant- で始まる）</label>
     <input id="apiKey" type="password" placeholder="未設定" autocomplete="off">
     <button class="btn mt" id="keySave" type="button">保存</button>
-    <div class="status" id="keyMsg"></div>
+    </details>
     <p class="s">キーを替えるときは、新しいキーを貼って［保存］（上書きされます）。モデル: Claude Haiku 5.5（1枚 約0.05〜0.2円）。キーはこの iPhone の中だけに保存し、写真と一緒に Anthropic（api.anthropic.com）にだけ送ります。</p>
   </div>
   <div class="card">
@@ -280,7 +282,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.6";
+  var APP_VERSION = "2026.11.21.7";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -335,6 +337,7 @@ $("dataFile").onchange = async (e) => {
 const LS_AUTO = "storeAuto";
 async function autoUpdate(manual) {
   const cfg = lsGet(LS_AUTO, null);
+  $("autoBox").open = !cfg;   // 入れてあるときはたたむ（2026-11-21 オーナー指定）
   if (!cfg) { $("autoInfo").textContent = "未設定。設定すると、アプリを開くたびに最新の相場データを自動で読み込みます（②の手作業が不要）。"; return; }
   $("autoInfo").textContent = "設定済み。最新を確認しています…";
   try {
@@ -358,7 +361,7 @@ $("autoSave").onclick = () => {
   lsSet(LS_AUTO, cfg); $("autoCode").value = "";
   autoUpdate(true);
 };
-$("autoDel").onclick = () => { try { localStorage.removeItem(LS_AUTO); } catch (e) {} $("autoMsg").textContent = "解除しました。"; autoUpdate(false); };
+// 設定コードの［解除］ボタンは置かない（APIキーの削除と同じく、誤って押すと店で使えなくなるため。2026-11-21）
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoUpdate(false); });
 
 // ------------------------------------------------------------ 調べる
@@ -825,10 +828,12 @@ $("shelfFile").onchange = async (e) => {
 
 $("apiKey").value = lsGet(LS_KEY, "") ? "••••••••（保存済み）" : "";
 $("apiKey").onfocus = () => { if ($("apiKey").value.startsWith("•")) $("apiKey").value = ""; };
+const keyState = () => { const has = !!lsGet(LS_KEY, ""); $("keySt").textContent = has ? "保存済み。棚の写真を読み取れます。" : "未設定。値札の読み取りに必要です。"; $("keyBox").open = !has; };
+keyState();
 $("keySave").onclick = () => {
   const k = $("apiKey").value.trim();
   if (!k.startsWith("sk-ant-")) { $("keyMsg").className = "status err"; $("keyMsg").textContent = "sk-ant- で始まるキーを貼り付けてください"; return; }
-  lsSet(LS_KEY, k); $("apiKey").value = "••••••••（保存済み）"; $("keyMsg").className = "status"; $("keyMsg").textContent = "保存しました";
+  lsSet(LS_KEY, k); $("apiKey").value = "••••••••（保存済み）"; $("keyMsg").className = "status"; $("keyMsg").textContent = "保存しました"; keyState();
 };
 // 削除のボタンは置かない（2026-11-21 オーナー「誤って削除してしまった。削除ボタンは消して」）。キーを替えるときは新しいキーを入れて［保存］
 $("apiKey").onblur = () => { if (!$("apiKey").value.trim() && lsGet(LS_KEY, "")) $("apiKey").value = "••••••••（保存済み）"; };   // 触っただけで消えたように見えないよう戻す
