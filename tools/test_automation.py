@@ -188,7 +188,10 @@ const BOOKS = {
 const props = {};
 const SpreadsheetApp = { openById: (id) => ({
   getSheetByName: (n) => BOOKS[id][n] || null,
-  insertSheet: (n) => { if (id === 'SRC') throw new Error('元にシートを足そうとした'); BOOKS[id][n] = sheet(id, n, []); return BOOKS[id][n]; } }) };
+  getSheets: () => Object.values(BOOKS[id]),
+  insertSheet: (n, at) => { if (id === 'SRC') throw new Error('元にシートを足そうとした');
+    if (at !== Object.keys(BOOKS[id]).length) throw new Error('右端以外にシートを足した: ' + n);
+    BOOKS[id][n] = sheet(id, n, []); return BOOKS[id][n]; } }) };
 const ContentService = { MimeType: { CSV: 'csv' }, createTextOutput: (t) => ({ t, setMimeType() { return this; } }) };
 const PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => props[k], setProperty: (k, v) => { props[k] = v; } }) };
 const LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };

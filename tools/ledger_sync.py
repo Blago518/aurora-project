@@ -138,6 +138,9 @@ function syncLedger(dstBook, srcBook) {
   return `古物台帳: ${add.length}行を追加・空欄${filled}か所を埋めた`;
 }
 
+// 新しいシートは右端に作る（insertSheet だけだと開いているシートの隣＝左側に入って邪魔になる）
+function addAtEnd(book, name) { return book.insertSheet(name, book.getSheets().length); }
+
 function copyExtra(dstBook, srcBook) {
   const out = [];
   for (const name of Object.keys(EXTRA)) {
@@ -149,7 +152,7 @@ function copyExtra(dstBook, srcBook) {
     const head = rows[hi].map(nh), idx = want.map((c) => head.indexOf(nh(c)));
     const body = rows.slice(hi + 1).map((r) => idx.map((j) => (j >= 0 ? r[j] : ''))).filter((r) => r.some((v) => !empty(v)));
     const table = [want].concat(body);
-    const t = dstBook.getSheetByName('写し_' + name) || dstBook.insertSheet('写し_' + name);
+    const t = dstBook.getSheetByName('写し_' + name) || addAtEnd(dstBook, '写し_' + name);
     t.clearContents();
     t.getRange(1, 1, table.length, want.length).setValues(table);
     out.push(`${name}: ${body.length}行`);
@@ -202,7 +205,7 @@ function storeAdd(e) {
   try {
     const book = SpreadsheetApp.openById(BOOK);
     let sh = book.getSheetByName(STORE_SHEET);
-    if (!sh) { sh = book.insertSheet(STORE_SHEET); sh.appendRow(STORE_HEAD); }
+    if (!sh) { sh = addAtEnd(book, STORE_SHEET); sh.appendRow(STORE_HEAD); }
     rows.forEach((r) => sh.appendRow(r));
   } finally { lock.releaseLock(); }
   return ContentService.createTextOutput('OK:' + rows.length);
@@ -216,7 +219,7 @@ function doPost(e) {
   const rows = Utilities.parseCsv(e.postData.contents || '');
   if (!rows.length) return ContentService.createTextOutput('EMPTY');
   const book = SpreadsheetApp.openById(BOOK);
-  const sh = book.getSheetByName(p) || book.insertSheet(p);
+  const sh = book.getSheetByName(p) || addAtEnd(book, p);
   const w = Math.max(...rows.map((r) => r.length));
   const table = rows.map((r) => r.concat(new Array(w - r.length).fill('')));
   sh.clearContents();
