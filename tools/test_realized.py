@@ -152,3 +152,25 @@ class UpdateLog(unittest.TestCase):
         self.assertIn("問題,SyntaxError", body)
         self.assertIn("まとめ,今日の予約リスト", body)
         self.assertNotIn("404", body)  # 終わって消えた出品は毎日あるので載せない
+
+
+class SortDown200(unittest.TestCase):
+    """2026-11-20 ユーザー決定「下に回すだけ」: 売値（送料込み）$200 未満の候補は入札候補・予約リストの下に（判定・上限額は同じ）."""
+
+    def test_bid_priority(self):
+        self.assertEqual(ba.bid_priority(250, True), 0)
+        self.assertEqual(ba.bid_priority(199, True), 2)
+        self.assertEqual(ba.bid_priority(150, False), 3)
+        self.assertEqual(ba.bid_priority(200, False), 1)
+
+    def test_reserve_order(self):
+        from datetime import datetime, timedelta, timezone
+        jst = timezone(timedelta(hours=9))
+        now = datetime(2026, 11, 20, 9, 0, tzinfo=jst)
+        end = (now + timedelta(hours=10)).isoformat()
+        rows = [{"判定": "◎", "根拠の強さ": "確認不要", "上限入札額": 9000, "ヤフオクURL": "cheap", "終了": end,
+                 "想定販売価格USD": 120, "利益(現在価格)": 9000, "勝ちやすさ": None},
+                {"判定": "◎", "根拠の強さ": "確認不要", "上限入札額": 30000, "ヤフオクURL": "big", "終了": end,
+                 "想定販売価格USD": 300, "利益(現在価格)": 3000, "勝ちやすさ": None}]
+        _, picks = ba.reserve_list(rows, now=now)
+        self.assertEqual([r["ヤフオクURL"] for r in picks], ["big", "cheap"])
