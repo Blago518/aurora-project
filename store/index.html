@@ -40,6 +40,9 @@ font-size:16px;font-weight:800;text-decoration:none;cursor:pointer;padding:0 12p
 .status.err{color:var(--bad)}.status:empty{display:none}
 .verdict{display:flex;align-items:center;gap:12px}
 .mark{font-size:40px;font-weight:900;line-height:1;min-width:48px;text-align:center}
+.caprow{display:grid;grid-template-columns:1fr 132px;gap:8px;align-items:center;margin-top:10px}.caprow .cap{margin-top:0;min-width:0}
+.soldin{display:grid;gap:4px}.soldin .l{font-size:11px;color:var(--sub);font-weight:700}.soldin input{font-size:16px;padding:8px 10px}.soldin select{font-size:13px;padding:6px 8px;border:1px solid #cdd7e3;border-radius:10px;background:#fff;color:var(--ink)}
+.soldin.on input{border-color:var(--good);box-shadow:0 0 0 2px #d9f0e4}
 .buyrow{display:grid;grid-template-columns:1fr 112px;gap:8px}.buyrow input{font-size:15px}
 .nums{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.num{background:var(--soft);border-radius:12px;padding:10px 12px;min-width:0}
 .num .l{display:block;font-size:12px;color:var(--sub);font-weight:700}.num b{display:block;font-size:21px;font-weight:900;line-height:1.25;white-space:nowrap}.num .s{display:block}
@@ -121,21 +124,23 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   </div>
 
   <div class="card" id="shelf" hidden></div>
-  <div class="card" id="result" hidden></div>
-  <div class="card" id="sendBox" hidden>
-    <div class="buyrow">
-      <input id="shopName" type="text" placeholder="店名（例: キタムラ 中野）" autocomplete="off" aria-label="店名">
-      <button class="btn" type="button" data-send="購入">購入</button>
+  <div class="card" id="result" hidden>
+    <div id="resTop"></div>
+    <div class="caprow" id="capRow">
+      <div class="cap" id="capText"></div>
+      <div class="soldin">
+        <span class="l">Sold（$・送料別）</span>
+        <input id="soldUsd" inputmode="decimal" placeholder="例 250" autocomplete="off" aria-label="Soldで見た額（ドル・送料別）">
+        <select id="soldCond" aria-label="Soldの状態"><option value="">Soldの状態</option><option>TOP MINT</option><option>MINT</option><option>Near MINT</option></select>
+      </div>
     </div>
-    <div class="status" id="sendSt"></div>
-    <div class="status" id="todaySt"></div>
+    <div id="resBottom"></div>
   </div>
-
   <div class="card">
     <h2>eBayで確認（高い順）</h2>
     <div class="grid3">
-      <a class="btn" id="lSold" target="_blank" rel="noopener">販売済み</a>
-      <a class="btn sec" id="lNow" target="_blank" rel="noopener">出品中</a>
+      <a class="btn" id="lSold" target="_blank" rel="noopener">Sold</a>
+      <a class="btn sec" id="lNow" target="_blank" rel="noopener">Now</a>
       <a class="btn line" id="lPr" target="_blank" rel="noopener">PR</a>
     </div>
     <details class="mt"><summary class="s">検索語・カテゴリ・除外を直す</summary>
@@ -147,9 +152,18 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <div class="chips" id="exChips"></div>
     <input id="exCustom" type="text" class="mt" placeholder="ほかに除外する語（英語・スペース区切り）例: FM2N mount" autocomplete="off" autocapitalize="off">
     <div class="s mt" id="qPreview"></div>
-    <p class="s">販売済み・出品中は「価格＋送料の高い順」で120件。PR（Product Research）は過去90日の実際の成約額。除外キーワードは PR では効かない場合があります。</p>
+    <p class="s">Sold・Now は「価格＋送料の高い順」で120件。PR（Product Research）は過去90日の実際の成約額。除外キーワードは PR では効かない場合があります。</p>
     </details>
   </div>
+  <div class="card" id="sendBox" hidden>
+    <div class="buyrow">
+      <input id="shopName" type="text" placeholder="店名（例: キタムラ 中野）" autocomplete="off" aria-label="店名">
+      <button class="btn" type="button" data-send="購入">購入</button>
+    </div>
+    <div class="status" id="sendSt"></div>
+    <div class="status" id="todaySt"></div>
+  </div>
+
 
   <div class="card">
     <h2>最近調べた商品</h2>
@@ -269,7 +283,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.4";
+  var APP_VERSION = "2026.11.21.5";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -359,11 +373,14 @@ function lookup(name, price, opt = {}) {  // ジャンク表記の欄は外し�
   const flags = core.detectFlags(jt);
   let refs = core.matchPreferMemo(q + " " + name, DATA.refs.filter(core.isMemo), DATA.refs.filter((r) => !core.isMemo(r)));
   if (!refs.length) refs = core.matchKantei(name);
+  // Sold で調べた額（送料別）と状態を入れたら、それで計算する（2026-11-21 ユーザー指示。相場は送料込みで持つので +送料）
+  if (opt.sold && opt.sold.usd > 0)
+    refs = [{ title: name, price: opt.sold.usd + (DATA.cfg.deductionUsd || 0), tier: 0, source: "相場メモ(" + (opt.sold.cond || "") + ")", sold: true }];
   let u = refs.length ? Math.round(core.median(core.conditionAdjusted ? core.conditionAdjusted(refs, jt, flags, opt.rank) : refs.map((r) => r.price)) * 100) / 100 : null;
   if (u != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) u = Math.round(u * DATA.cfg.junkFactor * 100) / 100;
   // まとめ売り・レンズキットは中身ごとに相場を当てて合計（拡張機能・appraise.py と同じ。2点以上当たったときだけ）
   let setParts = [];
-  if (core.setPartTitles && (flags.includes("セット品") || core.KIT_RE.test(name))) {
+  if (!(opt.sold && opt.sold.usd > 0) && core.setPartTitles && (flags.includes("セット品") || core.KIT_RE.test(name))) {
     const memoPool = DATA.refs.filter(core.isMemo), otherPool = DATA.refs.filter((r) => !core.isMemo(r));
     for (const seg of core.setPartTitles(name)) {
       const ms = core.matchPreferMemo(core.titleToQuery(seg) + " " + seg, memoPool, otherPool);
@@ -398,13 +415,14 @@ function renderResult(name, price, r) {
   const el = $("result");
   if (!name.trim()) { el.hidden = true; return; }
   el.hidden = false;
-  if (!DATA) { el.innerHTML = `<div class="empty">設定タブで相場データを読み込むと、利益と判定が出ます。<br>eBayのリンクは下から使えます。</div>`; return; }
+  if (!DATA) { $("resTop").innerHTML = `<div class="empty">設定タブで相場データを読み込むと、利益と判定が出ます。<br>eBayのリンクは下から使えます。</div>`; $("capRow").hidden = true; $("resBottom").innerHTML = ""; return; }
+  $("capRow").hidden = false;
   const c = r.calc, ok = r.mark === "◎" || r.mark === "○";
   // 利益を主役に（2026-11-21 ユーザー決定「利益を一番大きく」）。言葉（買い・見送り）と ◎○× は出さない。色: 緑＝基準を満たす／赤＝満たさない／橙＝要確認
   const cls = !c ? "w" : ok || (price == null && c.maxBid > 0) ? "g" : r.mark === "要確認" ? "w" : "x";
   const sw = core.sweetSpot ? core.sweetSpot(name) : "";
   const sign = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP") + "円";
-  const why = !c ? "販売実績に無い機種。下の eBay 販売済みで確認"
+  const why = !c ? "販売実績に無い機種。下の Sold で調べて、右の欄に額を入れる"
     : price == null && c.maxBid > 0 ? "値札を入れると利益を出します"
     : r.mark === "要確認" ? storeReason(r.reason).replace(/^ジャンク・/, "")
     : /光学難/.test(r.reason) ? storeReason(r.reason).replace(/^ジャンク・/, "")
@@ -415,12 +433,17 @@ function renderResult(name, price, r) {
   const head = !c ? "相場なし" : price != null ? sign(c.profit) : c.maxBid > 0 ? yen(c.maxBid) + "まで" : "買えない";
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
     <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>`;
+  const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
+  // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
+  $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
+    : (c.maxBid > 0 ? (price != null ? `<b>${yen(c.maxBid)}</b> まで出せる` : "") + (m ? `<span class="s">この額で利益 ${yen(m.profit)}</span>` : "") : `<span class="s">基準を満たす値段がない</span>`)
+      + (sold ? `<span class="s">Sold $${pick.sold.usd}${pick.sold.cond ? "（" + esc(pick.sold.cond) + "）" : ""} で計算</span>` : "");
+  $("resTop").innerHTML = h;
+  h = "";
   if (c) {
-    const tier = r.refs[0] ? r.refs[0].tier : 3, m = r.atMax;
-    if (c.maxBid > 0 && price != null) h += `<div class="cap"><b>${yen(c.maxBid)}</b> まで出せる${m ? `<span class="s">（この額で利益 ${yen(m.profit)}）</span>` : ""}</div>`;
-    else if (c.maxBid > 0 && m) h += `<div class="cap"><span class="s">この額で買うと利益 ${yen(m.profit)}</span></div>`;
+    const tier = r.refs[0] ? r.refs[0].tier : 3;
     h += rankChips();
-    if (tier >= 2) h += `<div class="note">根拠が弱い（${esc(SRC[tier])}）→ 下の eBay 販売済みで確認</div>`;
+    if (!sold && tier >= 2) h += `<div class="note">根拠が弱い（${esc(SRC[tier])}）→ 下の Sold で確かめて、上の欄に額を入れる</div>`;
     const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
     if (warn.length) h += `<div class="note">注意: ${esc(warn.join("・"))}</div>`;
     h += `<details><summary>詳しく（根拠・過去データ）</summary><dl class="kv">
@@ -433,15 +456,24 @@ function renderResult(name, price, r) {
     <div class="s mt">一致した過去データ ${r.refs.length}件</div>${r.refs.map((x) =>
       `<div class="ref"><span>${esc(x.title)}</span><span>${esc(core.conditionOf(x) || "")}</span><span>${nusd(x.price)}<span class="s">送料別</span></span><span class="s">${esc((x.source || "").replace(/\(.*$/, ""))}</span></div>`).join("")}</details>`;
   }
-  el.innerHTML = h;
+  $("resBottom").innerHTML = h;
 }
 
 // ---- 状態（2026-11-21 ユーザー指定: TOP MINT・MINT・Near MINT の3つ。Exc+4 以下は買わない）
 // 手に取って見たランクを押すと上限を出し直す。もう一度押すと値札の表記どおりに戻る
-let pick = { rank: null, note: "" };
+let pick = { rank: null, note: "", sold: null };
+function readSold() {
+  const v = Number(String($("soldUsd").value).normalize("NFKC").replace(/[^0-9.]/g, ""));
+  const cond = $("soldCond").value;
+  pick.sold = v > 0 ? { usd: v, cond } : null;
+  $("soldUsd").parentNode.classList.toggle("on", !!pick.sold);
+}
+function clearSold() { $("soldUsd").value = ""; $("soldCond").value = ""; pick.sold = null; $("soldUsd").parentNode.classList.remove("on"); }
+$("soldUsd").addEventListener("input", () => { readSold(); look(); });
+$("soldCond").addEventListener("change", () => { readSold(); look(); });
 const RANK_CHIPS = [[10, "TOP MINT"], [9, "MINT"], [7, "Near MINT"]];
 function rankChips() {
-  return `<div class="cond"><span class="l">状態</span><div class="chips">` +
+  return `<div class="cond"><span class="l">実物</span><div class="chips">` +
     RANK_CHIPS.map(([k, t]) => `<button class="chip" type="button" data-rank="${k}" aria-pressed="${pick.rank === k}">${t}</button>`).join("") + `</div></div>`;
 }
 $("result").addEventListener("click", (e) => {
@@ -645,7 +677,8 @@ $("sendBox").addEventListener("click", (e) => {
   const ded = (DATA && DATA.cfg.deductionUsd) || 0;
   const row = [nowJst(), kind, name, price || "", r ? r.mark : "", c && c.maxBid ? c.maxBid : "",
     r && r.usd != null ? Math.round((r.usd - ded) * 100) / 100 : "", $("shopName").value.trim(),
-    [pick.rank != null ? "状態: " + RANK_CHIPS.find(([k]) => k === pick.rank)[1] : pick.note ? "値札: " + pick.note : "",
+    [pick.sold ? "Sold $" + pick.sold.usd + (pick.sold.cond ? "(" + pick.sold.cond + ")" : "") : "",
+     pick.rank != null ? "状態: " + RANK_CHIPS.find(([k]) => k === pick.rank)[1] : pick.note ? "値札: " + pick.note : "",
      c && price ? "見込み利益 " + c.profit + "円" : ""].filter(Boolean).join("／"), APP_VERSION];
   const out = lsGet(LS_OUT, []); out.push(row); lsSet(LS_OUT, out);
   if (kind === "購入") { const td = lsGet(LS_TODAY, []); td.push({ d: nowJst().slice(0, 10), name, price: price || 0, profit: c && price ? c.profit : null }); lsSet(LS_TODAY, td.slice(-200)); renderToday(); }
@@ -654,7 +687,7 @@ $("sendBox").addEventListener("click", (e) => {
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flushOutbox(); });
 
 function parsePrice(s) { const n = Number(String(s).normalize("NFKC").replace(/[^\d]/g, "")); return n > 0 ? n : null; }
-$("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; pick = { rank: null, note: "" }; look(); autoLogTyped(); });
+$("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; pick = { rank: null, note: "", sold: null }; clearSold(); look(); autoLogTyped(); });
 $("price").addEventListener("input", () => { look(); autoLogTyped(); });
 $("query").addEventListener("input", () => { queryTouched = true; updateLinks(); });
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.target.blur(); remember(); } });
@@ -679,7 +712,7 @@ $("hist").onclick = (e) => {
 };
 function setInput(name, price, note) {
   $("name").value = name; $("price").value = price || ""; queryTouched = false; catSel = "auto";
-  pick = { rank: null, note: note || "" };
+  pick = { rank: null, note: note || "", sold: null }; clearSold();
   look(); showTab("look"); window.scrollTo({ top: 0 });
 }
 
@@ -826,7 +859,7 @@ function renderRecs() {
     const L = linksWithCat(withEx(r.label), r.kind === "lens" ? "3323" : DIGITAL_RE.test(r.label) ? "31388" : "15230");
     return `<div class="rec"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
       <div class="buy">税込 <strong>${yen(r.maxBuy)}</strong> 以下なら買い <span class="s">／想定${nusd(r.usd)}（送料別）${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
-      <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">販売済み</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">出品中</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
+      <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">Sold</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">Now</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
   }).join("") : `<div class="empty">この条件の販売実績はまだありません</div>`;
 }
 $("brandChips").onclick = (e) => { const b = e.target.dataset.brand; if (b == null) return; recSel.brand = b; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
