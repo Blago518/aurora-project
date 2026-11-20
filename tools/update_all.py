@@ -260,7 +260,8 @@ def dashboard() -> None:
     if has_token:
         for what, args in (("出品中一覧", ["listings"]), ("注文（2年分）", ["orders", "--days", "730"]),
                            ("取引明細（2年分）", ["fees", "--days", "730"]),
-                           ("返品・キャンセルの状況（1年分）", ["returns", "--days", "365"])):
+                           ("返品・キャンセルの状況（1年分）", ["returns", "--days", "365"]),
+                           ("残高（まだ出金していないお金）→ 台帳「Mac_資金」", ["funds", "--upload"])):
             print(f"\n▶ eBay の{what}")
             subprocess.call([sys.executable, str(HERE / "ebay_api.py"), *args], cwd=ROOT)
     print("\n▶ 数字のグラフ")
