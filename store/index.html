@@ -38,7 +38,6 @@ font-size:16px;font-weight:800;text-decoration:none;cursor:pointer;padding:0 12p
 .chk input{width:20px;height:20px}
 .status{font-size:13px;color:var(--sub);margin-top:8px;min-height:1em;white-space:pre-line}
 .status.err{color:var(--bad)}
-.photo{display:none;width:100%;max-height:160px;object-fit:contain;border-radius:10px;background:#eef2f6;margin-top:10px}
 .verdict{display:flex;align-items:center;gap:12px}
 .mark{font-size:40px;font-weight:900;line-height:1;min-width:48px;text-align:center}
 .g{color:var(--good)}.o{color:var(--ok)}.x{color:var(--bad)}.w{color:var(--warn)}
@@ -102,11 +101,8 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <!-- ===================================================== 調べる -->
 <section id="look">
   <div class="card">
-    <button class="btn dark" id="camBtn" type="button">📷 値札を撮って読み取る</button>
-    <input id="camFile" type="file" accept="image/*" capture="environment" hidden>
-    <button class="btn sec mt" id="shelfBtn" type="button">🗂 棚をまとめて撮る（値札が何枚でも）</button>
-    <input id="shelfFile" type="file" accept="image/*" multiple hidden>
-    <img id="photo" class="photo" alt="">
+    <button class="btn dark" id="shelfBtn" type="button">📷 撮る（値札1枚でも棚でも）</button>
+    <input id="shelfFile" type="file" accept="image/*" capture="environment" hidden>
     <div class="status" id="ocrSt"></div>
     <label for="name">商品名・型番</label>
     <input id="name" type="search" placeholder="例: Nikon FM2 / キヤノン New FD 50mm F1.4" autocomplete="off" enterkeyhint="search">
@@ -124,11 +120,16 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
       <button class="btn" type="button" data-send="買った">買った</button>
     </div>
     <div class="status" id="sendSt"></div>
-    <p class="s">古物台帳の「共有_店舗」に1行入ります。「あとで調べる」はその夜にゼニガメが相場を調べ、翌朝のデータに入ります。「買った」は台帳に入れる行の下書きになります。</p>
   </div>
 
   <div class="card">
     <h2>eBayで確認（高い順）</h2>
+    <div class="grid3">
+      <a class="btn" id="lSold" target="_blank" rel="noopener">販売済み</a>
+      <a class="btn sec" id="lNow" target="_blank" rel="noopener">出品中</a>
+      <a class="btn line" id="lPr" target="_blank" rel="noopener">PR</a>
+    </div>
+    <details class="mt"><summary class="s">検索語・カテゴリ・除外を直す</summary>
     <label for="query" style="margin-top:0">検索語（英語・直してOK）</label>
     <input id="query" type="search" placeholder="商品名を入れると自動で入ります" autocomplete="off">
     <label>eBayのカテゴリ（商品名から自動。違えばタップ）</label>
@@ -137,12 +138,8 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <div class="chips" id="exChips"></div>
     <input id="exCustom" type="text" class="mt" placeholder="ほかに除外する語（英語・スペース区切り）例: FM2N mount" autocomplete="off" autocapitalize="off">
     <div class="s mt" id="qPreview"></div>
-    <div class="grid3 mt">
-      <a class="btn" id="lSold" target="_blank" rel="noopener">販売済み</a>
-      <a class="btn sec" id="lNow" target="_blank" rel="noopener">出品中</a>
-      <a class="btn line" id="lPr" target="_blank" rel="noopener">Product Research</a>
-    </div>
-    <p class="s">販売済み・出品中は「価格＋送料の高い順」で120件表示。Product Research は過去90日の販売（Best Offer 込みの実際の成約額）。除外キーワードは Product Research では効かない場合があります。</p>
+    <p class="s">販売済み・出品中は「価格＋送料の高い順」で120件。PR（Product Research）は過去90日の実際の成約額。除外キーワードは PR では効かない場合があります。</p>
+    </details>
   </div>
 
   <div class="card">
@@ -263,7 +260,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.20.3";
+  var APP_VERSION = "2026.11.20.4";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -395,18 +392,21 @@ function renderResult(name, price, r) {
     const tier = r.refs[0] ? r.refs[0].tier : 3;
     h += `<dl class="kv">
       <dt>この値段以下なら買い（税込）</dt><dd class="g">${yen(c.maxBid)}</dd>
+      ${price != null ? `<dt>値札で買ったときの利益</dt><dd class="${c.profit >= 0 ? "g" : "x"}">${yen(c.profit)}（${c.margin}%）</dd>
+      <dt>還付込み</dt><dd>${yen(c.profit + taxBack(price))}</dd>` : ""}
+    </dl>`;
+    if (tier >= 2) h += `<div class="note">根拠が弱い（${esc(SRC[tier])}）。eBay の販売済みで確認を</div>`;
+    const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
+    if (warn.length) h += `<div class="note">注意: ${esc(warn.join("・"))}</div>`;
+    h += `<details><summary>もっと見る（根拠・状態・損益ゼロ・過去データ）</summary><dl class="kv">
       <dt>損益ゼロになる値段（税込）</dt><dd>${yen(c.breakeven)}</dd>
       <dt>想定販売価格（eBay・送料別）</dt><dd>${nusd(r.usd)}${r.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
       <dt>根拠</dt><dd>${r.setParts && r.setParts.length ? `まとめ売り・キット ${r.setParts.length}点の合計（2点目からは送料・手数料・梱包を引く）<br>${r.setParts.map((p) => `${esc(p.label)} ${nusd(p.usd)}`).join("<br>")}` : `${esc(SRC[tier] || "")} ${r.refs.length}件の中央値`}</dd>
       ${conds(r.refs) ? `<dt>状態</dt><dd>${conds(r.refs)}</dd>` : ""}
       ${core.conditionNote && core.conditionNote(r.refs, name, r.flags) ? `<dt></dt><dd class="s">${esc(core.conditionNote(r.refs, name, r.flags))}</dd>` : ""}
-      ${price != null ? `<dt>値札で買ったときの利益</dt><dd class="${c.profit >= 0 ? "g" : "x"}">${yen(c.profit)}（${c.margin}%）</dd>
-      <dt>消費税の還付を足すと</dt><dd class="s">${yen(c.profit + taxBack(price))}（還付 ${yen(taxBack(price))}。表示だけで、判定・上限は還付なし）</dd>` : ""}
-    </dl>`;
-    if (tier >= 2) h += `<div class="note">根拠が弱いデータです（${esc(SRC[tier])}）。eBay の販売済みで必ず確認してください。</div>`;
-    const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
-    if (warn.length) h += `<div class="note">注意: ${esc(warn.join("・"))}</div>`;
-    h += `<details><summary>一致した過去データ ${r.refs.length}件</summary>${r.refs.map((x) =>
+      ${price != null ? `<dt>消費税の還付</dt><dd class="s">${yen(taxBack(price))}（表示だけ。判定・上限は還付なし）</dd>` : ""}
+    </dl>
+    <div class="s mt">一致した過去データ ${r.refs.length}件</div>${r.refs.map((x) =>
       `<div class="ref"><span>${esc(x.title)}</span><span>${esc(core.conditionOf(x) || "")}</span><span>${nusd(x.price)}<span class="s">送料別</span></span><span class="s">${esc((x.source || "").replace(/\(.*$/, ""))}</span></div>`).join("")}</details>`;
   }
   el.innerHTML = h;
@@ -615,24 +615,6 @@ function setInput(name, price) {
 }
 
 // ------------------------------------------------------------ 値札の読み取り（Claude API）
-const TAG_SCHEMA = {
-  type: "object", additionalProperties: false,
-  required: ["found", "maker", "model", "kind", "search_query", "price_tax_included_jpy", "junk", "notes"],
-  properties: {
-    found: { type: "boolean", description: "カメラ・レンズの値札や商品が写っているか" },
-    maker: { type: "string", description: "メーカー（英語表記。例: Nikon, Canon, Pentax, Olympus）。不明なら空" },
-    model: { type: "string", description: "型番・機種名（英数字表記。例: FM2, New FD 50mm F1.4）。不明なら空" },
-    kind: { type: "string", enum: ["camera", "lens", "other", "unknown"] },
-    search_query: { type: "string", description: "eBayで検索する英語の語（メーカー＋型番。状態や色は入れない）" },
-    price_tax_included_jpy: { anyOf: [{ type: "integer" }, { type: "null" }], description: "お店に払う税込価格。税抜しか書いていなければ×1.1して四捨五入。価格が読めなければnull" },
-    junk: { type: "boolean", description: "ジャンク・現状品・難あり等の表記があるか" },
-    notes: { type: "string", description: "値札に書かれた状態の表記だけ（例: カビあり、動作未確認、美品）。30字以内、文末に句点は付けない。無ければ空" },
-  },
-};
-const TAG_PROMPT = "中古カメラ店の値札（または商品）の写真です。書かれているメーカー・型番・価格・状態を読み取ってください。" +
-  "日本語のメーカー名（ニコン、キヤノン等）は英語表記に直し、型番はカタログ通りの表記にしてください。" +
-  "読めない項目は推測せず空またはnullにしてください。";
-
 async function photoToJpeg(file, maxSide = 1568) {
   const url = URL.createObjectURL(file);
   try {
@@ -643,38 +625,6 @@ async function photoToJpeg(file, maxSide = 1568) {
     cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
     return cv.toDataURL("image/jpeg", 0.85).split(",")[1];
   } finally { URL.revokeObjectURL(url); }
-}
-
-async function readTag(file) {
-  const key = lsGet(LS_KEY, "");
-  if (!key) throw new Error("設定タブで Claude の APIキーを入れてください");
-  const data = await photoToJpeg(file);
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json", "x-api-key": key, "anthropic-version": "2026-10-21",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-5-5", max_tokens: 4000,
-      output_config: { effort: "low", format: { type: "json_schema", schema: TAG_SCHEMA } },
-      messages: [{ role: "user", content: [
-        { type: "image", source: { type: "base64", media_type: "image/jpeg", data } },
-        { type: "text", text: TAG_PROMPT },
-      ] }],
-    }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = body.error && body.error.message || res.statusText;
-    if (res.status === 401) throw new Error("APIキーが正しくありません（設定タブで確認）");
-    if (res.status === 429) throw new Error("混み合っています。少し待ってもう一度");
-    throw new Error(`読み取りに失敗（${res.status}）: ${msg}`);
-  }
-  if (body.stop_reason === "refusal") throw new Error("この写真は読み取れませんでした");
-  if (body.stop_reason === "max_tokens") throw new Error("読み取りが途中で切れました。もう一度撮ってください");
-  const text = (body.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
-  return JSON.parse(text);
 }
 
 // ------------------------------------------------------------ 棚をまとめて撮る（2026-11-20 ユーザー決定）
@@ -719,67 +669,53 @@ async function readShelf(file) {
   return JSON.parse((body.content || []).filter((b) => b.type === "text").map((b) => b.text).join("")).items || [];
 }
 const SHELF_ORDER = { "◎": 0, "○": 1, "要確認": 2, "×": 3 };
-function renderShelf(rows, note) {
-  const el = $("shelf"); el.hidden = false;
+// 撮るたびに一覧へ足していく（棚に沿って何回でも撮れる）。［新しい棚］で空にする
+let shelfRows = [];
+const shelfSeen = new Set();
+function renderShelf(note) {
+  const el = $("shelf"), rows = shelfRows;
+  el.hidden = rows.length < 2;  // 1件だけのときは下の詳細だけで足りる
+  if (rows.length < 2) return;
   rows.sort((a, b) => (a.r && a.r.calc ? 0 : 1) - (b.r && b.r.calc ? 0 : 1) || (SHELF_ORDER[a.r.mark] ?? 4) - (SHELF_ORDER[b.r.mark] ?? 4)
     || ((b.r.calc && b.r.calc.profit) ?? -1e9) - ((a.r.calc && a.r.calc.profit) ?? -1e9));
   const buy = rows.filter((x) => x.r.calc && (x.r.mark === "◎" || x.r.mark === "○")).length;
-  el.innerHTML = `<h2>棚の読み取り ${rows.length}件 ― 買い候補 ${buy}件</h2><div class="s">${esc(note || "")}</div>` + rows.map((x, i) => {
+  el.innerHTML = `<div class="row" style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">読み取り ${rows.length}件 ― 買い候補 ${buy}件</h2><button class="mini" data-clear="1" type="button">新しい棚</button></div>${note ? `<div class="s">${esc(note)}</div>` : ""}` + rows.map((x, i) => {
     const r = x.r, c = r.calc, cls = { "◎": "g", "○": "o", "×": "x" }[r.mark] || "w";
     const what = !c ? "相場データなし" : x.price == null ? `${yen(c.maxBid)} 以下なら買い（価格読めず）`
       : `値札 ${yen(x.price)} → 利益 ${yen(c.profit)}（上限 ${yen(c.maxBid)}）`;
     return `<div class="shelf"><div class="mk ${cls}">${esc(!c ? "－" : r.mark === "要確認" ? "？" : r.mark)}</div>
       <div class="tt"><b>${esc(x.name)}</b><span class="s">${esc(what)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
       <button data-shelf="${i}">詳しく</button></div>`;
-  }).join("") + `<p class="s">◎○＝この値段で買っても基準（利益・利益率）を満たす。手に取って光学・動作を確かめてから買ってください。「詳しく」で根拠と eBay の販売済みを確認できます。</p>`;
-  el.onclick = (e) => { const i = e.target.dataset.shelf; if (i == null) return; const x = rows[+i]; setInput(x.name, x.price || ""); };
+  }).join("");
+  el.onclick = (e) => {
+    if (e.target.dataset.clear) { shelfRows = []; shelfSeen.clear(); renderShelf(); return; }
+    const i = e.target.dataset.shelf; if (i == null) return; const x = rows[+i]; setInput(x.name, x.price || "");
+  };
 }
 $("shelfBtn").onclick = () => $("shelfFile").click();
 $("shelfFile").onchange = async (e) => {
-  const files = [...e.target.files]; e.target.value = "";
-  if (!files.length) return;
-  if (!DATA) { $("ocrSt").className = "status err"; $("ocrSt").textContent = "設定タブで相場データを読み込んでから使ってください"; return; }
-  const st = $("ocrSt"); st.className = "status"; $("shelfBtn").disabled = true;
-  const rows = [], seen = new Set(); let fail = 0;
-  try {
-    for (let n = 0; n < files.length; n++) {
-      st.textContent = `棚の写真を読み取り中… ${n + 1}/${files.length}（1枚10秒ほど）`;
-      try {
-        for (const t of await readShelf(files[n])) {
-          const name = (t.search_query || [t.maker, t.model].filter(Boolean).join(" ")).trim();
-          if (!name) continue;
-          const k = name.toLowerCase() + "|" + (t.price_tax_included_jpy || "");
-          if (seen.has(k)) continue; seen.add(k);
-          rows.push({ name, price: t.price_tax_included_jpy || null, notes: String(t.notes || "").trim(), r: lookup(name, t.price_tax_included_jpy || null) });
-        }
-      } catch (err) { fail++; st.className = "status err"; st.textContent = err.message; if (/APIキー/.test(err.message)) return; }
-    }
-    if (!rows.length && fail) return;  // 失敗の知らせ（APIキー・通信など）をそのまま残す
-    st.className = "status"; st.textContent = rows.length ? "" : "値札を読み取れませんでした。棚に近づいて、値札が読める大きさで撮ってください。";
-    if (rows.length) renderShelf(rows, `写真${files.length}枚${fail ? `（${fail}枚は失敗）` : ""}。読み違いがあるので、買う前に「詳しく」で型番と価格を確かめてください。`);
-  } finally { $("shelfBtn").disabled = false; }
-};
-
-$("camBtn").onclick = () => $("camFile").click();
-$("camFile").onchange = async (e) => {
   const f = e.target.files[0]; e.target.value = "";
   if (!f) return;
-  const st = $("ocrSt"), img = $("photo");
-  img.src = URL.createObjectURL(f); img.style.display = "block";
-  st.className = "status"; st.textContent = "読み取り中…（数秒）";
-  $("camBtn").disabled = true;
+  const st = $("ocrSt");
+  if (!DATA) { st.className = "status err"; st.textContent = "設定タブで相場データを読み込んでから使ってください"; return; }
+  st.className = "status"; st.textContent = "読み取り中…（10秒ほど）"; $("shelfBtn").disabled = true;
   try {
-    const t = await readTag(f);
-    if (!t.found || !(t.search_query || t.model)) { st.className = "status err"; st.textContent = "型番を読み取れませんでした。値札に近づいて撮り直すか、手で入力してください。"; return; }
-    const name = t.search_query || [t.maker, t.model].filter(Boolean).join(" ");
-    $("name").value = name; queryTouched = false; catSel = "auto";
-    if (t.price_tax_included_jpy) $("price").value = t.price_tax_included_jpy;
-    look(); remember();
-    const note = String(t.notes || "").trim().replace(/[。.．\s]+$/, "");
-    st.textContent = `読み取り: ${name}${t.price_tax_included_jpy ? "／" + yen(t.price_tax_included_jpy) + "（税込）" : "／価格は読めず"}。違っていたら直してください。` +
-      (note ? `\n状態のメモ: ${note.length > 40 ? note.slice(0, 40) + "…" : note}` : "");
+    const added = [];
+    for (const t of await readShelf(f)) {
+      const name = (t.search_query || [t.maker, t.model].filter(Boolean).join(" ")).trim();
+      if (!name) continue;
+      const k = name.toLowerCase() + "|" + (t.price_tax_included_jpy || "");
+      if (shelfSeen.has(k)) continue; shelfSeen.add(k);
+      added.push({ name, price: t.price_tax_included_jpy || null, notes: String(t.notes || "").trim(), r: lookup(name, t.price_tax_included_jpy || null) });
+    }
+    if (!added.length) { st.className = "status err"; st.textContent = "値札を読み取れませんでした。値札に近づいて撮り直してください。"; return; }
+    const first = !shelfRows.length;
+    shelfRows = shelfRows.concat(added);
+    st.textContent = `${added.length}件 読み取り。型番・価格の読み違いがないか確かめてから買ってください。`;
+    if (first && added.length === 1) { setInput(added[0].name, added[0].price || ""); renderShelf(); }  // 値札1枚ならそのまま詳細
+    else renderShelf();
   } catch (err) { st.className = "status err"; st.textContent = err.message; }
-  finally { $("camBtn").disabled = false; }
+  finally { $("shelfBtn").disabled = false; }
 };
 
 $("apiKey").value = lsGet(LS_KEY, "") ? "••••••••（保存済み）" : "";
