@@ -549,6 +549,24 @@
     const extra = (DATA.cfg.deductionUsd || 0) + DATA.cfg.perOrderUsd + DATA.cfg.packing / fx;
     return Math.round((parts.reduce((a, p) => a + p.usd, 0) - (parts.length - 1) * extra) * 100) / 100;
   }
+  // ---- 狙い目スペック（講座資料「レンズ狙い目スペック」。店舗アプリも使うので @core の中）: 単焦点の焦点距離×F値で印を付けるだけ（判定・上限額は変えない）
+  //      50mm から離れるほど、F値が小さいほど高い。ズーム（28-70mm など）は対象外
+  const SWEET = [[24, 99, "24mm以下は基本全部OK"], [31, 2, "28mm は f/2 より明るい"], [40, 2, "35mm は f/2 より明るい"],
+    [60, 1.2, "50mm は f/1.2 より明るい"], [89, 99, "85mm は基本全部OK"], [115, 2, "100mm前後は f/2 より明るい"],
+    [160, 2, "135mm は f/2 より明るい"], [250, 2.8, "200mm は f/2.8 より明るい"], [350, 2.8, "300mm は f/2.8 より明るい"],
+    [99999, 2.8, "400mm以上は f/2.8 より明るい"]];
+  function sweetSpot(title) {
+    const t = String(title || "").replace(/[\uff01-\uff5e]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/㎜/g, "mm");
+    if (/\d\s*[-~〜]\s*\d+\s*mm/i.test(t)) return "";  // ズーム
+    const mm = t.match(/(\d{1,4}(?:\.\d)?)\s*mm/i);
+    if (!mm) return "";
+    const fl = Number(mm[1]);
+    const fs = [...t.matchAll(/(?:\bf\s*\/?\s*|1\s*:\s*)(\d{1,2}(?:\.\d{1,2})?)/gi)].map((m) => Number(m[1])).filter((v) => v > 0.6 && v < 33);
+    if (!fs.length) return "";
+    const f = Math.min(...fs), band = SWEET.find(([max]) => fl <= max);
+    return band && f <= band[1] + 1e-9 ? band[2] : "";
+  }
+
   // @core-end
 
   // ------------------------------------------------------------------ 安心ストア（フォロー中のストア）
@@ -1106,24 +1124,6 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   }
 
   // 出品の本来の欄: good（入札候補）/ weak（確認してから・根拠が弱い）/ check（要確認）/ bad（×）/ wait（仮◎○）/ acc（付属品）
-  // ---- 狙い目スペック（講座資料「レンズ狙い目スペック」）: 単焦点の焦点距離×F値で印を付けるだけ（判定・上限額は変えない）
-  //      50mm から離れるほど、F値が小さいほど高い。ズーム（28-70mm など）は対象外
-  const SWEET = [[24, 99, "24mm以下は基本全部OK"], [31, 2, "28mm は f/2 より明るい"], [40, 2, "35mm は f/2 より明るい"],
-    [60, 1.2, "50mm は f/1.2 より明るい"], [89, 99, "85mm は基本全部OK"], [115, 2, "100mm前後は f/2 より明るい"],
-    [160, 2, "135mm は f/2 より明るい"], [250, 2.8, "200mm は f/2.8 より明るい"], [350, 2.8, "300mm は f/2.8 より明るい"],
-    [99999, 2.8, "400mm以上は f/2.8 より明るい"]];
-  function sweetSpot(title) {
-    const t = String(title || "").replace(/[\uff01-\uff5e]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/㎜/g, "mm");
-    if (/\d\s*[-~〜]\s*\d+\s*mm/i.test(t)) return "";  // ズーム
-    const mm = t.match(/(\d{1,4}(?:\.\d)?)\s*mm/i);
-    if (!mm) return "";
-    const fl = Number(mm[1]);
-    const fs = [...t.matchAll(/(?:\bf\s*\/?\s*|1\s*:\s*)(\d{1,2}(?:\.\d{1,2})?)/gi)].map((m) => Number(m[1])).filter((v) => v > 0.6 && v < 33);
-    if (!fs.length) return "";
-    const f = Math.min(...fs), band = SWEET.find(([max]) => fl <= max);
-    return band && f <= band[1] + 1e-9 ? band[2] : "";
-  }
-
   function naturalSec(i, isAcc, sure) {
     if (isAcc(i)) return "acc";
     if (i.mark === "◎" || i.mark === "○") return sure(i) ? "good" : "weak";
