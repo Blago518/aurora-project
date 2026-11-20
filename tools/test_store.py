@@ -400,7 +400,7 @@ class SetListing(unittest.TestCase):
     def test_python(self):
         items = self._python()
         self.assertEqual(len(items[0].set_parts), 3)
-        extra = CFG["shipping"]["deduction_usd"] + CFG["ebay"]["per_order_fee_usd"] + CFG["shipping"]["packing_jpy"] / 150.0
+        extra = CFG["shipping"]["deduction_usd"] + CFG["ebay"]["per_order_fee_usd"] + ba.item_cost_jpy(CFG) / 150.0  # 梱包＋オークレボの手数料
         self.assertAlmostEqual(items[0].expected_price_usd, round(450 + 160 + 120 - 2 * extra, 2), places=2)
         self.assertNotEqual(ba.judge(items[0])[0], "要確認")
         self.assertIn("まとめ売り3点", ba.judge(items[0])[1])

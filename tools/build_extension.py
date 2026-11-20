@@ -66,7 +66,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "fx": round(fx, 2), "convLossPct": cfg["fx"]["conversion_loss_pct"],
             "feePct": e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"],
             "perOrderUsd": e["per_order_fee_usd"], "buyerShippingUsd": e["buyer_shipping_usd"],
-            "deductionUsd": s.get("deduction_usd", 0), "packing": s["packing_jpy"],
+            "deductionUsd": s.get("deduction_usd", 0), "packing": ba.item_cost_jpy(cfg),  # 梱包＋オークレボの手数料（2026-11-21）
             "chatworkShipUsd": s.get("chatwork_included_usd", 30.0),  # Chatwork の報告額に含まれる送料（売値の表示を報告額に戻す用）
             "defaultDomestic": y["default_domestic_shipping_jpy"], "storeTaxPct": y["store_tax_pct"],
             "refundRatio": (t["consumption_tax_pct"] / (100 + t["consumption_tax_pct"])
