@@ -68,6 +68,7 @@ class InstantLaneJunk(unittest.TestCase):
         "Nikon AF-S 80-400mm 三脚座付き 美品",
         "Nikon F3 カメラバッグ付き",
         "Leica Summicron 50mm F2 沈胴 ケース付",
+        "Nikon D750 ボディ 同梱承ります 即決",   # 「承ります」は本体の商品名にもあるので付属品扱いしない
     ]
 
     def test_python(self):
