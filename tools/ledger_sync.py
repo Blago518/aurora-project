@@ -917,7 +917,16 @@ def cmd_script() -> None:
     script = script_text(key, book, src, get_store_key())
     copied = keychain.copy_to_clipboard(script)
     head = "新しいスクリプトをクリップボードにコピーしました。" if copied else "下のスクリプトをコピーしてください:\n" + script
-    where = "https://script.google.com/home →「aurora 古物台帳」のプロジェクトを開く"
+    # 開くページはブラウザで自動で開く（2026-11-20 ユーザー指摘「URL を都度貼って」）。2回目からはプロジェクトの画面を直接開く
+    editor = keychain.get(SERVICE, "editor") or ""
+    page = editor or "https://script.google.com/home"
+    try:
+        import webbrowser
+        webbrowser.open(page)
+    except Exception:
+        pass
+    where = (f"ブラウザで開いたページ（{page}）" if editor
+             else f"ブラウザで開いたページ（{page}）で「aurora 古物台帳」のプロジェクトを開く")
     print(f"""
 {head}
 
@@ -928,7 +937,12 @@ def cmd_script() -> None:
     → バージョン:「新バージョン」→「デプロイ」（URL は変わりません）
  4. 終わったら Enter
 """)
-    input("Enter を押すと試しに読み込みます…")
+    if not editor:
+        u = input("（次回から直接開くため）いま開いているプロジェクトの画面のアドレス欄の URL を貼って Enter（飛ばすなら Enter だけ）: ").strip()
+        if u.startswith("https://script.google.com/") and "/projects/" in u:
+            keychain.set(SERVICE, "editor", u.split("?")[0])
+    else:
+        input("Enter を押すと試しに読み込みます…")
     sync(dry_run=True)
     upload_bids()
 
