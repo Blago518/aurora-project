@@ -81,6 +81,12 @@ def _parse_simple_toml(text: str) -> dict:
     return data
 
 
+def item_cost_jpy(cfg: dict) -> int:
+    """1点ごとにかかる円の費用: 梱包＋オークレボ（発送代行）の手数料（SpeedPAK 540円＋海外発送手数料 280円。2026-11-21 ユーザー決定）."""
+    s = cfg["shipping"]
+    return int(s["packing_jpy"]) + int(s.get("agent_fee_jpy", 0))
+
+
 def load_config(path: Path | None) -> dict:
     path = path or HERE / "config.toml"
     try:
@@ -1100,7 +1106,7 @@ def sold_hit(row: dict, cfg: dict, fx: float) -> bool:
     fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
     fees = price * fee_pct / 100 + e["per_order_fee_usd"]
     net = (price - fees) * fx * (1 - cfg["fx"]["conversion_loss_pct"] / 100)
-    profit = net - cfg["shipping"]["deduction_usd"] * fx - int(cfg["shipping"]["packing_jpy"]) - cost
+    profit = net - cfg["shipping"]["deduction_usd"] * fx - item_cost_jpy(cfg) - cost
     return profit >= j["min_profit_jpy"] and profit / (price * fx) * 100 >= j["min_margin_pct"]
 
 
@@ -1113,7 +1119,7 @@ def _hit_profit(row: dict, cfg: dict, fx: float) -> float:
         return price * fx * 0.1
     fee_pct = e["final_value_fee_pct"] + e["international_fee_pct"] + e["ad_rate_pct"]
     net = (price - price * fee_pct / 100 - e["per_order_fee_usd"]) * fx * (1 - cfg["fx"]["conversion_loss_pct"] / 100)
-    return net - cfg["shipping"]["deduction_usd"] * fx - int(cfg["shipping"]["packing_jpy"]) - cost
+    return net - cfg["shipping"]["deduction_usd"] * fx - item_cost_jpy(cfg) - cost
 
 
 def _brand_of(title: str) -> str:
@@ -1262,7 +1268,7 @@ def set_part_titles(title: str) -> list[str]:
 
 def set_value(parts: list[tuple[str, float]], cfg: dict, fx: float) -> float:
     """中身の相場（送料込み）の合計から、2点目以降の送料・1注文の手数料・梱包を引いた額（送料込みの売値として calculate に渡す）."""
-    extra = cfg["shipping"]["deduction_usd"] + cfg["ebay"]["per_order_fee_usd"] + int(cfg["shipping"]["packing_jpy"]) / fx
+    extra = cfg["shipping"]["deduction_usd"] + cfg["ebay"]["per_order_fee_usd"] + item_cost_jpy(cfg) / fx
     return round(sum(pr for _, pr in parts) - (len(parts) - 1) * extra, 2)
 
 
@@ -1528,7 +1534,7 @@ def calculate(item: Item, cfg: dict, fx: float, with_realized: bool = True) -> d
     dom = item.domestic_shipping_jpy
     dom = int(y["default_domestic_shipping_jpy"]) if dom is None else dom
     ship = intl_shipping(item, cfg, fx)
-    pack = int(cfg["shipping"]["packing_jpy"])
+    pack = item_cost_jpy(cfg)
     # ストア出品は入札額が税抜。入札1円あたり (1+税率) 円を払う。個人出品は税なし
     tax_mult = 1 + y["store_tax_pct"] / 100 if item.store_tax else 1.0
     refund_ratio = (
