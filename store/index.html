@@ -37,9 +37,13 @@ font-size:16px;font-weight:800;text-decoration:none;cursor:pointer;padding:0 12p
 .mt{margin-top:10px}.s{font-size:12px;color:var(--sub)}.chk{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink);font-weight:600;margin-top:10px}
 .chk input{width:20px;height:20px}
 .status{font-size:13px;color:var(--sub);margin-top:8px;min-height:1em;white-space:pre-line}
-.status.err{color:var(--bad)}
+.status.err{color:var(--bad)}.status:empty{display:none}
 .verdict{display:flex;align-items:center;gap:12px}
 .mark{font-size:40px;font-weight:900;line-height:1;min-width:48px;text-align:center}
+.buyrow{display:grid;grid-template-columns:1fr 112px;gap:8px}.buyrow input{font-size:15px}
+.nums{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.num{background:var(--soft);border-radius:12px;padding:10px 12px;min-width:0}
+.num .l{display:block;font-size:12px;color:var(--sub);font-weight:700}.num b{display:block;font-size:24px;font-weight:900;line-height:1.25}.num .s{display:block}
+.cond{display:flex;align-items:center;gap:8px;margin-top:12px}.cond .l{font-size:12px;color:var(--sub);font-weight:700;white-space:nowrap}.cond .chips{flex-wrap:nowrap}.cond .chip{padding:8px 10px;font-size:13px}
 .g{color:var(--good)}.o{color:var(--ok)}.x{color:var(--bad)}.w{color:var(--warn)}
 .big{font-size:22px;font-weight:900}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:12px;font-size:14px}
@@ -101,24 +105,22 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <!-- ===================================================== 調べる -->
 <section id="look">
   <div class="card">
-    <button class="btn dark" id="shelfBtn" type="button">📷 撮る（値札1枚でも棚でも）</button>
+    <button class="btn dark" id="shelfBtn" type="button">📷 撮る</button>
     <input id="shelfFile" type="file" accept="image/*" capture="environment" hidden>
     <div class="status err" id="staleSt"></div>
     <div class="status" id="ocrSt"></div>
     <label for="name">商品名・型番</label>
     <input id="name" type="search" placeholder="例: Nikon FM2 / キヤノン New FD 50mm F1.4" autocomplete="off" enterkeyhint="search">
-    <label for="price">値札の価格（税込でお店に払う額・円）</label>
+    <label for="price">値札（税込・円）</label>
     <input id="price" inputmode="numeric" pattern="[0-9]*" placeholder="例: 18000" autocomplete="off">
   </div>
 
   <div class="card" id="shelf" hidden></div>
   <div class="card" id="result" hidden></div>
   <div class="card" id="sendBox" hidden>
-    <label for="shopName" style="margin-top:0">いる店（次回も覚えています）</label>
-    <input id="shopName" type="text" placeholder="例: キタムラ 中野" autocomplete="off">
-    <div class="grid2 mt">
-      <button class="btn sec" type="button" data-send="あとで調べる">あとで調べる</button>
-      <button class="btn" type="button" data-send="買った">買った</button>
+    <div class="buyrow">
+      <input id="shopName" type="text" placeholder="店名（例: キタムラ 中野）" autocomplete="off" aria-label="店名">
+      <button class="btn" type="button" data-send="購入">購入</button>
     </div>
     <div class="status" id="sendSt"></div>
     <div class="status" id="todaySt"></div>
@@ -262,7 +264,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.1";
+  var APP_VERSION = "2026.11.21.2";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -344,11 +346,11 @@ $("autoDel").onclick = () => { try { localStorage.removeItem(LS_AUTO); } catch (
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoUpdate(false); });
 
 // ------------------------------------------------------------ 調べる
-// opt.note: 値札の状態の表記（美品・カビあり など）／opt.rank: 実物を見て決めたランク／opt.defect: 実物に光学難（カビ・クモリ等）
+// opt.note: 値札の状態の表記（美品・カビあり など）／opt.rank: 実物を見て決めたランク
 // （2026-11-21 店舗仕入れの見直し: 値札の状態と、手に取って見た状態を判定・上限に反映する。判定の規則そのものは変えない）
 function lookup(name, price, opt = {}) {  // ジャンク表記の欄は外した（2026-11-20 ユーザー指示。方針でジャンクも割り引かない）
   const q = core.titleToQuery(name) || name.trim();
-  const jt = [name, opt.note || "", opt.defect ? "カビ" : ""].join(" ").trim();  // 判定・状態補正に使う文（検索語は商品名だけ）
+  const jt = [name, opt.note || ""].join(" ").trim();  // 判定・状態補正に使う文（検索語は商品名だけ）
   const flags = core.detectFlags(jt);
   let refs = core.matchPreferMemo(q + " " + name, DATA.refs.filter(core.isMemo), DATA.refs.filter((r) => !core.isMemo(r)));
   if (!refs.length) refs = core.matchKantei(name);
@@ -367,8 +369,10 @@ function lookup(name, price, opt = {}) {  // ジャンク表記の欄は外し�
   }
   const it = { title: jt, price, ship: 0, tax: false, flags, setParts };  // title: 光学難（カビ・クモリ等）の判定に使う
   it.calc = u != null ? core.calculate(it, u, DATA.cfg.fx) : null;
+  // 上限の額で買ったときの利益（上限の横に出す。2026-11-21 ユーザー指摘）
+  const atMax = it.calc && it.calc.maxBid > 0 ? core.calculate(Object.assign({}, it, { price: it.calc.maxBid }), u, DATA.cfg.fx) : null;
   const [mark, reason] = core.judge(it);
-  return { q, flags, refs, usd: u, calc: it.calc, mark, reason, setParts, jt };
+  return { q, flags, refs, usd: u, calc: it.calc, atMax, mark, reason, setParts, jt };
 }
 
 // 消費税の還付（2026-11-20 ユーザー決定「表示だけ足す」）: 税込の値札の 10/110。判定・上限価格には入れない
@@ -396,59 +400,43 @@ function renderResult(name, price, r) {
     <div><div class="big ${cls}">${c ? (r.mark === "◎" || r.mark === "○" ? "買い候補" : r.mark === "×" ? "見送り" : "要確認") : "相場データなし"}</div>
     <div class="s">${esc(c ? storeReason(r.reason) : "過去の販売実績に一致する機種がありません。下の eBay 販売済みで確認してください")}</div></div></div>`;
   if (c) {
-    const tier = r.refs[0] ? r.refs[0].tier : 3;
-    h += `<dl class="kv">
-      <dt>この値段以下なら買い（税込）</dt><dd class="g">${yen(c.maxBid)}</dd>
-      ${price != null ? `<dt>値札で買ったときの利益</dt><dd class="${c.profit >= 0 ? "g" : "x"}">${yen(c.profit)}（${c.margin}%）</dd>
-      <dt>還付込み</dt><dd>${yen(c.profit + taxBack(price))}</dd>` : ""}
-    </dl>`;
-    h += rankChips(name);
-    if (tier >= 2) h += `<div class="note">根拠が弱い（${esc(SRC[tier])}）。eBay の販売済みで確認を</div>`;
+    const tier = r.refs[0] ? r.refs[0].tier : 3, m = r.atMax;
+    h += `<div class="nums">
+      <div class="num"><span class="l">上限（税込）</span><b class="g">${c.maxBid > 0 ? yen(c.maxBid) : "なし"}</b>${m ? `<span class="s">この額で買うと利益 ${yen(m.profit)}</span>` : ""}</div>
+      ${price != null ? `<div class="num"><span class="l">値札 ${yen(price)} なら</span><b class="${r.mark === "◎" || r.mark === "○" ? "g" : "x"}">利益 ${yen(c.profit)}</b><span class="s">利益率 ${c.margin}%${r.mark === "◎" || r.mark === "○" ? "" : `（基準 ${(DATA.cfg.minProfit || 0).toLocaleString()}円・${DATA.cfg.minMarginPct}% に届かない）`}</span></div>` : `<div class="num"><span class="l">値札</span><b class="s">価格を入れる</b></div>`}
+    </div>`;
+    h += rankChips();
+    if (tier >= 2) h += `<div class="note">根拠が弱い（${esc(SRC[tier])}）→ 下の eBay 販売済みで確認</div>`;
     const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
     if (warn.length) h += `<div class="note">注意: ${esc(warn.join("・"))}</div>`;
-    h += `<details><summary>もっと見る（根拠・状態・損益ゼロ・過去データ）</summary><dl class="kv">
+    h += `<details><summary>詳しく（根拠・過去データ）</summary><dl class="kv">
       <dt>損益ゼロになる値段（税込）</dt><dd>${yen(c.breakeven)}</dd>
-      <dt>想定販売価格（eBay・送料別）</dt><dd>${nusd(r.usd)}${r.flags.includes("ジャンク") && DATA.cfg.junkFactor < 1 ? "（ジャンク" + Math.round(DATA.cfg.junkFactor * 100) + "%）" : ""}</dd>
+      <dt>想定販売価格（eBay・送料別）</dt><dd>${nusd(r.usd)}</dd>
       <dt>根拠</dt><dd>${r.setParts && r.setParts.length ? `まとめ売り・キット ${r.setParts.length}点の合計（2点目からは送料・手数料・梱包を引く）<br>${r.setParts.map((p) => `${esc(p.label)} ${nusd(p.usd)}`).join("<br>")}` : `${esc(SRC[tier] || "")} ${r.refs.length}件の中央値`}</dd>
       ${conds(r.refs) ? `<dt>状態</dt><dd>${conds(r.refs)}</dd>` : ""}
-      ${core.conditionNote && core.conditionNote(r.refs, r.jt, r.flags, pick.rank) ? `<dt></dt><dd class="s">${esc(core.conditionNote(r.refs, r.jt, r.flags, pick.rank).replace("［直す］", "「実物の状態」"))}</dd>` : ""}
-      ${price != null ? `<dt>消費税の還付</dt><dd class="s">${yen(taxBack(price))}（表示だけ。判定・上限は還付なし）</dd>` : ""}
+      ${core.conditionNote && core.conditionNote(r.refs, r.jt, r.flags, pick.rank) ? `<dt></dt><dd class="s">${esc(core.conditionNote(r.refs, r.jt, r.flags, pick.rank).replace("［直す］", "「状態」"))}</dd>` : ""}
     </dl>
     <div class="s mt">一致した過去データ ${r.refs.length}件</div>${r.refs.map((x) =>
       `<div class="ref"><span>${esc(x.title)}</span><span>${esc(core.conditionOf(x) || "")}</span><span>${nusd(x.price)}<span class="s">送料別</span></span><span class="s">${esc((x.source || "").replace(/\(.*$/, ""))}</span></div>`).join("")}</details>`;
   }
-  if (DATA) h += checkList(name);
   el.innerHTML = h;
 }
 
-// ---- 実物の状態（2026-11-21）: 手に取って見たランクで上限を出し直す。講座の基準でランクを決める（基準の表は knowledge/講座/）
-let pick = { rank: null, defect: false, note: "" };
-const RANK_CHIPS = [[null, "値札どおり"], [9, "MINT以上"], [7, "Near MINT"], [6, "Exc+5"], [5, "Exc+4"]];
+// ---- 状態（2026-11-21 ユーザー指定: TOP MINT・MINT・Near MINT の3つ。Exc+4 以下は買わない）
+// 手に取って見たランクを押すと上限を出し直す。もう一度押すと値札の表記どおりに戻る
+let pick = { rank: null, note: "" };
+const RANK_CHIPS = [[10, "TOP MINT"], [9, "MINT"], [7, "Near MINT"]];
 function rankChips() {
-  const tag = pick.note ? `<span class="s">（値札の表記: ${esc(pick.note)}）</span>` : "";
-  return `<div class="mt"><div class="s">実物の状態（手に取って見たら選ぶ）${tag}</div><div class="chips">` +
-    RANK_CHIPS.map(([k, t]) => `<button class="chip" type="button" data-rank="${k == null ? "" : k}" aria-pressed="${!pick.defect && pick.rank === k}">${t}</button>`).join("") +
-    `<button class="chip" type="button" data-defect="1" aria-pressed="${pick.defect}">カビ・クモリ等あり</button></div></div>`;
+  return `<div class="cond"><span class="l">状態</span><div class="chips">` +
+    RANK_CHIPS.map(([k, t]) => `<button class="chip" type="button" data-rank="${k}" aria-pressed="${pick.rank === k}">${t}</button>`).join("") + `</div></div>`;
 }
 $("result").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
+  const b = e.target.closest("button[data-rank]");
   if (!b) return;
-  if (b.dataset.defect) pick.defect = !pick.defect;
-  else if (b.dataset.rank != null) { pick.rank = b.dataset.rank === "" ? null : Number(b.dataset.rank); pick.defect = false; }
-  else return;
+  const k = Number(b.dataset.rank);
+  pick.rank = pick.rank === k ? null : k;
   look();
 });
-// 店頭で確かめること（買う前に）。講座の表は写さず、確かめる場所だけ
-function checkList(name) {
-  const lens = /\d\s*mm|ミリ|レンズ|lens|nikkor|zuiko|takumar|rokkor|planar|sonnar|summ?i|elmar/i.test(name);
-  const items = lens
-    ? ["ライトを当てて前玉・後玉・中玉（カビ＝枝分かれ／クモリ＝白っぽい／バルサム切れ＝縁の虹色）", "前玉・後玉のキズ（髪の毛の太さで何本か）", "絞り羽根: 油じみが無いか・動くか", "ピントリング・ズームが重すぎないか、ガタつき", "AF・手ぶれ補正（あれば）を店のボディで", "マウントの傷・付属品（前後キャップ・フード）"]
-    : ["シャッター: 全速で切れるか（高速が切れないのは要注意）", "露出計・液晶・電池室（液漏れ跡）", "ファインダー: カビ・クモリ・プリズム腐食（黒い帯）", "ミラー: キズ・くもり、まわりのモルトの崩れ", "巻き上げ・フィルム室・裏ぶたのモルト（フィルム機）", "デジタルはシャッター回数・メニューの言語（日本語のみか）"];
-  return `<details class="mt"><summary>店頭チェック（買う前に）</summary><ul class="s" style="padding-left:18px;margin:6px 0">` +
-    items.map((x) => `<li>${x}</li>`).join("") +
-    `<li>見つけたら上の「実物の状態」を押す → 上限が変わる。カビ・クモリは見送り（修理しない方針）</li>` +
-    `<li>レシートはインボイス番号（T＋13桁）付きでもらう（消費税の還付に要る）</li></ul></details>`;
-}
 
 // データ未読込のときのリンク（core.js の ebay() と同じ形）
 const ebayLinks = (q) => ({
@@ -583,7 +571,7 @@ function look() {
   renderResult(name, price, r);
 }
 // ------------------------------------------------------------ 店から古物台帳へ（2026-11-20 ユーザー決定）
-// 「あとで調べる」「買った」を 古物台帳「共有_店舗」に1行足す。送れないとき（電波なし）はこの iPhone にためて、次に開いたとき送る。
+// 調べた物（自動）と［購入］を 古物台帳「共有_店舗」に1行足す。送れないとき（電波なし）はこの iPhone にためて、次に開いたとき送る。
 // 送り先の鍵（DATA.inbox）は「共有_店舗」に行を足すことしかできない（tools/ledger_sync.py の storeAdd）
 let lastLook = null;
 const LS_OUT = "storeOutbox", LS_SHOPN = "storeShopName", LS_TODAY = "storeBought";
@@ -592,7 +580,7 @@ function renderToday() {
   const d = nowJst().slice(0, 10), td = lsGet(LS_TODAY, []).filter((x) => x.d === d), el = $("todaySt");
   if (!td.length) { el.textContent = ""; return; }
   const pay = td.reduce((a, x) => a + (x.price || 0), 0), pr = td.filter((x) => x.profit != null).reduce((a, x) => a + x.profit, 0);
-  el.innerHTML = `今日 買った ${td.length}件 ― 支払い ${yen(pay)}／見込み利益 ${yen(pr)}（還付は別）`;
+  el.innerHTML = `今日の購入 ${td.length}件 ― 支払い ${yen(pay)}／見込み利益 ${yen(pr)}`;
 }
 $("shopName").value = lsGet(LS_SHOPN, "");
 $("shopName").addEventListener("input", () => lsSet(LS_SHOPN, $("shopName").value.trim()));
@@ -610,11 +598,29 @@ async function flushOutbox() {
     await fetch(ib.url + (ib.url.includes("?") ? "&" : "?") + "store=" + encodeURIComponent(ib.key),
       { method: "POST", mode: "no-cors", headers: { "content-type": "text/plain" }, body: JSON.stringify({ rows: out }) });
     lsSet(LS_OUT, lsGet(LS_OUT, []).slice(out.length));  // 送っている間に増えた分は残す
-    st.className = "status"; st.textContent = `古物台帳に送りました（${out.length}件）`;
+    st.className = "status"; const nb = out.filter((r) => r[1] === "購入").length; st.textContent = nb ? `購入を古物台帳に記録しました（${nb}件）` : "";  // 調べた物の自動記録は黙って送る
     if (lsGet(LS_OUT, []).length) setTimeout(flushOutbox, 500);  // 送っている間に押された分
   } catch (e) {
     st.className = "status err"; st.textContent = `電波が無いため未送信 ${out.length}件。次に開いたとき送ります`;
   } finally { flushing = false; }
+}
+// 調べた物は押さなくても「共有_店舗」に送る（2026-11-21 ユーザー指示）。同じ商品名・値札は1回だけ
+const logged = new Set();
+function autoLog(name, price, r) {
+  name = String(name || "").trim();
+  if (!name || !DATA) return;
+  const k = name.toLowerCase() + "|" + (price || "");
+  if (logged.has(k)) return; logged.add(k);
+  const c = r && r.calc, ded = DATA.cfg.deductionUsd || 0;
+  const out = lsGet(LS_OUT, []);
+  out.push([nowJst(), "調べた", name, price || "", r ? r.mark : "", c && c.maxBid ? c.maxBid : "",
+    r && r.usd != null ? Math.round((r.usd - ded) * 100) / 100 : "", $("shopName").value.trim(), "", APP_VERSION]);
+  lsSet(LS_OUT, out);
+}
+let logTimer = null;
+function autoLogTyped() {  // 手で入れたときは、入力が2秒止まってから
+  clearTimeout(logTimer);
+  logTimer = setTimeout(() => { autoLog($("name").value, parsePrice($("price").value), lastLook); flushOutbox(); }, 2000);
 }
 $("sendBox").addEventListener("click", (e) => {
   const kind = e.target.dataset.send;
@@ -625,17 +631,17 @@ $("sendBox").addEventListener("click", (e) => {
   const ded = (DATA && DATA.cfg.deductionUsd) || 0;
   const row = [nowJst(), kind, name, price || "", r ? r.mark : "", c && c.maxBid ? c.maxBid : "",
     r && r.usd != null ? Math.round((r.usd - ded) * 100) / 100 : "", $("shopName").value.trim(),
-    [pick.defect ? "実物: 光学難あり" : pick.rank != null ? "実物: " + RANK_CHIPS.find(([k]) => k === pick.rank)[1] : pick.note ? "値札: " + pick.note : "",
-     kind === "買った" && c && price ? "見込み利益 " + c.profit + "円" : ""].filter(Boolean).join("／"), APP_VERSION];
+    [pick.rank != null ? "状態: " + RANK_CHIPS.find(([k]) => k === pick.rank)[1] : pick.note ? "値札: " + pick.note : "",
+     c && price ? "見込み利益 " + c.profit + "円" : ""].filter(Boolean).join("／"), APP_VERSION];
   const out = lsGet(LS_OUT, []); out.push(row); lsSet(LS_OUT, out);
-  if (kind === "買った") { const td = lsGet(LS_TODAY, []); td.push({ d: nowJst().slice(0, 10), name, price: price || 0, profit: c && price ? c.profit : null }); lsSet(LS_TODAY, td.slice(-200)); renderToday(); }
+  if (kind === "購入") { const td = lsGet(LS_TODAY, []); td.push({ d: nowJst().slice(0, 10), name, price: price || 0, profit: c && price ? c.profit : null }); lsSet(LS_TODAY, td.slice(-200)); renderToday(); }
   flushOutbox();
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flushOutbox(); });
 
 function parsePrice(s) { const n = Number(String(s).normalize("NFKC").replace(/[^\d]/g, "")); return n > 0 ? n : null; }
-$("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; pick = { rank: null, defect: false, note: "" }; look(); });
-$("price").addEventListener("input", look);
+$("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; pick = { rank: null, note: "" }; look(); autoLogTyped(); });
+$("price").addEventListener("input", () => { look(); autoLogTyped(); });
 $("query").addEventListener("input", () => { queryTouched = true; updateLinks(); });
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.target.blur(); remember(); } });
 for (const id of ["lSold", "lNow", "lPr"]) $(id).addEventListener("click", remember);
@@ -659,7 +665,7 @@ $("hist").onclick = (e) => {
 };
 function setInput(name, price, note) {
   $("name").value = name; $("price").value = price || ""; queryTouched = false; catSel = "auto";
-  pick = { rank: null, defect: false, note: note || "" };
+  pick = { rank: null, note: note || "" };
   look(); showTab("look"); window.scrollTo({ top: 0 });
 }
 
@@ -735,7 +741,7 @@ function renderShelf(note) {
       : `値札 ${yen(x.price)} → 利益 ${yen(c.profit)}（上限 ${yen(c.maxBid)}）`;
     return `<div class="shelf"><div class="mk ${cls}">${esc(!c ? "－" : r.mark === "要確認" ? "？" : r.mark)}</div>
       <div class="tt"><b>${esc(x.name)}</b><span class="s">${esc(what)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
-      <button data-shelf="${i}">詳しく</button></div>`;
+      <button data-shelf="${i}">見る</button></div>`;
   }).join("");
   el.onclick = (e) => {
     if (e.target.dataset.clear) { shelfRows = []; shelfSeen.clear(); renderShelf(); return; }
@@ -756,12 +762,16 @@ $("shelfFile").onchange = async (e) => {
       if (!name) continue;
       const k = name.toLowerCase() + "|" + (t.price_tax_included_jpy || "");
       if (shelfSeen.has(k)) continue; shelfSeen.add(k);
-      added.push({ name, price: t.price_tax_included_jpy || null, notes: String(t.notes || "").trim(), r: lookup(name, t.price_tax_included_jpy || null, { note: String(t.notes || "").trim() }) });
+      const row = { name, price: t.price_tax_included_jpy || null, notes: String(t.notes || "").trim() };
+      row.r = lookup(name, row.price, { note: row.notes });
+      autoLog(name, row.price, row.r);
+      added.push(row);
     }
     if (!added.length) { st.className = "status err"; st.textContent = "値札を読み取れませんでした。値札に近づいて撮り直してください。"; return; }
+    flushOutbox();
     const first = !shelfRows.length;
     shelfRows = shelfRows.concat(added);
-    st.textContent = `${added.length}件 読み取り。型番・価格の読み違いがないか確かめてから買ってください。`;
+    st.textContent = `${added.length}件 読み取り（型番・価格の読み違いに注意）`;
     if (first && added.length === 1) { setInput(added[0].name, added[0].price || "", added[0].notes); renderShelf(); }  // 値札1枚ならそのまま詳細
     else renderShelf();
   } catch (err) { st.className = "status err"; st.textContent = err.message; }
