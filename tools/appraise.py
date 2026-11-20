@@ -82,9 +82,10 @@ def _parse_simple_toml(text: str) -> dict:
 
 
 def item_cost_jpy(cfg: dict) -> int:
-    """1点ごとにかかる円の費用: 梱包＋オークレボ（発送代行）の手数料（SpeedPAK 540円＋海外発送手数料 280円。2026-11-21 ユーザー決定）."""
+    """1点ごとにかかる円の費用: 梱包＋オークレボ（発送代行）の手数料（SpeedPAK 540円＋海外発送手数料 280円）
+    ＋自分からオークレボへ送るヤマト集荷代（2026-11-21 ユーザー決定）."""
     s = cfg["shipping"]
-    return int(s["packing_jpy"]) + int(s.get("agent_fee_jpy", 0))
+    return int(s["packing_jpy"]) + int(s.get("agent_fee_jpy", 0)) + int(s.get("forward_jpy", 0))
 
 
 def load_config(path: Path | None) -> dict:

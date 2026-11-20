@@ -40,7 +40,8 @@ class Filter(unittest.TestCase):
 class AddTentative(unittest.TestCase):
     def test_flow_and_report(self):
         items = [ba.Item(url="https://auctions.yahoo.co.jp/jp/auction/a1", auction_id="a1",
-                         title="オリンパス OM ZUIKO 35mm F2 美品", current_price_jpy=5000, domestic_shipping_jpy=800,
+                         title="オリンパス OM ZUIKO 35mm F2 美品", current_price_jpy=3000,  # 1点の費用（梱包＋オークレボ＋ヤマト）を足しても余裕あり
+                          domestic_shipping_jpy=800,
                          end_time="2026-11-16T21:00:00+09:00"),
                  ba.Item(url="u2", auction_id="a2", title="オリンパス レンズキャップ 35mm F2", current_price_jpy=500)]
         for it in items:
