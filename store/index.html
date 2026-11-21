@@ -67,6 +67,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .shelf .mk{font-size:22px;font-weight:900;min-width:30px;text-align:center}.shelf .tt{flex:1;min-width:0}.shelf .tt b{display:block;font-size:14px}
 .shelf .pf{font-size:17px;font-weight:900;white-space:nowrap;font-variant-numeric:tabular-nums}
 .shelf button{border:0;background:var(--soft);color:#14415a;border-radius:8px;padding:8px 10px;font-weight:700;white-space:nowrap}
+.tv{font-size:13px;color:var(--sub);margin-top:6px}
 .camRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 #liveBox{margin-top:10px;border-radius:12px;overflow:hidden;background:#000;position:relative}#liveBox video{width:100%;height:34vh;display:block;object-fit:cover;background:#000}
 .liveBar .mini{white-space:nowrap;flex:none}.liveBar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:rgba(0,0,0,.55);color:#fff;font-size:13px}
@@ -303,7 +304,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.27";
+  var APP_VERSION = "2026.11.21.28";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -456,6 +457,16 @@ function needUsd(price, title) {
   let n = Math.ceil(hi); while (n > 1 && okAt(n - 1)) n--;
   return n;
 }
+// 機種の豆知識（古物台帳「共有_豆知識」。2026-11-21 オーナー「エピソードがあると機種を覚えやすい」）。機種名の語が全部含まれていれば出す
+function triviaOf(name) {
+  const n = " " + String(name || "").normalize("NFKC").toLowerCase().replace(/[\-_.\/()・]/g, " ") + " ";
+  let best = null;
+  for (const x of (DATA && DATA.trivia) || []) {
+    const ws = String(x.m).normalize("NFKC").toLowerCase().replace(/[\-_.\/()・]/g, " ").split(/\s+/).filter(Boolean);
+    if (ws.length && ws.every((w) => n.includes(" " + w + " ")) && (!best || ws.length > best.n)) best = { n: ws.length, t: x.t };
+  }
+  return best ? best.t : "";
+}
 function renderResult(name, price, r) {
   const el = $("result");
   if (!name.trim()) { el.hidden = true; return; }
@@ -477,8 +488,9 @@ function renderResult(name, price, r) {
     : price == null ? "値札を入れると利益を出します"
     : `値札 ${yen(price)} では基準（利益${DATA.cfg.minMarginPct}%・${c.minProfit.toLocaleString()}円）に届かない`;
   const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない";
+  const tv = triviaOf(name);
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
-    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>`;
+    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
   // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`

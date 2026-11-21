@@ -248,6 +248,16 @@ def sweet_notes(root: Path | None = None) -> list[dict]:
     return out
 
 
+def trivia(path: Path | None = None) -> list[dict]:
+    """data/trivia.csv（機種の豆知識）→ [{"m": 機種, "t": 豆知識}]. 店舗アプリが機種名の下に1行で出す."""
+    import csv
+    p = path or (ROOT / "data" / "trivia.csv")
+    if not p.exists():
+        return []
+    with open(p, encoding="utf-8-sig") as f:
+        return [{"m": r["機種"].strip(), "t": r["豆知識"].strip()} for r in csv.DictReader(f) if (r.get("機種") or "").strip() and (r.get("豆知識") or "").strip()]
+
+
 def candidate_refs(ship_usd: float, path: Path | None = None) -> list[dict]:
     """data/candidate_prices.csv（ゼニガメの下調べ。販売店の価格が中心で売れた額ではない）→ 店舗アプリの仮の相場（tier 3・確認してから）.
     アプリ側で、販売実績などほかの相場が当たる機種には使わない（相場なしを減らすためだけ）."""
@@ -279,6 +289,7 @@ def build(cfg: dict, fx: float) -> dict:
             rows += ba.read_sales(p)
     data["recs"] = recommendations(rows, cfg, fx)
     data["refs"] += candidate_refs(float(cfg["shipping"].get("deduction_usd", 0)))
+    data["trivia"] = trivia()
     data["bids"] = bid_candidates()
     data["kind"] = "aurora-store"
     # 店舗アプリ →「共有_店舗」（調べた・購入）の送り先。鍵は共有_店舗に行を足すことしかできない（ledger_sync.store_endpoint）

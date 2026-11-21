@@ -309,6 +309,7 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_sheet_memo(url, key, dry_run)
     sync_candidates(url, key, dry_run)   # ゼニガメの下調べ → 店舗アプリの仮の相場
     sync_phone_bids(url, key, dry_run)   # スマホの入札タブで予約した物 → 入札の結果の集計
+    sync_trivia(url, key, dry_run)       # 機種の豆知識 → 店舗アプリ
     sync_store_memo(url, key, dry_run)   # 店舗で［登録］した相場。同じ機種はチャットの相場メモと日付の新しい方
     sync_knowledge(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
@@ -524,6 +525,28 @@ def sync_candidates(url: str, key: str, dry_run: bool = False) -> int | None:
         w = csv.DictWriter(f, fieldnames=["機種", "候補$（送料別）", "確度", "日付", "根拠"])
         w.writeheader(); w.writerows(rows)
     print(f"下調べ相場: {len(rows)}件 → data/candidate_prices.csv", file=sys.stderr)
+    return len(rows)
+
+
+TRIVIA_SHEET = "共有_豆知識"  # 機種の豆知識（毎晩クラウドで少しずつ調べる。2026-11-21 オーナー「エピソードがあると機種を覚えやすい」）
+
+
+def sync_trivia(url: str, key: str, dry_run: bool = False) -> int | None:
+    """古物台帳「共有_豆知識」→ data/trivia.csv（まるごと置き換え）. 店舗アプリの機種名の下に1行で出す."""
+    try:
+        text = fetch(url, key, TRIVIA_SHEET)
+    except (urllib.error.URLError, OSError):
+        return None
+    if text.startswith("NO_SHEET:"):
+        return None
+    rows = [r for r in (pick_columns(text, ["機種", "豆知識", "出典", "日付"]) or []) if (r.get("機種") or "").strip() and (r.get("豆知識") or "").strip()]
+    if dry_run or not rows:
+        return len(rows)
+    out = DATA / "trivia.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["機種", "豆知識", "出典", "日付"])
+        w.writeheader(); w.writerows(rows)
     return len(rows)
 
 
