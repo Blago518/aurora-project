@@ -17,7 +17,7 @@ class Trivia(unittest.TestCase):
         """確認済みの行だけ出す（未確認・空欄は出さない）."""
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "t.csv"
-            p.write_text("機種,豆知識,出典,日付,確認\nNikon F3,AとB,x,2026-11-22,確認済み\nContax T2,C,y,2026-11-22,未確認\n", encoding="utf-8")
+            p.write_text("機種,豆知識,出典,日付,確認\nNikon F3,AとB,x,2026-11-22,確認済み\nContax T2,C,y,2026-11-22,未確認\nLeica M3,D,z,2026-11-22,\n", encoding="utf-8")
             self.assertEqual(bs.trivia(p), [{"m": "Nikon F3", "t": "AとB"}])
 
 
