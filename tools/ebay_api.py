@@ -12,6 +12,7 @@
     python3 tools/ebay_api.py listings     # 自分の出品中の一覧（在庫日数順）→ reports/listings_*.csv
     python3 tools/ebay_api.py fees         # 取引明細 → reports/ebay_finances_*.csv、手数料率を通貨ごとに集計
     python3 tools/ebay_api.py returns      # 返品・キャンセル・返金の状況（商品が返送されたか）→ reports/ebay_returns_*.csv
+    python3 tools/ebay_api.py funds --upload       # eBay にある、まだ出金していないお金 → 古物台帳「Mac_資金」
     python3 tools/ebay_api.py browse "Nikon FM2"   # 出品中の相場（公式 Browse API）
 
 保存しない情報: 購入者の名前・住所・ユーザー名（国だけ保存）。
@@ -669,6 +670,32 @@ def cmd_browse(args) -> None:
     print("※ 売れた価格（sold）は公式APIでは取れません。sold ボタン・Product Research で確認してください。")
 
 
+FUNDS_SHEET = "Mac_資金"  # eBay にある、まだ出金していないお金（数字のグラフの「いまの運用資金」が読む。2026-11-21）
+
+
+def funds_csv(d: dict, when: str) -> str:
+    """seller_funds_summary の中身 → 「Mac_資金」の CSV（項目・金額・通貨・取得日時）."""
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["項目", "金額", "通貨", "取得日時"])
+    for key, label in (("totalFunds", "eBayの残高（まだ出金していない合計）"), ("availableFunds", "うち出金できる額"),
+                       ("processingFunds", "うち処理中の額"), ("fundsOnHold", "うち保留中の額")):
+        if key in d:
+            w.writerow([label, f"{_money(d.get(key)):.2f}", _cur(d.get(key)), when])
+    return buf.getvalue()
+
+
+def cmd_funds(args) -> None:
+    """eBay にある、まだ出金していないお金（Finances API の seller_funds_summary）. --upload で古物台帳「Mac_資金」へ."""
+    d = get_json(f"{APIZ}/sell/finances/v1/seller_funds_summary", user_token())
+    body = funds_csv(d, f"{datetime.now():%Y-%m-%d %H:%M}")
+    print("eBay の残高（未出金）: " + " / ".join(f"{r[0]} {r[1]} {r[2]}" for r in csv.reader(body.splitlines()[1:])))
+    if args.upload:
+        import ledger_sync
+        ledger_sync.post_sheet(FUNDS_SHEET, body)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="eBay 公式 API 連携（自分のアカウント・出品中の相場）")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -685,6 +712,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("messages", help="受信したメッセージの見出し（返信済みか）"); p.add_argument("--days", type=int, default=7)
     p.add_argument("--upload", action="store_true", help="古物台帳「Mac_メッセージ」に送る")
     p.set_defaults(fn=cmd_messages)
+    p = sub.add_parser("funds", help="eBay にある、まだ出金していないお金"); p.add_argument("--upload", action="store_true", help="古物台帳「Mac_資金」に送る")
+    p.set_defaults(fn=cmd_funds)
     p = sub.add_parser("browse", help="出品中の相場（公式 Browse API）"); p.add_argument("query")
     p.set_defaults(fn=cmd_browse)
     args = ap.parse_args(argv)
