@@ -114,11 +114,11 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <header>
   <div class="row"><h1>店舗リサーチ</h1><span class="st" id="dataSt">データ未読込</span></div>
   <nav role="tablist">
-    <button role="tab" data-tab="calc" aria-selected="false">計算</button>
-    <button role="tab" data-tab="bid" aria-selected="false">入札</button>
     <button role="tab" data-tab="look" aria-selected="true">調べる</button>
     <button role="tab" data-tab="rec" aria-selected="false">おすすめ</button>
     <button role="tab" data-tab="sweet" aria-selected="false">狙い目</button>
+    <button role="tab" data-tab="calc" aria-selected="false">計算</button>
+    <button role="tab" data-tab="bid" aria-selected="false">入札</button>
     <button role="tab" data-tab="shop" aria-selected="false">お店</button>
     <button role="tab" data-tab="set" aria-selected="false">設定</button>
   </nav>
@@ -309,7 +309,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.32";
+  var APP_VERSION = "2026.11.22.1";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
