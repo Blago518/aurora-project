@@ -66,6 +66,9 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .shelf .mk{font-size:22px;font-weight:900;min-width:30px;text-align:center}.shelf .tt{flex:1;min-width:0}.shelf .tt b{display:block;font-size:14px}
 .shelf .pf{font-size:17px;font-weight:900;white-space:nowrap;font-variant-numeric:tabular-nums}
 .shelf button{border:0;background:var(--soft);color:#14415a;border-radius:8px;padding:8px 10px;font-weight:700;white-space:nowrap}
+.camRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#liveBox{margin-top:10px;border-radius:12px;overflow:hidden;background:#000;position:relative}#liveBox video{width:100%;display:block;max-height:46vh;object-fit:cover}
+.liveBar .mini{white-space:nowrap;flex:none}.liveBar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:rgba(0,0,0,.55);color:#fff;font-size:13px}
 .rec{padding:12px 0;border-bottom:1px solid var(--line)}.rec:last-child{border:0}
 .rec .t{display:flex;gap:8px;align-items:baseline}.rec .t b{flex:1;font-size:15px}.rec .n{color:var(--sub);font-size:12px;width:22px}
 .rec .buy{font-size:14px;margin:4px 0 6px 30px}.rec .buy strong{font-size:17px;color:var(--good)}
@@ -114,8 +117,9 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <!-- ===================================================== 調べる -->
 <section id="look">
   <div class="card">
-    <button class="btn dark" id="shelfBtn" type="button">📷 撮る</button>
+    <div class="camRow"><button class="btn dark" id="shelfBtn" type="button">📷 撮る</button><button class="btn dark" id="liveBtn" type="button">🎥 向けるだけ</button></div>
     <input id="shelfFile" type="file" accept="image/*" capture="environment" hidden>
+    <div id="liveBox" hidden><video id="liveVideo" playsinline muted autoplay></video><div class="liveBar"><span id="liveSt">値札に向けてください</span><button class="mini" id="liveStop" type="button">止める</button></div></div>
     <div class="status err" id="staleSt"></div>
     <div class="status" id="ocrSt"></div>
     <label for="name">商品名・型番</label>
@@ -283,7 +287,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.13";
+  var APP_VERSION = "2026.11.21.14";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -759,10 +763,10 @@ const SHELF_PROMPT = "中古カメラ店のショーケースや棚の写真で�
   "日本語のメーカー名は英語表記に直し、型番はカタログ通りの表記にしてください。型番が読めない値札は入れないでください。" +
   "価格が読めなければnull。推測で埋めないでください。" +
   "状態のランク記号（AB・B など）は、値札や棚に意味（美品・良品・並品など）が書いてあればその言葉を notes に入れ、無ければ記号のまま入れてください。";
-async function readShelf(file) {
+async function readShelf(file) { return readShelfB64(await photoToJpeg(file, 2000)); }
+async function readShelfB64(data) {
   const key = lsGet(LS_KEY, "");
   if (!key) throw new Error("設定タブで Claude の APIキーを入れてください");
-  const data = await photoToJpeg(file, 2000);
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2026-10-21", "anthropic-dangerous-direct-browser-access": "true" },
@@ -814,8 +818,16 @@ $("shelfFile").onchange = async (e) => {
   if (!DATA) { st.className = "status err"; st.textContent = "設定タブで相場データを読み込んでから使ってください"; return; }
   st.className = "status"; st.textContent = "読み取り中…（10秒ほど）"; $("shelfBtn").disabled = true;
   try {
+    const added = addShelfItems(await readShelf(f));
+    if (!added.length) { st.className = "status err"; st.textContent = "値札を読み取れませんでした。値札に近づいて撮り直してください。"; return; }
+    st.textContent = `${added.length}件 読み取り（型番・価格の読み違いに注意）`;
+  } catch (err) { st.className = "status err"; st.textContent = err.message; }
+  finally { $("shelfBtn").disabled = false; }
+};
+// 読み取った値札 → 判定して一覧に足す（同じ商品名・値札は1回だけ）。足した行を返す
+function addShelfItems(items) {
     const added = [];
-    for (const t of await readShelf(f)) {
+    for (const t of items) {
       const name = (t.search_query || [t.maker, t.model].filter(Boolean).join(" ")).trim();
       if (!name) continue;
       const k = name.toLowerCase() + "|" + (t.price_tax_included_jpy || "");
@@ -825,16 +837,68 @@ $("shelfFile").onchange = async (e) => {
       autoLog(name, row.price, row.r);
       added.push(row);
     }
-    if (!added.length) { st.className = "status err"; st.textContent = "値札を読み取れませんでした。値札に近づいて撮り直してください。"; return; }
+    if (!added.length) return added;
     flushOutbox();
     const first = !shelfRows.length;
     shelfRows = shelfRows.concat(added);
-    st.textContent = `${added.length}件 読み取り（型番・価格の読み違いに注意）`;
-    if (first && added.length === 1) { setInput(added[0].name, added[0].price || "", added[0].notes); renderShelf(); }  // 値札1枚ならそのまま詳細
+    if (added.length === 1) { setInput(added[0].name, added[0].price || "", added[0].notes); renderShelf(); }  // 1枚読めたら、すぐその判定を出す
     else renderShelf();
-  } catch (err) { st.className = "status err"; st.textContent = err.message; }
-  finally { $("shelfBtn").disabled = false; }
-};
+    return added;
+}
+
+// ---- 向けるだけ（2026-11-21 オーナー指示）: カメラを向けている間、画面が止まったら値札を読んで判定する。
+// 写真は保存しないが、画面を Claude に送るので、店から見ると撮影と同じ（撮影禁止の店では使わない前提。オーナー了承済み）
+// 費用を抑える: 画面がほぼ同じなら送らない／送っている間は次を送らない／90秒で自動で止める
+const live = { stream: null, timer: null, busy: false, last: null, until: 0, n: 0 };
+function frameSig(v) {  // 32×24 の明るさ（似た画面かどうかを見る）
+  const c = document.createElement("canvas"); c.width = 32; c.height = 24;
+  const g = c.getContext("2d"); g.drawImage(v, 0, 0, 32, 24);
+  const d = g.getImageData(0, 0, 32, 24).data, out = new Float32Array(768);
+  for (let i = 0; i < 768; i++) out[i] = d[i * 4] * .3 + d[i * 4 + 1] * .59 + d[i * 4 + 2] * .11;
+  return out;
+}
+const sigDiff = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; };
+async function liveTick() {
+  const v = $("liveVideo"), st = $("liveSt");
+  if (!live.stream) return;
+  if (Date.now() > live.until) { stopLive(`止めました（読み取り ${live.n}件）`); return; }
+  if (live.busy || !v.videoWidth) return;
+  const sig = frameSig(v);
+  if (live.prev && sigDiff(sig, live.prev) > 6) { live.prev = sig; st.textContent = "動かさずに値札へ向けてください"; return; }  // まだ動いている
+  live.prev = sig;
+  if (live.last && sigDiff(sig, live.last) < 4) return;  // さっき読んだ画面と同じ
+  live.busy = true; live.last = sig; st.textContent = "読み取り中…";
+  try {
+    const s = Math.min(1, 1568 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement("canvas");
+    c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    const added = addShelfItems(await readShelfB64(c.toDataURL("image/jpeg", 0.85).split(",")[1]));
+    live.n += added.length; live.until = Date.now() + 90000;
+    st.textContent = added.length ? `${added.map((x) => x.name).join("・")} を判定しました（次の値札へ）` : "値札が読めません。近づけてください";
+  } catch (err) { st.textContent = err.message; if (/APIキー/.test(err.message)) stopLive(err.message); }
+  finally { live.busy = false; }
+}
+async function startLive() {
+  const st = $("ocrSt");
+  if (!DATA) { st.className = "status err"; st.textContent = "設定タブで相場データを読み込んでから使ってください"; return; }
+  if (!lsGet(LS_KEY, "")) { st.className = "status err"; st.textContent = "設定タブで Claude の APIキーを入れてください"; return; }
+  try {
+    live.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+  } catch (e) { st.className = "status err"; st.textContent = "カメラを使えません（設定 → Safari → カメラ を「許可」にしてください）"; return; }
+  st.textContent = "";
+  $("liveVideo").srcObject = live.stream; $("liveBox").hidden = false; $("liveBtn").textContent = "🎥 止める";
+  live.last = live.prev = null; live.n = 0; live.until = Date.now() + 90000;
+  live.timer = setInterval(liveTick, 1200);
+}
+function stopLive(msg) {
+  clearInterval(live.timer); live.timer = null;
+  if (live.stream) live.stream.getTracks().forEach((t) => t.stop());
+  live.stream = null; $("liveVideo").srcObject = null; $("liveBox").hidden = true; $("liveBtn").textContent = "🎥 向けるだけ";
+  if (msg) { $("ocrSt").className = "status"; $("ocrSt").textContent = msg; }
+}
+$("liveBtn").onclick = () => (live.stream ? stopLive(`止めました（読み取り ${live.n}件）`) : startLive());
+$("liveStop").onclick = () => stopLive(`止めました（読み取り ${live.n}件）`);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible" && live.stream) stopLive(); });
 
 $("apiKey").value = lsGet(LS_KEY, "") ? "••••••••（保存済み）" : "";
 $("apiKey").onfocus = () => { if ($("apiKey").value.startsWith("•")) $("apiKey").value = ""; };
