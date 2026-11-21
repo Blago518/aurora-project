@@ -21,6 +21,13 @@ class PhoneBids(unittest.TestCase):
         self.assertEqual(rows[1]["tentative"], "1")
         self.assertEqual(rows[0]["end"], "2026-11-22T21:30:00+09:00")
 
+    def test_cancel_removes(self):
+        """スマホで［予約済み］を外す → 入札予約取消 の行でその予約を消す."""
+        sheet = SHEET + "2026-11-21 22:20,入札予約取消,Contax T2,,,,,ヤフオク,ID x123456789／終了 ,2026.11.21.29\n"
+        rows = ls.phone_bid_rows(sheet)
+        self.assertEqual([r["auction_id"] for r in rows], ["1251500226"])
+        self.assertEqual(rows[0]["pay_max"], "")
+
     def test_import_kept_by_extension_sync(self):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)

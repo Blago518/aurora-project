@@ -96,12 +96,16 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .bid .tt{flex:1;min-width:0}.bid .tt a{color:var(--ink);font-weight:700;text-decoration:none;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bid .max{display:flex;align-items:baseline;gap:8px;margin:8px 0 2px}.bid .max strong{cursor:pointer}.bid .max strong{font-size:22px;color:var(--good)}
 .bid .tent .max strong,.bid.tent .max strong{color:var(--warn)}
-.bid.did{opacity:.55}.bid .links{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
+.bid.did{opacity:.55}.bid .links.five{grid-template-columns:repeat(5,1fr)}.linkbtn{background:none;border:0;color:var(--blue);font-size:12px;padding:0;text-decoration:underline}
+.bidbar{position:fixed;left:0;right:0;bottom:0;z-index:8;display:flex;gap:8px;align-items:center;background:var(--navy);color:#fff;padding:10px max(12px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 10px) max(12px,env(safe-area-inset-left))}
+.bidbar .bbt{flex:1;min-width:0;display:flex;flex-direction:column}.bidbar b{font-size:22px}.bidbar span{font-size:11px;color:#a9c3d6}.bidbar small{font-size:11px;color:#a9c3d6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bidbar .mini{white-space:nowrap}
+.bidbar[hidden]{display:none}body.hasbar{padding-bottom:90px}.bid .links{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
 .bid .links .mini{white-space:nowrap;display:flex;align-items:center;justify-content:center;font-size:13px}
 .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin:2px 4px 0 0;background:#fdecea;color:var(--bad)}
 .tag.trust{background:#e6f4ee;color:var(--good)}.tag.tent{background:var(--warnbg);color:var(--warn)}.tag.ok{background:#e6f4ee;color:var(--good)}
 .hot,.bid .mk small.hot{color:var(--bad);font-weight:800}
-#toast{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 16px);background:var(--navy);color:#fff;border-radius:12px;padding:12px 14px;
+#toast{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 84px);background:#0b2236;color:#fff;border-radius:12px;padding:12px 14px;
 font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9}#toast.show{opacity:1}
 code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-break:break-all}
 </style>
@@ -211,7 +215,6 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <div class="s mt" id="bidInfo"></div>
   </div>
   <div class="card" id="bidList"><div class="empty">設定タブでデータを読み込んでください</div></div>
-  <div id="toast"></div>
 </section>
 <section id="rec" hidden>
   <div class="card">
@@ -302,9 +305,11 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 </section>
 </main>
 
+<div id="toast"></div>
+<div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.28";
+  var APP_VERSION = "2026.11.21.29";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -490,7 +495,7 @@ function renderResult(name, price, r) {
   const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない";
   const tv = triviaOf(name);
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
-    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}`;
+    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${bidCtx && name === bidCtx.title && c && c.maxBid > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(c.maxBid)} で予約</a>` : ""}`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
   // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
@@ -693,7 +698,7 @@ document.addEventListener("click", (e) => {
   const https = a.getAttribute("href").replace(/^x-safari-/, "");
   let left = false; const mark = () => { left = true; };
   document.addEventListener("visibilitychange", mark, { once: true }); window.addEventListener("pagehide", mark, { once: true });
-  setTimeout(() => { if (!left && document.visibilityState === "visible") location.href = https; }, 1500);
+  setTimeout(() => { if (!e.defaultPrevented && !left && document.visibilityState === "visible") location.href = https; }, 1500);
 }, true);
 function linksWithCat(q, cat) {
   const L = core ? core.ebay(q) : ebayLinks(q);
@@ -1244,16 +1249,36 @@ function renderSweet() {
 }
 
 // ------------------------------------------------------------ 入札（Mac が毎朝つくる入札候補。今日・明日に終わる物）
-// 1件ごとに: 上限額（入札欄に入れる額）を大きく／ヤフオク・Sold・Now／［予約］で上限額をコピーしてオークファンを開く／［予約した］で記録
-const LS_BIDF = "storeBidFilter", LS_BIDDONE = "storeBidDone";
-let bidFilter = lsGet(LS_BIDF, "sure");
+// 並び: Mac の一覧と同じ（今日の予約リスト8本が先頭 → 売れ筋・$99超が上、勝ちやすさ1割未満は下。2026-11-18〜20 の決定）。終わる順にも切り替えられる
+// 1件ごとに: 上限額（入札欄に入れる額）を大きく／ヤフオク・Sold・Now・調べる・予約
+// ［予約］: ヤフオクの URL をコピーして、拡張機能と同じオークファンの予約ページ（tools.aucfan.com/v2/snipe/item）を開く。
+//   上限額は画面の下の帯に出したまま（戻ってきても見える）。予約したら帯の［予約した］で記録する（押す前には記録しない）
+const LS_BIDF = "storeBidFilter", LS_BIDDONE = "storeBidDone", LS_BIDSORT = "storeBidSort", LS_BIDBAR = "storeBidBar";
+const SNIPE_URL = "https://tools.aucfan.com/v2/snipe/item?trflg=1";
+let bidFilter = lsGet(LS_BIDF, "reserve"), bidSort = lsGet(LS_BIDSORT, "rank");
 function toast(msg) { const t = $("toast"); if (!t) return; t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2600); }
 function endAt(s) { const d = Date.parse(String(s || "").replace(" ", "T")); return isNaN(d) ? null : d; }
-function leftText(ms) { const m = Math.round(ms / 60000); return m < 60 ? `あと${m}分` : m < 24 * 60 ? `あと${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}` : `あと${Math.floor(m / 1440)}日`; }
+function leftText(ms) { const m = Math.round(ms / 60000); return m < 60 ? `あと${m}分` : m < 48 * 60 ? `あと${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}` : `あと${Math.floor(m / 1440)}日`; }
 function dayLabel(d) { const t = new Date(), x = new Date(d); const same = (a, b) => a.toDateString() === b.toDateString(); const tm = new Date(t); tm.setDate(t.getDate() + 1);
   return same(t, x) ? "今日" : same(tm, x) ? "明日" : `${x.getMonth() + 1}/${x.getDate()}`; }
+function bidCard(i, B, done, now, tag) {
+  const e = endAt(i.end), hm = e ? new Date(e).toTimeString().slice(0, 5) : "", soon = e && e - now < 3 * 3600e3;
+  const did = done[i.id], at = String(B.built || "").slice(11, 16);
+  const L = { sold: toSafari(i.sold || ""), now: toSafari(i.now || "") };
+  const marks = [tag ? `<span class="tag ok">${esc(tag)}</span>` : "", i.check ? `<span class="tag tent">Sold で確かめて</span>` : "",
+    i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
+  return `<div class="bid${i.check ? " tent" : ""}${did ? " did" : ""}">
+    <div class="tt"><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
+    <div class="s">${e ? `${esc(dayLabel(e))} ${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${esc(leftText(e - now))}</span>・` : ""}${esc(at)}時点 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
+    <div class="max"><strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・この価格なら利益 ${yen(i.profit)}` : ""}</span></div>
+    <div class="links five"><a class="mini" href="${esc(i.url)}" target="_blank" rel="noopener">ヤフオク</a>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
+      <button class="mini" type="button" data-blook="${esc(i.id)}">調べる</button>
+      <a class="mini main" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
+  </div>`;
+}
 function renderBids() {
   const B = DATA && DATA.bids, now = Date.now();
+  renderBidBar();
   if (!B || !Array.isArray(B.items)) {
     $("bidChips").innerHTML = ""; $("bidInfo").textContent = "";
     $("bidList").innerHTML = `<div class="empty">${DATA ? "入札候補がまだ届いていません（Mac の毎朝の更新で届きます）" : "設定タブでデータを読み込んでください"}</div>`;
@@ -1261,41 +1286,61 @@ function renderBids() {
   }
   const done = lsGet(LS_BIDDONE, {});
   const live = B.items.filter((i) => { const e = endAt(i.end); return e == null || (e > now && e - now < 48 * 3600e3); });
+  const byId = Object.fromEntries(live.map((i) => [i.id, i]));
+  const reserve = (B.reserve || []).map((r) => byId[r.id] && Object.assign({}, byId[r.id], { _tag: r.kind === "即決" ? "即決で買える" : "今日の予約" })).filter(Boolean);
   const sure = live.filter((i) => !i.check), check = live.filter((i) => i.check);
-  $("bidChips").innerHTML = [["sure", `確認不要 ${sure.length}`], ["check", `Sold で確かめる ${check.length}`]]
+  if (bidFilter === "reserve" && !reserve.length) bidFilter = "sure";
+  $("bidChips").innerHTML = [["reserve", `今日の予約 ${reserve.filter((x) => x._tag === "今日の予約").length}`], ["sure", `確認不要 ${sure.length}`], ["check", `Sold で確かめる ${check.length}`]]
     .map(([k, t]) => `<button class="chip" data-f="${k}" aria-pressed="${k === bidFilter}">${t}</button>`).join("");
-  $("bidInfo").textContent = `${B.built} 作成・今日と明日に終わる物・終わる順`;
-  const list = (bidFilter === "check" ? check : sure).slice().sort((a, b) => (endAt(a.end) || 9e15) - (endAt(b.end) || 9e15));
-  if (!list.length) { $("bidList").innerHTML = `<div class="empty">${bidFilter === "check" ? "Sold で確かめる候補はありません" : "いま確認なしで入札できる候補はありません。「Sold で確かめる」も見てください"}</div>`; return; }
-  let lastDay = "";
-  $("bidList").innerHTML = list.map((i) => {
-    const e = endAt(i.end), day = e ? dayLabel(e) : "", hd = day !== lastDay ? `<h3 class="grp">${esc(day || "終了時刻不明")}</h3>` : ""; lastDay = day;
-    const hm = e ? new Date(e).toTimeString().slice(0, 5) : "", soon = e && e - now < 3 * 3600e3;
-    const did = done[i.id];
-    const L = { sold: toSafari(i.sold || ""), now: toSafari(i.now || "") };
-    return hd + `<div class="bid${i.tent ? " tent" : ""}${did ? " did" : ""}">
-      <div class="tt"><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a></div>
-      <div class="s">${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${e ? esc(leftText(e - now)) : ""}</span>・現在 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
-      <div class="max"><strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・今の価格なら利益 ${yen(i.profit)}` : ""}</span></div>
-      <div class="links"><a class="mini" href="${esc(i.url)}" target="_blank" rel="noopener">ヤフオク</a>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : ""}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : ""}
-        <a class="mini main" href="${esc(toSafari(`https://aucfan.com/aucview/yahoo/${encodeURIComponent(i.id)}/`))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
-    </div>`;
-  }).join("");
+  $("bidInfo").innerHTML = `${esc(B.built)} 作成（価格はその時点）・<button class="linkbtn" type="button" data-sort="1">${bidSort === "end" ? "Mac の一覧の順に戻す" : "終わる順に並べる"}</button>`;
+  let list = bidFilter === "reserve" ? reserve : bidFilter === "check" ? check : sure;
+  if (bidSort === "end") list = list.slice().sort((a, b) => (endAt(a.end) || 9e15) - (endAt(b.end) || 9e15));
+  else if (bidFilter !== "reserve") list = list.slice().sort((a, b) => (a.rank ?? 9e9) - (b.rank ?? 9e9));
+  $("bidList").innerHTML = list.length ? list.map((i) => bidCard(i, B, done, now, i._tag)).join("")
+    : `<div class="empty">${bidFilter === "check" ? "Sold で確かめる候補はありません" : "いま確認なしで入札できる候補はありません。「Sold で確かめる」も見てください"}</div>`;
 }
+// 画面の下の帯: 予約ページで入れる上限額を出したままにする
+function renderBidBar() {
+  const bar = $("bidBar"), x = lsGet(LS_BIDBAR, null);
+  if (!bar) return;
+  document.body.classList.toggle("hasbar", !!x);
+  if (!x) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.innerHTML = `<div class="bbt"><b>${yen(x.maxBid)}</b><span>入札欄に入れる額・URL はコピー済み</span><small>${esc(x.title)}</small></div>
+    <button class="mini main" type="button" data-bbar="done">予約した</button><button class="mini" type="button" data-bbar="close">やめる</button>`;
+}
+function startSnipe(i, maxBid) {
+  try { navigator.clipboard.writeText(i.url).catch(() => {}); } catch (err) {}
+  lsSet(LS_BIDBAR, { id: i.id, title: i.title, url: i.url, maxBid, mark: i.mark || "", usd: i.usd || "", price: i.price || "", end: i.end || "", tent: !!i.tent });
+  renderBidBar();
+  toast("URL をコピーしました");
+}
+function bidRecord(x, kind) {
+  const out = lsGet(LS_OUT, []);
+  out.push([nowJst(), kind, x.title, x.price || "", x.mark || "", x.maxBid || "", x.usd || "", "ヤフオク", `ID ${x.id}／終了 ${x.end || ""}${x.tent ? "／仮" : ""}`, APP_VERSION]);
+  lsSet(LS_OUT, out); flushOutbox();
+}
+$("bidBar").onclick = (e) => {
+  const k = e.target.dataset.bbar; if (!k) return;
+  const x = lsGet(LS_BIDBAR, null); if (!x) return;
+  if (k === "done") { const done = lsGet(LS_BIDDONE, {}); done[x.id] = nowJst(); lsSet(LS_BIDDONE, done); bidRecord(x, "入札予約"); toast("予約を記録しました"); }
+  lsSet(LS_BIDBAR, null); renderBids();
+};
 $("bidChips").onclick = (e) => { const f = e.target.dataset.f; if (!f) return; bidFilter = f; lsSet(LS_BIDF, f); renderBids(); };
-// ［予約］: 上限額をコピー → オークファンのその出品のページを開く（入札予約の欄に貼るだけ）→ 戻ったら「予約した」と記録（入札の結果の集計に入る）
+$("bidInfo").onclick = (e) => { if (!e.target.dataset.sort) return; bidSort = bidSort === "end" ? "rank" : "end"; lsSet(LS_BIDSORT, bidSort); renderBids(); };
+let bidCtx = null;   // ［調べる］から来た出品（Sold を入れて出し直した上限額で予約できるように）
+$("result").addEventListener("click", (e) => { if (e.target.closest("[data-ctxsnipe]") && bidCtx && lastLook && lastLook.calc) startSnipe(bidCtx, lastLook.calc.maxBid); });
 $("bidList").onclick = (e) => {
+  const lk = e.target.closest("[data-blook]");
+  if (lk) { const i = DATA.bids.items.find((x) => x.id === lk.dataset.blook); if (!i) return; bidCtx = i; setInput(i.title, i.price || ""); return; }
   const b = e.target.closest("[data-snipe]"); if (!b) return;
   const i = DATA.bids.items.find((x) => x.id === b.dataset.snipe); if (!i) return;
   const done = lsGet(LS_BIDDONE, {});
-  if (done[i.id]) { e.preventDefault(); delete done[i.id]; lsSet(LS_BIDDONE, done); renderBids(); toast("予約済みの印を外しました"); return; }
-  let ok = false; try { navigator.clipboard.writeText(String(Math.round(i.maxBid))).catch(() => {}); ok = true; } catch (err) {}   // 押した瞬間にコピー（開くのはリンクのまま）
-  done[i.id] = nowJst(); lsSet(LS_BIDDONE, done);
-  const out = lsGet(LS_OUT, []);
-  out.push([nowJst(), "入札予約", i.title, i.price || "", i.mark || "", i.maxBid || "", i.usd || "", "ヤフオク", `ID ${i.id}／終了 ${i.end || ""}${i.tent ? "／仮" : ""}`, APP_VERSION]);
-  lsSet(LS_OUT, out); flushOutbox();
-  renderBids();
-  toast(ok ? `上限 ${Number(i.maxBid).toLocaleString()}円 をコピーしました。オークファンの入札額に貼ってください` : `上限 ${Number(i.maxBid).toLocaleString()}円（コピーできませんでした）`);
+  if (done[i.id]) {   // 予約済みを外す → 取り消しを記録
+    e.preventDefault(); delete done[i.id]; lsSet(LS_BIDDONE, done);
+    bidRecord({ id: i.id, title: i.title, end: i.end }, "入札予約取消"); renderBids(); toast("予約済みを外しました"); return;
+  }
+  startSnipe(i, i.maxBid);
 };
 
 function showTab(t) {

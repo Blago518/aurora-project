@@ -553,19 +553,23 @@ def sync_trivia(url: str, key: str, dry_run: bool = False) -> int | None:
 def phone_bid_rows(text: str) -> list[dict]:
     """「共有_店舗」の CSV のうち 種類＝入札予約 の行（スマホの入札タブの［予約］）→ 入札の記録（bid_log）と同じ形の行."""
     import re
-    out = []
+    out = {}
     for r in pick_columns(text, ["日時", "種類", "商品名", "判定", "上限（税込・円）", "想定$（送料別）", "メモ"]) or []:
-        if (r.get("種類") or "").strip() != "入札予約":
+        kind = (r.get("種類") or "").strip()
+        if kind not in ("入札予約", "入札予約取消"):
             continue
         memo = r.get("メモ") or ""
         m = re.search(r"ID\s*([A-Za-z0-9]+)", memo)
         if not m:
             continue
+        if kind == "入札予約取消":   # スマホで「予約した」を外した
+            out.pop(m.group(1), None)
+            continue
         end = re.search(r"終了\s*([^／]+)", memo)
-        out.append({"auction_id": m.group(1), "title": r.get("商品名", ""), "max_bid": r.get("上限（税込・円）", ""),
-                    "pay_max": r.get("上限（税込・円）", ""), "usd": r.get("想定$（送料別）", ""), "end": (end.group(1).strip() if end else ""),
-                    "bid_at": r.get("日時", ""), "tentative": "1" if "／仮" in memo else "0", "via": "phone"})
-    return out
+        out[m.group(1)] = {"auction_id": m.group(1), "title": r.get("商品名", ""), "max_bid": r.get("上限（税込・円）", ""),
+                           "pay_max": "", "usd": r.get("想定$（送料別）", ""), "end": (end.group(1).strip() if end else ""),
+                           "bid_at": r.get("日時", ""), "tentative": "1" if "／仮" in memo else "0", "via": "phone"}
+    return list(out.values())
 
 
 def sync_phone_bids(url: str, key: str, dry_run: bool = False) -> int | None:
