@@ -308,6 +308,8 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_research(url, key, dry_run)
     sync_sheet_memo(url, key, dry_run)
     sync_candidates(url, key, dry_run)   # ゼニガメの下調べ → 店舗アプリの仮の相場
+    sync_phone_bids(url, key, dry_run)   # スマホの入札タブで予約した物 → 入札の結果の集計
+    sync_trivia(url, key, dry_run)       # 機種の豆知識 → 店舗アプリ
     sync_store_memo(url, key, dry_run)   # 店舗で［登録］した相場。同じ機種はチャットの相場メモと日付の新しい方
     sync_knowledge(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
@@ -523,6 +525,73 @@ def sync_candidates(url: str, key: str, dry_run: bool = False) -> int | None:
         w = csv.DictWriter(f, fieldnames=["機種", "候補$（送料別）", "確度", "日付", "根拠"])
         w.writeheader(); w.writerows(rows)
     print(f"下調べ相場: {len(rows)}件 → data/candidate_prices.csv", file=sys.stderr)
+    return len(rows)
+
+
+TRIVIA_SHEET = "共有_豆知識"  # 機種の豆知識（毎晩クラウドで少しずつ調べる。2026-11-21 オーナー「エピソードがあると機種を覚えやすい」）
+
+
+def sync_trivia(url: str, key: str, dry_run: bool = False) -> int | None:
+    """古物台帳「共有_豆知識」→ data/trivia.csv（まるごと置き換え）. 店舗アプリの機種名の下に1行で出す."""
+    try:
+        text = fetch(url, key, TRIVIA_SHEET)
+    except (urllib.error.URLError, OSError):
+        return None
+    if text.startswith("NO_SHEET:"):
+        return None
+    rows = [r for r in (pick_columns(text, ["機種", "豆知識", "出典", "日付", "確認"]) or []) if (r.get("機種") or "").strip() and (r.get("豆知識") or "").strip()]
+    if dry_run or not rows:
+        return len(rows)
+    out = DATA / "trivia.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["機種", "豆知識", "出典", "日付", "確認"], restval="")
+        w.writeheader(); w.writerows(rows)
+    return len(rows)
+
+
+def phone_bid_rows(text: str) -> list[dict]:
+    """「共有_店舗」の CSV のうち 種類＝入札予約 の行（スマホの入札タブの［予約］）→ 入札の記録（bid_log）と同じ形の行."""
+    import re
+    out = {}
+    for r in pick_columns(text, ["日時", "種類", "商品名", "判定", "上限（税込・円）", "想定$（送料別）", "メモ"]) or []:
+        kind = (r.get("種類") or "").strip()
+        if kind not in ("入札予約", "入札予約取消"):
+            continue
+        memo = r.get("メモ") or ""
+        m = re.search(r"ID\s*([A-Za-z0-9]+)", memo)
+        if not m:
+            continue
+        if kind == "入札予約取消":   # スマホで「予約した」を外した
+            out.pop(m.group(1), None)
+            continue
+        end = re.search(r"終了\s*([^／]+)", memo)
+        out[m.group(1)] = {"auction_id": m.group(1), "title": r.get("商品名", ""), "max_bid": r.get("上限（税込・円）", ""),
+                           "pay_max": "", "usd": r.get("想定$（送料別）", ""), "end": (end.group(1).strip() if end else ""),
+                           "bid_at": r.get("日時", ""), "tentative": "1" if "／仮" in memo else "0", "via": "phone"}
+    return list(out.values())
+
+
+PHONE_BID_FIELDS = ["auction_id", "title", "max_bid", "pay_max", "usd", "end", "bid_at", "tentative", "via"]
+
+
+def sync_phone_bids(url: str, key: str, dry_run: bool = False) -> int | None:
+    """古物台帳「共有_店舗」の「入札予約」→ data/phone_bids.csv（bid_results.py が入札の記録に足す）."""
+    try:
+        text = fetch(url, key, "共有_店舗")
+    except (urllib.error.URLError, OSError):
+        return None
+    if text.startswith("NO_SHEET:"):
+        return None
+    rows = phone_bid_rows(text)
+    if dry_run:
+        return len(rows)
+    # 全部外して0件になったときも書き直す（古い予約が残らないように）
+    out = DATA / "phone_bids.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=PHONE_BID_FIELDS)
+        w.writeheader(); w.writerows(rows)
     return len(rows)
 
 

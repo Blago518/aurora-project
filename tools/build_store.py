@@ -201,7 +201,7 @@ def bid_candidates(reports: Path | None = None, now: datetime | None = None) -> 
     if ((now or datetime.now()) - made).total_seconds() > BID_MAX_AGE_H * 3600:
         return None
     items = []
-    for r in csv.DictReader(f.read_text(encoding="utf-8-sig").splitlines()):
+    for rank, r in enumerate(csv.DictReader(f.read_text(encoding="utf-8-sig").splitlines())):
         flags = [x for x in (r.get("注意") or "").split(" / ") if x]
         if any(x in SKIP_FLAGS for x in flags):
             continue
@@ -228,9 +228,28 @@ def bid_candidates(reports: Path | None = None, now: datetime | None = None) -> 
             "now": r.get("仮の出品中URL") if tent else r.get("eBay出品中URL", ""),
             "flags": [x for x in flags if x not in ("動作品", "美品")],
             "desc": r.get("説明文", ""),
+            "rank": rank,   # Mac の入札リストの並び（売れ筋・$99超が上、勝ちやすさ1割未満は下。2026-11-18〜20 の決定）
+            "win": ba.win_label(_num(r.get("勝ちやすさ")), _num(r.get("勝ちやすさの件数"))).replace("勝ちやすさ ", "") if hasattr(ba, "win_label") else "",
+            "caution": r.get("出品者の注意", ""),
         })
     items.sort(key=lambda x: (x["check"], x["tent"], x["end"] or "9"))
-    return {"built": f"{made:%Y-%m-%d %H:%M}", "items": items}
+    return {"built": f"{made:%Y-%m-%d %H:%M}", "items": items, "reserve": reserve_list(reports, now)}
+
+
+def reserve_list(reports: Path, now: datetime | None = None) -> list[dict]:
+    """最新の「今日の予約リスト」（reserve_list_*.csv）→ [{id, kind}]（予約 or 即決）. スマホの入札タブの一番上に同じ順で出す."""
+    files = sorted(reports.glob("reserve_list_*.csv"), key=lambda p: p.stat().st_mtime) if reports.exists() else []
+    if not files:
+        return []
+    f = files[-1]
+    if ((now or datetime.now()) - datetime.fromtimestamp(f.stat().st_mtime)).total_seconds() > BID_MAX_AGE_H * 3600:
+        return []
+    out = []
+    for r in csv.DictReader(f.read_text(encoding="utf-8-sig").splitlines()):
+        m = re.search(r"/auction/([^/?#]+)", r.get("ヤフオク") or "")
+        if m:
+            out.append({"id": m.group(1), "kind": "即決" if "即決" in (r.get("区分") or "") else "予約"})
+    return out
 
 
 SWEET_NOTES = ("レンズ狙い目スペック", "レンズ世代の高い順")  # knowledge/講座/ の講座資料のまとめ（「狙い目」タブ。2026-11-19 ユーザー指定）
@@ -246,6 +265,18 @@ def sweet_notes(root: Path | None = None) -> list[dict]:
         if p.exists():
             out.append({"name": name, "md": p.read_text(encoding="utf-8")})
     return out
+
+
+def trivia(path: Path | None = None) -> list[dict]:
+    """data/trivia.csv（機種の豆知識）→ [{"m": 機種, "t": 豆知識}]. 店舗アプリが機種名の下に1行で出す."""
+    import csv
+    p = path or (ROOT / "data" / "trivia.csv")
+    if not p.exists():
+        return []
+    with open(p, encoding="utf-8-sig") as f:
+        # 「確認」が 確認済み の行だけ（2026-11-21 オーナー「未確認のエピソードはいらない。調べてわかったものだけ」）
+        return [{"m": r["機種"].strip(), "t": r["豆知識"].strip()} for r in csv.DictReader(f)
+                if (r.get("機種") or "").strip() and (r.get("豆知識") or "").strip() and (r.get("確認") or "").strip() == "確認済み"]
 
 
 def candidate_refs(ship_usd: float, path: Path | None = None) -> list[dict]:
@@ -279,6 +310,7 @@ def build(cfg: dict, fx: float) -> dict:
             rows += ba.read_sales(p)
     data["recs"] = recommendations(rows, cfg, fx)
     data["refs"] += candidate_refs(float(cfg["shipping"].get("deduction_usd", 0)))
+    data["trivia"] = trivia()
     data["bids"] = bid_candidates()
     data["kind"] = "aurora-store"
     # 店舗アプリ →「共有_店舗」（調べた・購入）の送り先。鍵は共有_店舗に行を足すことしかできない（ledger_sync.store_endpoint）
