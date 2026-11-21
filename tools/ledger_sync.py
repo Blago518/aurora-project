@@ -307,6 +307,7 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_past_bids(url, key, dry_run)
     sync_research(url, key, dry_run)
     sync_sheet_memo(url, key, dry_run)
+    sync_store_memo(url, key, dry_run)   # 店舗で［登録］した相場。同じ機種はチャットの相場メモと日付の新しい方
     sync_knowledge(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
     if old == text:
@@ -497,6 +498,62 @@ def sync_sheet_memo(url: str, key: str, dry_run: bool = False) -> int | None:
     added, updated = ba.merge_memo(new, how="チャットで登録")
     if added or updated:
         print(f"相場メモ（シート）: 追加 {added}件・更新 {updated}件 → data/price_memo.csv", file=sys.stderr)
+    return added + updated
+
+
+STORE_MEMO_KIND = "相場登録"  # 店舗アプリの Sold 欄の［登録］（2026-11-21 オーナー指示）
+
+
+def store_memo_rows(text: str, ship_usd: float, newer_than: dict | None = None) -> dict:
+    """「共有_店舗」の CSV のうち 種類＝相場登録 の行 → {機種: (送料込み$, source)}. 想定$ は送料別（Sold で見た額）. 同じ機種は後の行が勝つ.
+    newer_than＝{機種: 日付}（チャットで決めた「共有_相場メモ」の日付）。それより古い登録は使わない（新しい方の相場を残す）."""
+    newer_than = newer_than or {}
+    out = {}
+    for r in pick_columns(text, ["日時", "種類", "商品名", "想定$（送料別）", "メモ"]) or []:
+        if (r.get("種類") or "").strip() != STORE_MEMO_KIND:
+            continue
+        t = (r.get("商品名") or "").strip()
+        if (r.get("日時") or "")[:10] < newer_than.get(t, ""):
+            continue
+        try:
+            v = float(str(r.get("想定$（送料別）", "")).replace("$", "").replace(",", "").strip())
+        except ValueError:
+            continue
+        if t and v > 0:
+            cond = (r.get("メモ") or "").strip()
+            out[t] = (round(v + ship_usd, 2), f"相場メモ({cond})" if cond else "相場メモ")
+    return out
+
+
+def sheet_memo_dates(text: str) -> dict:
+    """「共有_相場メモ」の CSV → {機種: 日付（YYYY-MM-DD）}."""
+    out = {}
+    for r in pick_columns(text, ["機種", "相場$（送料別）", "日付"]) or []:
+        t = (r.get("機種") or "").strip()
+        d = (r.get("日付") or "").strip().replace("/", "-")[:10]
+        if t and d > out.get(t, ""):
+            out[t] = d
+    return out
+
+
+def sync_store_memo(url: str, key: str, dry_run: bool = False) -> int | None:
+    """古物台帳「共有_店舗」の［登録］の行 → data/price_memo.csv. 「共有_相場メモ」の後に取り込み、同じ機種はどちらか新しい日付の方を残す."""
+    import appraise as ba
+    try:
+        text = fetch(url, key, "共有_店舗")
+        memo = fetch(url, key, MEMO_SHEET)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"相場メモ（店舗の登録）: 読み込めませんでした（{e}）", file=sys.stderr)
+        return None
+    if text.startswith("NO_SHEET:"):
+        return None
+    dates = {} if memo.startswith("NO_SHEET:") else sheet_memo_dates(memo)
+    new = store_memo_rows(text, float(ba.load_config(None)["shipping"].get("deduction_usd", 0)), dates)
+    if dry_run or not new:
+        return len(new)
+    added, updated = ba.merge_memo(new, how="店舗で登録")
+    if added or updated:
+        print(f"相場メモ（店舗の登録）: 追加 {added}件・更新 {updated}件 → data/price_memo.csv", file=sys.stderr)
     return added + updated
 
 
