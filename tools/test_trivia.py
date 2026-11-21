@@ -11,7 +11,14 @@ class Trivia(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "t.csv"
             p.write_text("機種,豆知識,出典,日付\nContax Aria,写真家の蜷川実花さんが愛用。女性に人気,オーナー,2026-11-21\n,空,,\n", encoding="utf-8")
-            self.assertEqual(bs.trivia(p), [{"m": "Contax Aria", "t": "写真家の蜷川実花さんが愛用。女性に人気"}])
+            self.assertEqual(bs.trivia(p), [{"m": "Contax Aria", "t": "写真家の蜷川実花さんが愛用。女性に人気", "u": 1}])
+
+    def test_checked(self):
+        """確認済みの行だけ印なし（未確認・空欄は u=1 → アプリで（未確認））."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "t.csv"
+            p.write_text("機種,豆知識,出典,日付,確認\nNikon F3,AとB,x,2026-11-22,確認済み\nContax T2,C,y,2026-11-22,未確認\n", encoding="utf-8")
+            self.assertEqual(bs.trivia(p), [{"m": "Nikon F3", "t": "AとB"}, {"m": "Contax T2", "t": "C", "u": 1}])
 
 
 if __name__ == "__main__":

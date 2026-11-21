@@ -274,7 +274,9 @@ def trivia(path: Path | None = None) -> list[dict]:
     if not p.exists():
         return []
     with open(p, encoding="utf-8-sig") as f:
-        return [{"m": r["機種"].strip(), "t": r["豆知識"].strip()} for r in csv.DictReader(f) if (r.get("機種") or "").strip() and (r.get("豆知識") or "").strip()]
+        # 「確認」が 確認済み 以外（未確認・空）は u=1。アプリで印を付ける（未確認の話は出品の説明文に使わない）
+        return [dict({"m": r["機種"].strip(), "t": r["豆知識"].strip()}, **({} if (r.get("確認") or "").strip() == "確認済み" else {"u": 1}))
+                for r in csv.DictReader(f) if (r.get("機種") or "").strip() and (r.get("豆知識") or "").strip()]
 
 
 def candidate_refs(ship_usd: float, path: Path | None = None) -> list[dict]:

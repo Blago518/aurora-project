@@ -539,13 +539,13 @@ def sync_trivia(url: str, key: str, dry_run: bool = False) -> int | None:
         return None
     if text.startswith("NO_SHEET:"):
         return None
-    rows = [r for r in (pick_columns(text, ["機種", "豆知識", "出典", "日付"]) or []) if (r.get("機種") or "").strip() and (r.get("豆知識") or "").strip()]
+    rows = [r for r in (pick_columns(text, ["機種", "豆知識", "出典", "日付", "確認"]) or []) if (r.get("機種") or "").strip() and (r.get("豆知識") or "").strip()]
     if dry_run or not rows:
         return len(rows)
     out = DATA / "trivia.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["機種", "豆知識", "出典", "日付"])
+        w = csv.DictWriter(f, fieldnames=["機種", "豆知識", "出典", "日付", "確認"], restval="")
         w.writeheader(); w.writerows(rows)
     return len(rows)
 
