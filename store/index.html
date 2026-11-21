@@ -294,7 +294,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.22";
+  var APP_VERSION = "2026.11.21.23";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -434,6 +434,18 @@ const TINY_MAX = 1000;
 const canPay = (c, ok) => !!c && c.maxBid > 0 && (c.maxBid >= TINY_MAX || !!ok);
 // 利益の基準は計算した側（core.calculate の minProfit。売値・送料込み$99以下は4,000円）をそのまま出す
 const lowNote = (c) => (c.minProfit > (DATA.cfg.minProfit || 0) ? `（売値$${DATA.cfg.lowPriceUsd}以下・送料込みの安い物）` : "");
+// 相場なしでも見切れるように: この値札で基準（利益・利益率）に届くには、eBay で商品代（送料別）いくら以上で売れる必要があるか。
+// 今の計算（core.calculate の上限額）をそのまま逆にたどる。表示だけ（2026-11-21 仮想店舗: 時間の6割が Sold を読む時間だった）
+function needUsd(price, title) {
+  if (!DATA || !price) return null;
+  const ded = DATA.cfg.deductionUsd || 0, it = { title: title || "", price, ship: 0, tax: false, flags: [] };
+  const okAt = (net) => core.calculate(it, net + ded, DATA.cfg.fx).maxBid >= price;
+  let lo = 0, hi = 50000;
+  if (!okAt(hi)) return null;
+  for (let i = 0; i < 40 && hi - lo > 0.5; i++) { const mid = (lo + hi) / 2; if (okAt(mid)) hi = mid; else lo = mid; }
+  let n = Math.ceil(hi); while (n > 1 && okAt(n - 1)) n--;
+  return n;
+}
 function renderResult(name, price, r) {
   const el = $("result");
   if (!name.trim()) { el.hidden = true; return; }
@@ -445,7 +457,8 @@ function renderResult(name, price, r) {
   const cls = !c ? "w" : ok || (price == null && canPay(c, ok)) ? "g" : r.mark === "要確認" ? "w" : "x";
   const sw = core.sweetSpot ? core.sweetSpot(name) : "";
   const sign = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP") + "円";
-  const why = !c ? "販売実績に無い機種。下の Sold で調べて、右の欄に額を入れる"
+  const need = !c ? needUsd(price, name) : null;
+  const why = !c ? (need ? `この値札なら、同じ状態の Sold が $${need.toLocaleString()}（送料別）以上で何件も並んでいれば届く。下の Sold で確かめて、右の欄に額を入れる` : "販売実績に無い機種。値札を入れると、いくらで売れれば届くかを出します")
     : price == null && canPay(c, ok) ? "値札を入れると利益を出します"
     : r.mark === "要確認" ? storeReason(r.reason).replace(/^ジャンク・/, "")
     : /光学難/.test(r.reason) ? storeReason(r.reason).replace(/^ジャンク・/, "")
@@ -933,7 +946,8 @@ function renderShelf(note) {
     const r = x.r, c = r.calc, ok = r.mark === "◎" || r.mark === "○", cls = !c ? "w" : ok ? "g" : r.mark === "要確認" ? "w" : "x";
     const big = !c ? "相場なし" : x.price == null ? (canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない")
       : (c.profit > 0 ? "+" : c.profit < 0 ? "−" : "") + Math.abs(Math.round(c.profit)).toLocaleString("ja-JP") + "円";
-    const sub = x.price == null ? "値札が読めない" : !c ? `値札 ${yen(x.price)}` : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;   // 相場なしの行にも値札を出す（仮想店舗で見つけた）
+    const nd = !c && x.price != null ? needUsd(x.price, x.name) : null;
+    const sub = x.price == null ? "値札が読めない" : !c ? `値札 ${yen(x.price)}${nd ? `／Sold $${nd.toLocaleString()} 以上なら届く` : ""}` : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;   // 相場なしの行にも値札を出す（仮想店舗で見つけた）
     return `<div class="shelf"><div class="tt"><b>${core.sweetSpot && core.sweetSpot(x.name) ? "★ " : ""}${esc(x.name)}</b><span class="s">${esc(sub)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
       <div class="pf ${cls}">${esc(big)}</div>
       <button data-shelf="${i}" data-act="${!c ? "sold" : ok ? "buy" : "look"}">${!c ? "Sold" : ok ? "購入へ" : "見る"}</button></div>`;
