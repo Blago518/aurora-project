@@ -290,7 +290,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.16";
+  var APP_VERSION = "2026.11.21.17";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -384,7 +384,11 @@ function lookup(name, price, opt = {}) {  // ジャンク表記の欄は外し�
   // Sold で調べた額（送料別）と状態を入れたら、それで計算する（2026-11-21 ユーザー指示。相場は送料込みで持つので +送料）
   if (opt.sold && opt.sold.usd > 0)
     refs = [{ title: name, price: opt.sold.usd + (DATA.cfg.deductionUsd || 0), tier: 0, source: "相場メモ(" + (opt.sold.cond || "") + ")", sold: true }];
-  let u = refs.length ? Math.round(core.median(core.conditionAdjusted ? core.conditionAdjusted(refs, jt, flags, opt.rank) : refs.map((r) => r.price)) * 100) / 100 : null;
+  // Sold を入れたときは、その額をそのまま使う（2026-11-21 オーナー「計算あってる？」: 値札の「中古品」から状態を下に見て、Sold $520 を約 $400 に下げていた）。
+  // ［実物］の状態を押したときだけ、Sold の状態との差で直す
+  const soldIn = opt.sold && opt.sold.usd > 0;
+  const adj = !core.conditionAdjusted || (soldIn && opt.rank == null) ? refs.map((r) => r.price) : core.conditionAdjusted(refs, jt, flags, opt.rank);
+  let u = refs.length ? Math.round(core.median(adj) * 100) / 100 : null;
   if (u != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) u = Math.round(u * DATA.cfg.junkFactor * 100) / 100;
   // まとめ売り・レンズキットは中身ごとに相場を当てて合計（拡張機能・appraise.py と同じ。2点以上当たったときだけ）
   let setParts = [];
@@ -452,7 +456,7 @@ function renderResult(name, price, r) {
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
     : (canPay(c, ok) ? (price != null ? `<b>${yen(c.maxBid)}</b> まで出せる` : "") + (m ? `<span class="s">この額で利益 ${yen(m.profit)}</span>` : "")
       : `<b>購入しない</b>`)
-      + (sold ? `<span class="s">Sold $${pick.sold.usd}${pick.sold.cond ? "（" + esc(pick.sold.cond) + "）" : ""} で計算</span>` : "");
+      + (sold ? `<span class="s">Sold $${pick.sold.usd}${pick.sold.cond ? "（" + esc(pick.sold.cond) + "）" : ""}${r.usd != null && Math.abs(r.usd - (DATA.cfg.deductionUsd || 0) - pick.sold.usd) >= 1 ? ` → 実物の状態で $${Math.round(r.usd - (DATA.cfg.deductionUsd || 0))}` : ""} で計算</span>` : "");
   $("resTop").innerHTML = h;
   h = "";
   if (c) {
