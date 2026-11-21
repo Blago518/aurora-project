@@ -283,7 +283,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.12";
+  var APP_VERSION = "2026.11.21.13";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -477,8 +477,8 @@ function readSold() {
   $("soldUsd").parentNode.classList.toggle("on", !!pick.sold);
 }
 function clearSold() { $("soldUsd").value = ""; $("soldCond").value = ""; pick.sold = null; $("soldUsd").parentNode.classList.remove("on"); }
-$("soldUsd").addEventListener("input", () => { readSold(); look(); });
-$("soldCond").addEventListener("change", () => { readSold(); look(); });
+$("soldUsd").addEventListener("input", () => { readSold(); look(); autoLogTyped(); });
+$("soldCond").addEventListener("change", () => { readSold(); look(); autoLogTyped(); });
 const RANK_CHIPS = [[10, "TOP MINT"], [9, "MINT"], [7, "Near MINT"]];
 function rankChips() {
   return `<div class="cond"><span class="l">実物</span><div class="chips">` +
@@ -660,21 +660,23 @@ async function flushOutbox() {
 }
 // 調べた物は押さなくても「共有_店舗」に送る（2026-11-21 ユーザー指示）。同じ商品名・値札は1回だけ
 const logged = new Set();
-function autoLog(name, price, r) {
+// Sold で調べて入れた額と状態もメモ欄に残す（2026-11-21 オーナー「入力したドルも取得して」）。入れ直したら、その額でもう1行
+const soldMemo = () => pick.sold ? "Sold $" + pick.sold.usd + (pick.sold.cond ? "(" + pick.sold.cond + ")" : "") : "";
+function autoLog(name, price, r, memo = "") {
   name = String(name || "").trim();
   if (!name || !DATA) return;
-  const k = name.toLowerCase() + "|" + (price || "");
+  const k = name.toLowerCase() + "|" + (price || "") + "|" + memo;
   if (logged.has(k)) return; logged.add(k);
   const c = r && r.calc, ded = DATA.cfg.deductionUsd || 0;
   const out = lsGet(LS_OUT, []);
   out.push([nowJst(), "調べた", name, price || "", r ? r.mark : "", c && c.maxBid ? c.maxBid : "",
-    r && r.usd != null ? Math.round((r.usd - ded) * 100) / 100 : "", $("shopName").value.trim(), "", APP_VERSION]);
+    r && r.usd != null ? Math.round((r.usd - ded) * 100) / 100 : "", $("shopName").value.trim(), memo, APP_VERSION]);
   lsSet(LS_OUT, out);
 }
 let logTimer = null;
 function autoLogTyped() {  // 手で入れたときは、入力が2秒止まってから
   clearTimeout(logTimer);
-  logTimer = setTimeout(() => { autoLog($("name").value, parsePrice($("price").value), lastLook); flushOutbox(); }, 2000);
+  logTimer = setTimeout(() => { autoLog($("name").value, parsePrice($("price").value), lastLook, soldMemo()); flushOutbox(); }, 2000);
 }
 $("sendBox").addEventListener("click", (e) => {
   const kind = e.target.dataset.send;
