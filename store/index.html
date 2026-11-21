@@ -294,7 +294,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.20";
+  var APP_VERSION = "2026.11.21.21";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -497,25 +497,35 @@ function clearSold() { $("soldUsd").value = ""; $("soldCond").value = ""; pick.s
 // ［相場に登録］（2026-11-21 オーナー指示）: Sold で見た額と状態を、この機種の相場として登録する。
 // この iPhone では今から使い（次に同じ機種を調べると Sold 欄に入る）、「共有_店舗」に「相場登録」の行を送る → 翌朝 Mac が相場メモ（data/price_memo.csv）に取り込む
 const LS_MEMO = "storeMemo";
-const memoKey = (n) => { const t = String(n || "").trim(); let k = ""; try { const v = core.modelKey ? core.modelKey(t) : ""; k = Array.isArray(v) ? v.filter(Boolean).join(" ") : String(v || ""); } catch (e) { k = ""; } return (k || t).toLowerCase().replace(/\s+/g, " "); };
-const localMemo = (n) => { const m = lsGet(LS_MEMO, {}); return m[memoKey(n)] || m[String(n || "").trim().toLowerCase().replace(/\s+/g, " ")] || null; };
+// 機種をそろえる部品（modelKey）は「Monochrome」などの違いを落とすので使わない。大文字・小文字・全角・区切りの違いだけそろえる
+const memoKey = (n) => String(n || "").normalize("NFKC").trim().toLowerCase().replace(/[\s\-_.\/()・]+/g, "");
+const localMemo = (n) => lsGet(LS_MEMO, {})[memoKey(n)] || null;
 let memoFilled = "";   // 登録済みの額を Sold 欄に入れるのは、商品名が変わって調べ直したときの1回だけ（消して打ち直せるように）
 function regState() {
   const b = $("soldReg"); if (!b) return;
   const m = localMemo($("name").value), same = m && pick.sold && m.usd === pick.sold.usd && (m.cond || "") === (pick.sold.cond || "");
-  b.disabled = !pick.sold || !$("name").value.trim() || !!same;
-  b.textContent = same ? "登録済み" : m ? "登録し直して次へ" : "登録して次へ";
+  b.disabled = !pick.sold || !$("name").value.trim();
+  b.textContent = same ? "登録済み・次へ" : m ? "登録し直して次へ" : "登録して次へ";
   if (!same) $("regSt").textContent = "";
 }
+$("soldUsd").addEventListener("focus", () => {   // 打ち始める前だけ選ぶ（打った数字を選び直して消さないように）
+  const el = $("soldUsd"), v0 = el.value;
+  try { el.setSelectionRange(0, v0.length); } catch (e) {}
+  setTimeout(() => { try { if (el.value === v0 && v0) el.setSelectionRange(0, v0.length); } catch (e) {} }, 0);
+});
 $("soldUsd").addEventListener("input", () => { readSold(); look(); autoLogTyped(); regState(); saveDraft(); });
 $("soldCond").addEventListener("change", () => { readSold(); look(); autoLogTyped(); regState(); });
 $("soldReg").addEventListener("click", () => {
   const name = $("name").value.trim();
   if (!name || !pick.sold) return;
-  const memos = lsGet(LS_MEMO, {}); memos[memoKey(name)] = { usd: pick.sold.usd, cond: pick.sold.cond || "", t: nowJst(), n: name }; lsSet(LS_MEMO, memos);
-  const out = lsGet(LS_OUT, []);
-  out.push([nowJst(), "相場登録", name, parsePrice($("price").value) || "", "", "", pick.sold.usd, $("shopName").value.trim(), pick.sold.cond || "", APP_VERSION]);
-  lsSet(LS_OUT, out); flushOutbox(); regState();
+  const m0 = localMemo(name), same = m0 && m0.usd === pick.sold.usd && (m0.cond || "") === (pick.sold.cond || "");
+  if (!same) {   // 同じ額・状態で登録済みなら、送らずに次へ
+    const memos = lsGet(LS_MEMO, {}); memos[memoKey(name)] = { usd: pick.sold.usd, cond: pick.sold.cond || "", t: nowJst(), n: name }; lsSet(LS_MEMO, memos);
+    const out = lsGet(LS_OUT, []);
+    out.push([nowJst(), "相場登録", name, parsePrice($("price").value) || "", "", "", pick.sold.usd, $("shopName").value.trim(), pick.sold.cond || "", APP_VERSION]);
+    lsSet(LS_OUT, out); flushOutbox();
+  }
+  regState();
   const msg = `${name} を $${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""} で登録しました。次の商品をどうぞ`;
   // 次へ: 入力を空にして商品名の欄へ（登録した相場は、次に同じ機種を調べると Sold 欄に入る）
   $("name").value = ""; $("price").value = ""; pick = { rank: null, note: "", sold: null }; clearSold(); look(); saveDraft();
@@ -640,10 +650,12 @@ function renderCatChips() {
 }
 $("catChips").onclick = (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catSel = b.dataset.cat; updateLinks(); };
 // core.js の ebay() のリンクにカテゴリを付ける（販売済み・出品中は _sacat、Product Research は categoryId）
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const toSafari = (u) => (IOS && /^https:\/\//.test(u) ? "x-safari-" + u : u);
 function linksWithCat(q, cat) {
   const L = core ? core.ebay(q) : ebayLinks(q);
-  if (cat === "0") return L;
-  return { sold: L.sold + "&_sacat=" + cat, now: L.now + "&_sacat=" + cat, pr: L.pr + "&categoryId=" + cat };
+  const M = cat === "0" ? L : { sold: L.sold + "&_sacat=" + cat, now: L.now + "&_sacat=" + cat, pr: L.pr + "&categoryId=" + cat };
+  return { sold: toSafari(M.sold), now: toSafari(M.now), pr: toSafari(M.pr) };
 }
 
 let queryTouched = false;
@@ -913,7 +925,7 @@ function renderShelf(note) {
     const r = x.r, c = r.calc, ok = r.mark === "◎" || r.mark === "○", cls = !c ? "w" : ok ? "g" : r.mark === "要確認" ? "w" : "x";
     const big = !c ? "相場なし" : x.price == null ? (canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない")
       : (c.profit > 0 ? "+" : c.profit < 0 ? "−" : "") + Math.abs(Math.round(c.profit)).toLocaleString("ja-JP") + "円";
-    const sub = !c ? "" : x.price == null ? "値札が読めない" : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;
+    const sub = x.price == null ? "値札が読めない" : !c ? `値札 ${yen(x.price)}` : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;   // 相場なしの行にも値札を出す（仮想店舗で見つけた）
     return `<div class="shelf"><div class="tt"><b>${core.sweetSpot && core.sweetSpot(x.name) ? "★ " : ""}${esc(x.name)}</b><span class="s">${esc(sub)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
       <div class="pf ${cls}">${esc(big)}</div>
       <button data-shelf="${i}" data-act="${!c ? "sold" : ok ? "buy" : "look"}">${!c ? "Sold" : ok ? "購入へ" : "見る"}</button></div>`;
