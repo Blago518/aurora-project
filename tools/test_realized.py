@@ -62,6 +62,11 @@ class InstantLaneJunk(unittest.TestCase):
         # 2026-11-21 予約リストに ◎ で出ていた（全角の mm／改造の受付）
         "【 美品 】OLYMPUS 24ｍｍ/2.8用 メタルフード 元箱付き オリンパス [管7874OL-0206-LP",
         "天体改造します：Canon EOS 6D(フルサイズ) 60D,70D,80D系(APS-C)デジタル一眼機",
+        # 2026-11-22 予約リストに ◎ で出ていた（補修部品・本・グリップ）
+        "Nikon F3 Repair Parts グリップライン 未使用",
+        "写真工業臨時増刊 No.48 世界のカメラ",
+        "OLYMPUS E-M5 MarkII用 グリップ HLD-8G",
+        "Contax T2 TVS ロングストラップ",
     ]
     BODY = [  # 付属品が「付き」の本体は付属品扱いしない
         "Nikon F3 HP フォーカシングスクリーン付",
@@ -69,6 +74,9 @@ class InstantLaneJunk(unittest.TestCase):
         "Nikon F3 カメラバッグ付き",
         "Leica Summicron 50mm F2 沈胴 ケース付",
         "Nikon D750 ボディ 同梱承ります 即決",   # 「承ります」は本体の商品名にもあるので付属品扱いしない
+        "OLYMPUS OM-D E-M5 MarkII ボディ グリップ付き",
+        "Nikon F3 ジャンク 部品取り",   # 部品取りの本体はジャンクの本体（2026-11-16 ジャンク表記は気にしない）
+        "Canon EOS 5D Mark IV HLD無し ボディ",
     ]
 
     def test_python(self):
