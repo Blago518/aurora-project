@@ -76,19 +76,25 @@ def import_extension_bids(downloads: Path | None = None, dest: Path | None = Non
 
 
 def import_phone_bids(src: Path | None = None, dest: Path | None = None) -> int:
-    """スマホの［予約］（data/phone_bids.csv）を入札の記録に足す（同じオークションは足さない）. 追加件数を返す."""
+    """スマホの［予約］（data/phone_bids.csv）を入札の記録に合わせる. 追加件数を返す.
+    同じオークションは足さない。スマホで外した予約（phone_bids.csv から消えた物）は、結果が出ていなければ記録からも消す
+    （残すと10日後に「負け」になり落札率がずれる）. phone_bids.csv が無い（まだ取り込んでいない）ときは何もしない."""
     src, dest = src or PHONE, dest or LOG
-    new = _read(src)
-    if not new:
+    if not src.exists():
         return 0
+    new = _read(src)
+    keep = {(r.get("auction_id") or "").strip() for r in new}
     rows = {r["auction_id"]: r for r in _read(dest)}
+    gone = [a for a, r in rows.items() if r.get("via") == "phone" and a not in keep and not r.get("result")]
+    for a in gone:
+        del rows[a]
     added = 0
     for r in new:
         aid = (r.get("auction_id") or "").strip()
         if aid and aid not in rows:
             rows[aid] = dict(r, via="phone")
             added += 1
-    if added:
+    if added or gone:
         _write(list(rows.values()), dest)
     return added
 

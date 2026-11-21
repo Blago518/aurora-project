@@ -309,7 +309,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.31";
+  var APP_VERSION = "2026.11.21.32";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -422,7 +422,7 @@ function lookup(name, price, opt = {}) {  // ジャンク表記の欄は外し�
     if (setParts.length >= 2) { refs = [setParts[0].ref]; u = core.setValue(setParts, DATA.cfg.fx); }
     else setParts = [];
   }
-  const it = { title: jt, price, ship: 0, tax: false, flags, setParts };  // title: 光学難（カビ・クモリ等）の判定に使う
+  const it = { title: jt, price, ship: "ship" in opt ? opt.ship : 0, tax: !!opt.tax, flags, setParts };  // ship・tax: 入札タブの［調べる］から来たヤフオクの出品（国内送料・ストアは税抜で入札）  // title: 光学難（カビ・クモリ等）の判定に使う
   it.calc = u != null ? core.calculate(it, u, DATA.cfg.fx) : null;
   // 上限の額で買ったときの利益（上限の横に出す。2026-11-21 ユーザー指摘）
   const atMax = it.calc && it.calc.maxBid > 0 ? core.calculate(Object.assign({}, it, { price: it.calc.maxBid }), u, DATA.cfg.fx) : null;
@@ -495,7 +495,7 @@ function renderResult(name, price, r) {
   const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない";
   const tv = triviaOf(name);
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
-    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${bidCtx && name === bidCtx.title && c && c.maxBid > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(c.maxBid)} で予約</a>` : ""}`;
+    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
   // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
@@ -526,6 +526,7 @@ function renderResult(name, price, r) {
 // ---- 状態（2026-11-21 ユーザー指定: TOP MINT・MINT・Near MINT の3つ。Exc+4 以下は買わない）
 // 手に取って見たランクを押すと上限を出し直す。もう一度押すと値札の表記どおりに戻る
 let pick = { rank: null, note: "", sold: null };
+let bidCtx = null;   // ［調べる］から来た出品（Sold を入れて出し直した上限額で予約できるように）
 function readSold() {
   const v = Number(String($("soldUsd").value).normalize("NFKC").replace(/[^0-9.]/g, ""));
   let cond = $("soldCond").value;
@@ -722,7 +723,8 @@ function updateLinks() {
 function look() {
   const name = $("name").value, price = parsePrice($("price").value);
   if (memoFilled !== name) { memoFilled = name; const m = !pick.sold && !$("soldUsd").value && localMemo(name); if (m) { $("soldUsd").value = m.usd; $("soldCond").value = m.cond || ""; readSold(); } }
-  const r = DATA && name.trim() ? lookup(name, price, pick) : null;
+  const ctx = bidCtx && name === bidCtx.title ? bidCtx : null;
+  const r = DATA && name.trim() ? lookup(name, price, ctx ? Object.assign({}, pick, { ship: ctx.ship, tax: /^ストア/.test(ctx.taxNote || "") }) : pick) : null;
   lastLook = r; $("sendBox").hidden = !name.trim();
   if (!queryTouched) $("query").value = ebayQuery(name);
   updateLinks();
@@ -1328,8 +1330,13 @@ $("bidBar").onclick = (e) => {
 };
 $("bidChips").onclick = (e) => { const f = e.target.dataset.f; if (!f) return; bidFilter = f; lsSet(LS_BIDF, f); renderBids(); };
 $("bidInfo").onclick = (e) => { if (!e.target.dataset.sort) return; bidSort = bidSort === "end" ? "rank" : "end"; lsSet(LS_BIDSORT, bidSort); renderBids(); };
-let bidCtx = null;   // ［調べる］から来た出品（Sold を入れて出し直した上限額で予約できるように）
-$("result").addEventListener("click", (e) => { if (e.target.closest("[data-ctxsnipe]") && bidCtx && lastLook && lastLook.calc) startSnipe(bidCtx, lastLook.calc.maxBid); });
+// 入札タブの［調べる］から来た出品の予約額: Sold も状態も入れていなければ Mac の上限額そのまま（同じ式を2か所に持たない）、入れたら出し直した額
+function ctxMax(name, c) {
+  if (!bidCtx || name !== bidCtx.title) return 0;
+  if (!pick.sold && pick.rank == null) return bidCtx.maxBid || 0;
+  return c && c.maxBid > 0 ? c.maxBid : 0;
+}
+$("result").addEventListener("click", (e) => { if (e.target.closest("[data-ctxsnipe]") && bidCtx) startSnipe(bidCtx, ctxMax($("name").value, lastLook && lastLook.calc)); });
 $("bidList").onclick = (e) => {
   const lk = e.target.closest("[data-blook]");
   if (lk) { const i = DATA.bids.items.find((x) => x.id === lk.dataset.blook); if (!i) return; bidCtx = i; setInput(i.title, i.price || ""); return; }

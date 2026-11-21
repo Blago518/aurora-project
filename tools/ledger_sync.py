@@ -572,6 +572,9 @@ def phone_bid_rows(text: str) -> list[dict]:
     return list(out.values())
 
 
+PHONE_BID_FIELDS = ["auction_id", "title", "max_bid", "pay_max", "usd", "end", "bid_at", "tentative", "via"]
+
+
 def sync_phone_bids(url: str, key: str, dry_run: bool = False) -> int | None:
     """古物台帳「共有_店舗」の「入札予約」→ data/phone_bids.csv（bid_results.py が入札の記録に足す）."""
     try:
@@ -581,12 +584,13 @@ def sync_phone_bids(url: str, key: str, dry_run: bool = False) -> int | None:
     if text.startswith("NO_SHEET:"):
         return None
     rows = phone_bid_rows(text)
-    if dry_run or not rows:
+    if dry_run:
         return len(rows)
+    # 全部外して0件になったときも書き直す（古い予約が残らないように）
     out = DATA / "phone_bids.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w = csv.DictWriter(f, fieldnames=PHONE_BID_FIELDS)
         w.writeheader(); w.writerows(rows)
     return len(rows)
 

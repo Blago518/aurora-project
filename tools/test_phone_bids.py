@@ -45,5 +45,28 @@ class PhoneBids(unittest.TestCase):
         self.assertEqual(ids, ["1251500226", "x123456789", "zz1"])
 
 
+    def test_cancel_after_import(self):
+        """取り込み済みの予約を後で外す・全部外す → 記録からも消える（結果が出た物は残す）."""
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            phone, log = d / "phone.csv", d / "log.csv"
+            import csv
+
+            def put(rows):
+                with open(phone, "w", encoding="utf-8-sig", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=ls.PHONE_BID_FIELDS); w.writeheader(); w.writerows(rows)
+            put(ls.phone_bid_rows(SHEET))
+            br.import_phone_bids(phone, log)
+            one = SHEET + "2026-11-21 22:20,入札予約取消,Contax T2,,,,,ヤフオク,ID x123456789,2026.11.21.29\n"
+            put(ls.phone_bid_rows(one))
+            br.import_phone_bids(phone, log)
+            self.assertEqual([r["auction_id"] for r in br._read(log)], ["1251500226"])
+            rows = br._read(log); rows[0]["result"] = "負け"; br._write(rows, log)   # 結果が出た物は消さない
+            put([])   # 全部外した
+            br.import_phone_bids(phone, log)
+            self.assertEqual([r["auction_id"] for r in br._read(log)], ["1251500226"])
+            self.assertEqual(br.import_phone_bids(d / "none.csv", log), 0)   # まだ取り込んでいないときは何もしない
+
+
 if __name__ == "__main__":
     unittest.main()

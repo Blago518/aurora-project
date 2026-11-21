@@ -10,7 +10,7 @@ class Trivia(unittest.TestCase):
     def test_read(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "t.csv"
-            p.write_text("機種,豆知識,出典,日付\nContax Aria,写真家の蜷川実花さんが愛用。女性に人気,オーナー,2026-11-21\n,空,,\n", encoding="utf-8")
+            p.write_text("機種,豆知識,出典,日付\nContax Aria,テスト用の話,テスト,2026-11-21\n,空,,\n", encoding="utf-8")
             self.assertEqual(bs.trivia(p), [])   # 「確認」列が無い（確かめていない）行は出さない
 
     def test_checked(self):
