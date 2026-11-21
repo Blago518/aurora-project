@@ -20,7 +20,7 @@ header .row{display:flex;align-items:center;gap:8px}
 header h1{font-size:17px;margin:0;flex:1}
 header .st{font-size:11px;color:#a9c3d6}
 nav{display:flex;margin-top:8px}
-nav button{flex:1;background:none;border:0;color:#a9c3d6;font-size:14px;font-weight:700;padding:10px 0;border-bottom:3px solid transparent}
+nav button{flex:1 1 auto;min-width:0;white-space:nowrap;background:none;border:0;color:#a9c3d6;font-size:13px;font-weight:700;padding:10px 2px;letter-spacing:-.02em;border-bottom:3px solid transparent}
 nav button[aria-selected=true]{color:#fff;border-bottom-color:#4fc3d9}
 main{max-width:640px;margin:0 auto;padding:12px 16px calc(env(safe-area-inset-bottom) + 40px)}
 section[hidden]{display:none}
@@ -95,7 +95,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .bid .tt{flex:1;min-width:0}.bid .tt a{color:var(--ink);font-weight:700;text-decoration:none;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bid .max{display:flex;align-items:baseline;gap:8px;margin:8px 0 2px}.bid .max strong{cursor:pointer}.bid .max strong{font-size:22px;color:var(--good)}
 .bid .tent .max strong,.bid.tent .max strong{color:var(--warn)}
-.bid .links{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
+.bid.did{opacity:.55}.bid .links{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
 .bid .links .mini{white-space:nowrap;display:flex;align-items:center;justify-content:center;font-size:13px}
 .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin:2px 4px 0 0;background:#fdecea;color:var(--bad)}
 .tag.trust{background:#e6f4ee;color:var(--good)}.tag.tent{background:var(--warnbg);color:var(--warn)}.tag.ok{background:#e6f4ee;color:var(--good)}
@@ -110,6 +110,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   <div class="row"><h1>店舗リサーチ</h1><span class="st" id="dataSt">データ未読込</span></div>
   <nav role="tablist">
     <button role="tab" data-tab="calc" aria-selected="false">計算</button>
+    <button role="tab" data-tab="bid" aria-selected="false">入札</button>
     <button role="tab" data-tab="look" aria-selected="true">調べる</button>
     <button role="tab" data-tab="rec" aria-selected="false">おすすめ</button>
     <button role="tab" data-tab="sweet" aria-selected="false">狙い目</button>
@@ -203,6 +204,14 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 </section>
 
 <!-- ===================================================== おすすめ -->
+<section id="bid" hidden>
+  <div class="card">
+    <div class="chips" id="bidChips"></div>
+    <div class="s mt" id="bidInfo"></div>
+  </div>
+  <div class="card" id="bidList"><div class="empty">設定タブでデータを読み込んでください</div></div>
+  <div id="toast"></div>
+</section>
 <section id="rec" hidden>
   <div class="card">
     <h2>メーカー</h2>
@@ -294,7 +303,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.26";
+  var APP_VERSION = "2026.11.21.27";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -330,7 +339,7 @@ function useData(d) {
   $("dataSt").textContent = `データ ${d.built}`;
   $("dataInfo").innerHTML = `作成 ${esc(d.built)}／相場 ${d.refs.length.toLocaleString()}件（うち販売実績 ${sales.toLocaleString()}件）／おすすめ候補 ${d.recs.length}機種／為替 1ドル=${d.cfg.fx}円`;
   buildSugg(); restoreDraft();
-  renderBrands(); renderRecs(); renderSweet(); calcRender(); look(); flushOutbox(); renderToday();
+  renderBrands(); renderRecs(); renderSweet(); calcRender(); look(); flushOutbox(); renderToday(); renderBids();
   const age = (Date.now() - Date.parse(String(d.built).replace(" ", "T") + "+09:00")) / 864e5;  // 相場データが古いと気づけるように
   $("staleSt").textContent = age > 2 ? `相場データが ${Math.floor(age)}日前（${d.built}）のままです。Mac の更新が止まっていないか確認を` : "";
 }
@@ -1222,10 +1231,66 @@ function renderSweet() {
   $("sweetBody").innerHTML = notes.map((n) => `<div class="md-note">${mdToHtml(n.md)}</div>`).join('<hr>');
 }
 
+// ------------------------------------------------------------ 入札（Mac が毎朝つくる入札候補。今日・明日に終わる物）
+// 1件ごとに: 上限額（入札欄に入れる額）を大きく／ヤフオク・Sold・Now／［予約］で上限額をコピーしてオークファンを開く／［予約した］で記録
+const LS_BIDF = "storeBidFilter", LS_BIDDONE = "storeBidDone";
+let bidFilter = lsGet(LS_BIDF, "sure");
+function toast(msg) { const t = $("toast"); if (!t) return; t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2600); }
+function endAt(s) { const d = Date.parse(String(s || "").replace(" ", "T")); return isNaN(d) ? null : d; }
+function leftText(ms) { const m = Math.round(ms / 60000); return m < 60 ? `あと${m}分` : m < 24 * 60 ? `あと${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}` : `あと${Math.floor(m / 1440)}日`; }
+function dayLabel(d) { const t = new Date(), x = new Date(d); const same = (a, b) => a.toDateString() === b.toDateString(); const tm = new Date(t); tm.setDate(t.getDate() + 1);
+  return same(t, x) ? "今日" : same(tm, x) ? "明日" : `${x.getMonth() + 1}/${x.getDate()}`; }
+function renderBids() {
+  const B = DATA && DATA.bids, now = Date.now();
+  if (!B || !Array.isArray(B.items)) {
+    $("bidChips").innerHTML = ""; $("bidInfo").textContent = "";
+    $("bidList").innerHTML = `<div class="empty">${DATA ? "入札候補がまだ届いていません（Mac の毎朝の更新で届きます）" : "設定タブでデータを読み込んでください"}</div>`;
+    return;
+  }
+  const done = lsGet(LS_BIDDONE, {});
+  const live = B.items.filter((i) => { const e = endAt(i.end); return e == null || (e > now && e - now < 48 * 3600e3); });
+  const sure = live.filter((i) => !i.check), check = live.filter((i) => i.check);
+  $("bidChips").innerHTML = [["sure", `確認不要 ${sure.length}`], ["check", `Sold で確かめる ${check.length}`]]
+    .map(([k, t]) => `<button class="chip" data-f="${k}" aria-pressed="${k === bidFilter}">${t}</button>`).join("");
+  $("bidInfo").textContent = `${B.built} 作成・今日と明日に終わる物・終わる順`;
+  const list = (bidFilter === "check" ? check : sure).slice().sort((a, b) => (endAt(a.end) || 9e15) - (endAt(b.end) || 9e15));
+  if (!list.length) { $("bidList").innerHTML = `<div class="empty">${bidFilter === "check" ? "Sold で確かめる候補はありません" : "いま確認なしで入札できる候補はありません。「Sold で確かめる」も見てください"}</div>`; return; }
+  let lastDay = "";
+  $("bidList").innerHTML = list.map((i) => {
+    const e = endAt(i.end), day = e ? dayLabel(e) : "", hd = day !== lastDay ? `<h3 class="grp">${esc(day || "終了時刻不明")}</h3>` : ""; lastDay = day;
+    const hm = e ? new Date(e).toTimeString().slice(0, 5) : "", soon = e && e - now < 3 * 3600e3;
+    const did = done[i.id];
+    const L = { sold: toSafari(i.sold || ""), now: toSafari(i.now || "") };
+    return hd + `<div class="bid${i.tent ? " tent" : ""}${did ? " did" : ""}">
+      <div class="tt"><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a></div>
+      <div class="s">${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${e ? esc(leftText(e - now)) : ""}</span>・現在 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
+      <div class="max"><strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・今の価格なら利益 ${yen(i.profit)}` : ""}</span></div>
+      <div class="links"><a class="mini" href="${esc(i.url)}" target="_blank" rel="noopener">ヤフオク</a>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : ""}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : ""}
+        <a class="mini main" href="${esc(toSafari(`https://aucfan.com/aucview/yahoo/${encodeURIComponent(i.id)}/`))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
+    </div>`;
+  }).join("");
+}
+$("bidChips").onclick = (e) => { const f = e.target.dataset.f; if (!f) return; bidFilter = f; lsSet(LS_BIDF, f); renderBids(); };
+// ［予約］: 上限額をコピー → オークファンのその出品のページを開く（入札予約の欄に貼るだけ）→ 戻ったら「予約した」と記録（入札の結果の集計に入る）
+$("bidList").onclick = (e) => {
+  const b = e.target.closest("[data-snipe]"); if (!b) return;
+  const i = DATA.bids.items.find((x) => x.id === b.dataset.snipe); if (!i) return;
+  const done = lsGet(LS_BIDDONE, {});
+  if (done[i.id]) { e.preventDefault(); delete done[i.id]; lsSet(LS_BIDDONE, done); renderBids(); toast("予約済みの印を外しました"); return; }
+  let ok = false; try { navigator.clipboard.writeText(String(Math.round(i.maxBid))).catch(() => {}); ok = true; } catch (err) {}   // 押した瞬間にコピー（開くのはリンクのまま）
+  done[i.id] = nowJst(); lsSet(LS_BIDDONE, done);
+  const out = lsGet(LS_OUT, []);
+  out.push([nowJst(), "入札予約", i.title, i.price || "", i.mark || "", i.maxBid || "", i.usd || "", "ヤフオク", `ID ${i.id}／終了 ${i.end || ""}${i.tent ? "／仮" : ""}`, APP_VERSION]);
+  lsSet(LS_OUT, out); flushOutbox();
+  renderBids();
+  toast(ok ? `上限 ${Number(i.maxBid).toLocaleString()}円 をコピーしました。オークファンの入札額に貼ってください` : `上限 ${Number(i.maxBid).toLocaleString()}円（コピーできませんでした）`);
+};
+
 function showTab(t) {
   for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", String(b.dataset.tab === t));
   for (const s of document.querySelectorAll("main > section")) s.hidden = s.id !== t;
   if (t === "calc") calcRender();
+  if (t === "bid") renderBids();   // 残り時間・終わった出品を最新に
 }
 for (const b of document.querySelectorAll("nav button")) b.onclick = () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); };
 
