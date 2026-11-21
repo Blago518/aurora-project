@@ -70,6 +70,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .rec .t{display:flex;gap:8px;align-items:baseline}.rec .t b{flex:1;font-size:15px}.rec .n{color:var(--sub);font-size:12px;width:22px}
 .rec .buy{font-size:14px;margin:4px 0 6px 30px}.rec .buy strong{font-size:17px;color:var(--good)}
 .rec .links{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:6px;margin-left:30px}
+.grp{margin:14px 0 2px;padding:6px 10px;border-radius:8px;background:var(--line);font-size:14px;color:var(--ink,inherit)}.grp:first-child{margin-top:0}
 .mini{font-size:12px;font-weight:700;border-radius:8px;padding:8px 4px;text-align:center;text-decoration:none;background:var(--soft);color:#14415a;border:0}
 .mini.main{background:var(--blue);color:#fff}
 .hist{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
@@ -209,7 +210,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   <div class="card">
     <h2 id="recTitle">おすすめ</h2>
     <div id="recList"><div class="empty">設定タブでデータを読み込んでください</div></div>
-    <p class="s">並び順: 「高い物だけ」は1件の利益が大きい順、「すべて」は過去の平均利益 × 販売回数（自分の販売実績・Chatwork実績）。緑の金額＝税込でこの値段以下なら、利益2,000円以上かつ利益率8%以上（売値$99以下は4,000円以上）（国内送料0円で計算）。</p>
+    <p class="s">シリーズ（ミラーレス・デジタル一眼レフ・フィルム一眼レフ など）ごとにまとめて表示。並び順: 「高い物だけ」は1件の利益が大きい順、「すべて」は過去の平均利益 × 販売回数（自分の販売実績・Chatwork実績）。緑の金額＝税込でこの値段以下なら、利益2,000円以上かつ利益率8%以上（売値$99以下は4,000円以上）（国内送料0円で計算）。</p>
   </div>
 </section>
 
@@ -282,7 +283,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.11";
+  var APP_VERSION = "2026.11.21.12";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -860,17 +861,38 @@ function renderBrands() {
   for (const c of $("kindChips").children) c.setAttribute("aria-pressed", String(c.dataset.kind === recSel.kind));
   for (const c of $("highChips").children) c.setAttribute("aria-pressed", String((c.dataset.high === "1") === !!recSel.high));
 }
+// おすすめを「シリーズ」で分けて見せる（2026-11-21 オーナー「シリーズでわかりやすく表示」）。表示だけ。並び・判定は同じ
+function recSeries(label, kind) {
+  const t = " " + String(label || "") + " ";
+  const has = (re) => re.test(t);
+  const zoom = has(/\d\s*-\s*\d+\s*mm/i);
+  if (kind === "lens") return has(/teleconverter|テレコン|extender|エクステンダー/i) ? "テレコン" : zoom ? "ズームレンズ" : "単焦点レンズ";
+  if (has(/\s8\s*mm\s(?!.*F\s?\d)|super\s*8|single-?8|\sR\d+\s+super|514\s*XL|シネ|cine/i)) return "8mm・シネ";
+  if (has(/handycam|xdcam|camcorder|ビデオ|\s(PMW|HXR|FDR|HDR)-/i)) return "ビデオカメラ";
+  if (has(/\s(645|6x6|6x7|67|RB67|RZ67|SL66)\s|hasselblad|rolleiflex|rolleicord|mamiya|bronica|中判|GA645|GW690|GSW690/i)) return "中判";
+  if (has(/\sZ\s?\d{1,2}\s|\sZfc?\s|EOS\s*R\d*\s|EOS\s*M\d*\s|[\sα]7(?!\d)\s?[RSC]?\s?(I{1,3}|IV)?\s|\sA7[RSC]?\s|ILCE|NEX|X-(T|E|S|H|Pro)\d|OM-D|E-M\d|PEN\s*E-P|\sGH\d|ミラーレス/i)) return "ミラーレス";
+  if (has(/coolpix|powershot|\sIXY|cyber-?shot|DSC-|RX100|\sGR\s?(I{1,3}|\d)?\s|X100|lumix|stylus\s*XZ|XZ-\d|TG-\d|\sP\d{3,4}\s|コンデジ|デジカメ/i)) return "コンパクトデジタル";
+  if (has(/\sD\d{2,4}\s|\sDf\s|EOS\s*(Kiss|\d{1,4}D|1D|5D|6D|7D)|\sK-\d|\sKP\s|[\sα]\d{2,3}\s|\sA\d{2,3}\s|ILCA|デジタル一眼/i)) return "デジタル一眼レフ";
+  if (has(/\s(28|35)\s?Ti\s|\sL35|\sT[23]\s|TVS|\sTix|\sXA\d?\s|mju|μ|\strip\s|hexar|rollei\s*35|\sGR1|klasse|natura|point\s*&?\s*shoot|コンパクト/i)) return "フィルムコンパクト";
+  if (has(/leica|\sM\d\s|rangefinder|レンジファインダー|\sCLE?\s|bessa|leotax|nicca|canon\s*(P|7|VI|IV)\s/i)) return "レンジファインダー";
+  if (has(/\d\s*mm/i)) return zoom ? "ズームレンズ" : "単焦点レンズ";   // 「カメラ」に入っているレンズ
+  return "フィルム一眼レフ";
+}
 function renderRecs() {
   if (!DATA) return;
   const list = recPool().filter((r) => r.brand === recSel.brand && r.kind === recSel.kind)
     .sort((a, b) => recSel.high ? ((b.profit ?? -1e9) - (a.profit ?? -1e9)) || (b.usd - a.usd) : 0).slice(0, 20);
   $("recTitle").textContent = `${recSel.brand} の${recSel.kind === "lens" ? "レンズ" : "カメラ"} おすすめ ${list.length}品`;
-  $("recList").innerHTML = list.length ? list.map((r, i) => {
+  // シリーズごとにまとめる。シリーズの順は、そのシリーズで一番上（利益が大きい）の品の順
+  const groups = [];
+  list.forEach((r, i) => { const g = recSeries(r.label, r.kind); let G = groups.find((x) => x.name === g); if (!G) groups.push(G = { name: g, items: [] }); G.items.push([r, G.items.length]); });
+  const one = ([r, i]) => {
     const L = linksWithCat(withEx(r.label), r.kind === "lens" ? "3323" : DIGITAL_RE.test(r.label) ? "31388" : "15230");
     return `<div class="rec"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
       <div class="buy">税込 <strong>${yen(r.maxBuy)}</strong> 以下なら買い <span class="s">／想定${nusd(r.usd)}（送料別）${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
       <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">Sold</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">Now</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
-  }).join("") : `<div class="empty">この条件の販売実績はまだありません</div>`;
+  };
+  $("recList").innerHTML = list.length ? groups.map((G) => `<h3 class="grp">${esc(G.name)} <span class="s">${G.items.length}品</span></h3>` + G.items.map(one).join("")).join("") : `<div class="empty">この条件の販売実績はまだありません</div>`;
 }
 $("brandChips").onclick = (e) => { const b = e.target.dataset.brand; if (b == null) return; recSel.brand = b; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
 $("highChips").onclick = (e) => { const h = e.target.dataset.high; if (h == null) return; recSel.high = h === "1"; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
