@@ -294,7 +294,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.25";
+  var APP_VERSION = "2026.11.21.26";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -385,6 +385,7 @@ function lookup(name, price, opt = {}) {  // ジャンク表記の欄は外し�
   const jt = [name, opt.note || ""].join(" ").trim();  // 判定・状態補正に使う文（検索語は商品名だけ）
   const flags = core.detectFlags(jt);
   let refs = core.matchPreferMemo(q + " " + name, DATA.refs.filter(core.isMemo), DATA.refs.filter((r) => !core.isMemo(r)));
+  if (refs.some((r) => r.source !== "下調べ")) refs = refs.filter((r) => r.source !== "下調べ");   // 下調べは相場なしのときだけ
   if (!refs.length) refs = core.matchKantei(name);
   // Sold で調べた額（送料別）と状態を入れたら、それで計算する（2026-11-21 ユーザー指示。相場は送料込みで持つので +送料）
   if (opt.sold && opt.sold.usd > 0)
@@ -480,7 +481,7 @@ function renderResult(name, price, r) {
   if (c) {
     const tier = r.refs[0] ? r.refs[0].tier : 3;
     h += rankChips();
-    if (!sold && tier >= 2) h += `<div class="note">根拠が弱い（${esc(SRC[tier])}）→ 下の Sold で確かめて、上の欄に額を入れる</div>`;
+    if (!sold && tier >= 2) h += `<div class="note">根拠が弱い（${esc(r.refs[0] && r.refs[0].source === "下調べ" ? "下調べ・販売店の価格" : SRC[tier])}）→ 下の Sold で確かめて、上の欄に額を入れる</div>`;
     const warn = r.flags.filter((f) => ["光学難あり", "付属品のみ?", "アダプター等", "セット品"].includes(f));
     if (warn.length) h += `<div class="note">注意: ${esc(warn.join("・"))}</div>`;
     h += `<details><summary>詳しく（根拠・過去データ）</summary><dl class="kv">

@@ -307,6 +307,7 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_past_bids(url, key, dry_run)
     sync_research(url, key, dry_run)
     sync_sheet_memo(url, key, dry_run)
+    sync_candidates(url, key, dry_run)   # ゼニガメの下調べ → 店舗アプリの仮の相場
     sync_store_memo(url, key, dry_run)   # 店舗で［登録］した相場。同じ機種はチャットの相場メモと日付の新しい方
     sync_knowledge(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
@@ -499,6 +500,30 @@ def sync_sheet_memo(url: str, key: str, dry_run: bool = False) -> int | None:
     if added or updated:
         print(f"相場メモ（シート）: 追加 {added}件・更新 {updated}件 → data/price_memo.csv", file=sys.stderr)
     return added + updated
+
+
+CAND_SHEET = "共有_下調べ相場"  # ゼニガメの下調べ（機種・候補$（送料別）・確度・日付・根拠）→ data/candidate_prices.csv → 店舗アプリだけ「仮の相場」に使う（2026-11-21）
+CAND_OUT = ROOT / "data" / "candidate_prices.csv"
+
+
+def sync_candidates(url: str, key: str, dry_run: bool = False) -> int | None:
+    """古物台帳「共有_下調べ相場」→ data/candidate_prices.csv（まるごと置き換え）. 店舗アプリで相場なしを減らす仮の相場（確認してから）."""
+    try:
+        text = fetch(url, key, CAND_SHEET)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"下調べ相場: 読み込めませんでした（{e}）", file=sys.stderr)
+        return None
+    if text.startswith("NO_SHEET:"):
+        return None
+    rows = [r for r in (pick_columns(text, ["機種", "候補$（送料別）", "確度", "日付", "根拠"]) or []) if (r.get("機種") or "").strip()]
+    if dry_run or not rows:   # 見出しの無いシート・空のシートは書かない
+        return len(rows)
+    CAND_OUT.parent.mkdir(parents=True, exist_ok=True)
+    with open(CAND_OUT, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["機種", "候補$（送料別）", "確度", "日付", "根拠"])
+        w.writeheader(); w.writerows(rows)
+    print(f"下調べ相場: {len(rows)}件 → data/candidate_prices.csv", file=sys.stderr)
+    return len(rows)
 
 
 STORE_MEMO_KIND = "相場登録"  # 店舗アプリの Sold 欄の［登録］（2026-11-21 オーナー指示）

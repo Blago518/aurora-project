@@ -248,6 +248,27 @@ def sweet_notes(root: Path | None = None) -> list[dict]:
     return out
 
 
+def candidate_refs(ship_usd: float, path: Path | None = None) -> list[dict]:
+    """data/candidate_prices.csv（ゼニガメの下調べ。販売店の価格が中心で売れた額ではない）→ 店舗アプリの仮の相場（tier 3・確認してから）.
+    アプリ側で、販売実績などほかの相場が当たる機種には使わない（相場なしを減らすためだけ）."""
+    import csv
+    p = path or (ROOT / "data" / "candidate_prices.csv")
+    if not p.exists():
+        return []
+    out = []
+    with open(p, encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            t = (r.get("機種") or "").strip()
+            try:
+                v = float(str(r.get("候補$（送料別）") or "").replace("$", "").replace(",", ""))
+            except ValueError:
+                continue
+            if t and v > 0:
+                out.append({"title": t, "price": round(v + ship_usd, 2), "tier": 3, "source": "下調べ", "tokens": sorted(ba._tokens(t)), "acc": False,
+                            "d": (r.get("日付") or "").strip()})
+    return out
+
+
 def build(cfg: dict, fx: float) -> dict:
     data = bx.build_data(cfg, fx)
     data["sweet"] = sweet_notes()
@@ -257,6 +278,7 @@ def build(cfg: dict, fx: float) -> dict:
         if p.exists():
             rows += ba.read_sales(p)
     data["recs"] = recommendations(rows, cfg, fx)
+    data["refs"] += candidate_refs(float(cfg["shipping"].get("deduction_usd", 0)))
     data["bids"] = bid_candidates()
     data["kind"] = "aurora-store"
     # 店舗アプリ →「共有_店舗」（調べた・購入）の送り先。鍵は共有_店舗に行を足すことしかできない（ledger_sync.store_endpoint）
