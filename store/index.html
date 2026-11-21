@@ -294,7 +294,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.21";
+  var APP_VERSION = "2026.11.21.22";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -526,7 +526,7 @@ $("soldReg").addEventListener("click", () => {
     lsSet(LS_OUT, out); flushOutbox();
   }
   regState();
-  const msg = `${name} を $${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""} で登録しました。次の商品をどうぞ`;
+  const msg = `${name} は $${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""} で${same ? "登録済みです" : "登録しました"}。次の商品をどうぞ`;
   // 次へ: 入力を空にして商品名の欄へ（登録した相場は、次に同じ機種を調べると Sold 欄に入る）
   $("name").value = ""; $("price").value = ""; pick = { rank: null, note: "", sold: null }; clearSold(); look(); saveDraft();
   $("ocrSt").className = "status"; $("ocrSt").textContent = msg;
@@ -652,6 +652,14 @@ $("catChips").onclick = (e) => { const b = e.target.closest("[data-cat]"); if (!
 // core.js の ebay() のリンクにカテゴリを付ける（販売済み・出品中は _sacat、Product Research は categoryId）
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const toSafari = (u) => (IOS && /^https:\/\//.test(u) ? "x-safari-" + u : u);
+// 逃げ道: Safari の開き方が効かない iPhone では、押して1.5秒たってもアプリが前に出たまま → 今までどおり https で開く（ボタンが止まらないように）
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest('a[href^="x-safari-"]'); if (!a) return;
+  const https = a.getAttribute("href").replace(/^x-safari-/, "");
+  let left = false; const mark = () => { left = true; };
+  document.addEventListener("visibilitychange", mark, { once: true }); window.addEventListener("pagehide", mark, { once: true });
+  setTimeout(() => { if (!left && document.visibilityState === "visible") location.href = https; }, 1500);
+}, true);
 function linksWithCat(q, cat) {
   const L = core ? core.ebay(q) : ebayLinks(q);
   const M = cat === "0" ? L : { sold: L.sold + "&_sacat=" + cat, now: L.now + "&_sacat=" + cat, pr: L.pr + "&categoryId=" + cat };
