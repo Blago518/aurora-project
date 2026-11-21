@@ -42,6 +42,7 @@ font-size:16px;font-weight:800;text-decoration:none;cursor:pointer;padding:0 12p
 .mark{font-size:40px;font-weight:900;line-height:1;min-width:48px;text-align:center}
 .caprow{display:grid;grid-template-columns:1fr 132px;gap:8px;align-items:center;margin-top:10px}.caprow .cap{margin-top:0;min-width:0}
 .soldin{display:grid;gap:4px}.soldin .l{font-size:11px;color:var(--sub);font-weight:700}.soldin input{font-size:16px;padding:8px 10px}.soldin select{font-size:13px;padding:6px 8px;border:1px solid #cdd7e3;border-radius:10px;background:#fff;color:var(--ink)}
+.soldin .mini:disabled{opacity:.45}
 .soldin.on input{border-color:var(--good);box-shadow:0 0 0 2px #d9f0e4}
 .buyrow{display:grid;grid-template-columns:1fr 112px;gap:8px}.buyrow input{font-size:15px}
 .nums{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.num{background:var(--soft);border-radius:12px;padding:10px 12px;min-width:0}
@@ -137,6 +138,8 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
         <span class="l">Sold（$・送料別）</span>
         <input id="soldUsd" inputmode="decimal" placeholder="例 250" autocomplete="off" aria-label="Soldで見た額（ドル・送料別）">
         <select id="soldCond" aria-label="Soldの状態"><option value="">Soldの状態</option><option>TOP MINT</option><option>MINT</option><option>Near MINT</option></select>
+        <button class="mini main" id="soldReg" type="button" disabled>相場に登録</button>
+        <span class="s" id="regSt"></span>
       </div>
     </div>
     <div id="resBottom"></div>
@@ -287,7 +290,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.14";
+  var APP_VERSION = "2026.11.21.17";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -381,7 +384,11 @@ function lookup(name, price, opt = {}) {  // ジャンク表記の欄は外し�
   // Sold で調べた額（送料別）と状態を入れたら、それで計算する（2026-11-21 ユーザー指示。相場は送料込みで持つので +送料）
   if (opt.sold && opt.sold.usd > 0)
     refs = [{ title: name, price: opt.sold.usd + (DATA.cfg.deductionUsd || 0), tier: 0, source: "相場メモ(" + (opt.sold.cond || "") + ")", sold: true }];
-  let u = refs.length ? Math.round(core.median(core.conditionAdjusted ? core.conditionAdjusted(refs, jt, flags, opt.rank) : refs.map((r) => r.price)) * 100) / 100 : null;
+  // Sold を入れたときは、その額をそのまま使う（2026-11-21 オーナー「計算あってる？」: 値札の「中古品」から状態を下に見て、Sold $520 を約 $400 に下げていた）。
+  // ［実物］の状態を押したときだけ、Sold の状態との差で直す
+  const soldIn = opt.sold && opt.sold.usd > 0;
+  const adj = !core.conditionAdjusted || (soldIn && opt.rank == null) ? refs.map((r) => r.price) : core.conditionAdjusted(refs, jt, flags, opt.rank);
+  let u = refs.length ? Math.round(core.median(adj) * 100) / 100 : null;
   if (u != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) u = Math.round(u * DATA.cfg.junkFactor * 100) / 100;
   // まとめ売り・レンズキットは中身ごとに相場を当てて合計（拡張機能・appraise.py と同じ。2点以上当たったときだけ）
   let setParts = [];
@@ -449,7 +456,7 @@ function renderResult(name, price, r) {
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
     : (canPay(c, ok) ? (price != null ? `<b>${yen(c.maxBid)}</b> まで出せる` : "") + (m ? `<span class="s">この額で利益 ${yen(m.profit)}</span>` : "")
       : `<b>購入しない</b>`)
-      + (sold ? `<span class="s">Sold $${pick.sold.usd}${pick.sold.cond ? "（" + esc(pick.sold.cond) + "）" : ""} で計算</span>` : "");
+      + (sold ? `<span class="s">Sold $${pick.sold.usd}${pick.sold.cond ? "（" + esc(pick.sold.cond) + "）" : ""}${r.usd != null && Math.abs(r.usd - (DATA.cfg.deductionUsd || 0) - pick.sold.usd) >= 1 ? ` → 実物の状態で $${Math.round(r.usd - (DATA.cfg.deductionUsd || 0))}` : ""} で計算</span>` : "");
   $("resTop").innerHTML = h;
   h = "";
   if (c) {
@@ -480,9 +487,31 @@ function readSold() {
   pick.sold = v > 0 ? { usd: v, cond } : null;
   $("soldUsd").parentNode.classList.toggle("on", !!pick.sold);
 }
-function clearSold() { $("soldUsd").value = ""; $("soldCond").value = ""; pick.sold = null; $("soldUsd").parentNode.classList.remove("on"); }
-$("soldUsd").addEventListener("input", () => { readSold(); look(); autoLogTyped(); });
-$("soldCond").addEventListener("change", () => { readSold(); look(); autoLogTyped(); });
+function clearSold() { $("soldUsd").value = ""; $("soldCond").value = ""; pick.sold = null; $("soldUsd").parentNode.classList.remove("on"); regState(); }
+// ［相場に登録］（2026-11-21 オーナー指示）: Sold で見た額と状態を、この機種の相場として登録する。
+// この iPhone では今から使い（次に同じ機種を調べると Sold 欄に入る）、「共有_店舗」に「相場登録」の行を送る → 翌朝 Mac が相場メモ（data/price_memo.csv）に取り込む
+const LS_MEMO = "storeMemo";
+const memoKey = (n) => { const t = String(n || "").trim(); let k = ""; try { const v = core.modelKey ? core.modelKey(t) : ""; k = Array.isArray(v) ? v.filter(Boolean).join(" ") : String(v || ""); } catch (e) { k = ""; } return (k || t).toLowerCase().replace(/\s+/g, " "); };
+const localMemo = (n) => { const m = lsGet(LS_MEMO, {}); return m[memoKey(n)] || m[String(n || "").trim().toLowerCase().replace(/\s+/g, " ")] || null; };
+let memoFilled = "";   // 登録済みの額を Sold 欄に入れるのは、商品名が変わって調べ直したときの1回だけ（消して打ち直せるように）
+function regState() {
+  const b = $("soldReg"); if (!b) return;
+  const m = localMemo($("name").value), same = m && pick.sold && m.usd === pick.sold.usd && (m.cond || "") === (pick.sold.cond || "");
+  b.disabled = !pick.sold || !$("name").value.trim() || !!same;
+  b.textContent = same ? "登録済み" : m ? "登録し直す" : "相場に登録";
+  if (!same) $("regSt").textContent = "";
+}
+$("soldUsd").addEventListener("input", () => { readSold(); look(); autoLogTyped(); regState(); });
+$("soldCond").addEventListener("change", () => { readSold(); look(); autoLogTyped(); regState(); });
+$("soldReg").addEventListener("click", () => {
+  const name = $("name").value.trim();
+  if (!name || !pick.sold) return;
+  const memos = lsGet(LS_MEMO, {}); memos[memoKey(name)] = { usd: pick.sold.usd, cond: pick.sold.cond || "", t: nowJst() }; lsSet(LS_MEMO, memos);
+  const out = lsGet(LS_OUT, []);
+  out.push([nowJst(), "相場登録", name, parsePrice($("price").value) || "", "", "", pick.sold.usd, $("shopName").value.trim(), pick.sold.cond || "", APP_VERSION]);
+  lsSet(LS_OUT, out); flushOutbox(); regState();
+  $("regSt").textContent = `$${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""}で登録しました`;
+});
 const RANK_CHIPS = [[10, "TOP MINT"], [9, "MINT"], [7, "Near MINT"]];
 function rankChips() {
   return `<div class="cond"><span class="l">実物</span><div class="chips">` +
@@ -622,11 +651,13 @@ function updateLinks() {
 }
 function look() {
   const name = $("name").value, price = parsePrice($("price").value);
+  if (memoFilled !== name) { memoFilled = name; const m = !pick.sold && !$("soldUsd").value && localMemo(name); if (m) { $("soldUsd").value = m.usd; $("soldCond").value = m.cond || ""; readSold(); } }
   const r = DATA && name.trim() ? lookup(name, price, pick) : null;
   lastLook = r; $("sendBox").hidden = !name.trim();
   if (!queryTouched) $("query").value = ebayQuery(name);
   updateLinks();
   renderResult(name, price, r);
+  regState();
 }
 // ------------------------------------------------------------ 店から古物台帳へ（2026-11-20 ユーザー決定）
 // 調べた物（自動）と［購入］を 古物台帳「共有_店舗」に1行足す。送れないとき（電波なし）はこの iPhone にためて、次に開いたとき送る。
