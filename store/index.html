@@ -139,6 +139,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
         <input id="soldUsd" inputmode="decimal" placeholder="例 250" autocomplete="off" aria-label="Soldで見た額（ドル・送料別）">
         <select id="soldCond" aria-label="Soldの状態"><option value="">Soldの状態</option><option>TOP MINT</option><option>MINT</option><option>Near MINT</option></select>
         <button class="mini main" id="soldReg" type="button" disabled>相場に登録</button>
+        <span class="s" id="regSt"></span>
       </div>
     </div>
     <div id="resBottom"></div>
@@ -289,7 +290,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.15";
+  var APP_VERSION = "2026.11.21.16";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -486,13 +487,15 @@ function clearSold() { $("soldUsd").value = ""; $("soldCond").value = ""; pick.s
 // ［相場に登録］（2026-11-21 オーナー指示）: Sold で見た額と状態を、この機種の相場として登録する。
 // この iPhone では今から使い（次に同じ機種を調べると Sold 欄に入る）、「共有_店舗」に「相場登録」の行を送る → 翌朝 Mac が相場メモ（data/price_memo.csv）に取り込む
 const LS_MEMO = "storeMemo";
-const memoKey = (n) => String(n || "").trim().toLowerCase().replace(/\s+/g, " ");
-const localMemo = (n) => lsGet(LS_MEMO, {})[memoKey(n)] || null;
+const memoKey = (n) => { const t = String(n || "").trim(); let k = ""; try { const v = core.modelKey ? core.modelKey(t) : ""; k = Array.isArray(v) ? v.filter(Boolean).join(" ") : String(v || ""); } catch (e) { k = ""; } return (k || t).toLowerCase().replace(/\s+/g, " "); };
+const localMemo = (n) => { const m = lsGet(LS_MEMO, {}); return m[memoKey(n)] || m[String(n || "").trim().toLowerCase().replace(/\s+/g, " ")] || null; };
+let memoFilled = "";   // 登録済みの額を Sold 欄に入れるのは、商品名が変わって調べ直したときの1回だけ（消して打ち直せるように）
 function regState() {
   const b = $("soldReg"); if (!b) return;
   const m = localMemo($("name").value), same = m && pick.sold && m.usd === pick.sold.usd && (m.cond || "") === (pick.sold.cond || "");
   b.disabled = !pick.sold || !$("name").value.trim() || !!same;
-  b.textContent = same ? "登録済み" : "相場に登録";
+  b.textContent = same ? "登録済み" : m ? "登録し直す" : "相場に登録";
+  if (!same) $("regSt").textContent = "";
 }
 $("soldUsd").addEventListener("input", () => { readSold(); look(); autoLogTyped(); regState(); });
 $("soldCond").addEventListener("change", () => { readSold(); look(); autoLogTyped(); regState(); });
@@ -503,7 +506,7 @@ $("soldReg").addEventListener("click", () => {
   const out = lsGet(LS_OUT, []);
   out.push([nowJst(), "相場登録", name, parsePrice($("price").value) || "", "", "", pick.sold.usd, $("shopName").value.trim(), pick.sold.cond || "", APP_VERSION]);
   lsSet(LS_OUT, out); flushOutbox(); regState();
-  $("ocrSt").className = "status"; $("ocrSt").textContent = `${name} を $${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""} で登録しました。この iPhone では今から、ほかは明日の朝から使います`;
+  $("regSt").textContent = `$${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""}で登録しました`;
 });
 const RANK_CHIPS = [[10, "TOP MINT"], [9, "MINT"], [7, "Near MINT"]];
 function rankChips() {
@@ -644,7 +647,7 @@ function updateLinks() {
 }
 function look() {
   const name = $("name").value, price = parsePrice($("price").value);
-  if (!pick.sold && !$("soldUsd").value) { const m = localMemo(name); if (m) { $("soldUsd").value = m.usd; $("soldCond").value = m.cond || ""; readSold(); } }
+  if (memoFilled !== name) { memoFilled = name; const m = !pick.sold && !$("soldUsd").value && localMemo(name); if (m) { $("soldUsd").value = m.usd; $("soldCond").value = m.cond || ""; readSold(); } }
   const r = DATA && name.trim() ? lookup(name, price, pick) : null;
   lastLook = r; $("sendBox").hidden = !name.trim();
   if (!queryTouched) $("query").value = ebayQuery(name);
