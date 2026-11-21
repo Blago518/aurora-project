@@ -68,7 +68,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .shelf .pf{font-size:17px;font-weight:900;white-space:nowrap;font-variant-numeric:tabular-nums}
 .shelf button{border:0;background:var(--soft);color:#14415a;border-radius:8px;padding:8px 10px;font-weight:700;white-space:nowrap}
 .camRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-#liveBox{margin-top:10px;border-radius:12px;overflow:hidden;background:#000;position:relative}#liveBox video{width:100%;display:block;max-height:46vh;object-fit:cover}
+#liveBox{margin-top:10px;border-radius:12px;overflow:hidden;background:#000;position:relative}#liveBox video{width:100%;height:34vh;display:block;object-fit:cover;background:#000}
 .liveBar .mini{white-space:nowrap;flex:none}.liveBar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:rgba(0,0,0,.55);color:#fff;font-size:13px}
 .rec{padding:12px 0;border-bottom:1px solid var(--line)}.rec:last-child{border:0}
 .rec .t{display:flex;gap:8px;align-items:baseline}.rec .t b{flex:1;font-size:15px}.rec .n{color:var(--sub);font-size:12px;width:22px}
@@ -120,7 +120,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   <div class="card">
     <div class="camRow"><button class="btn dark" id="shelfBtn" type="button">📷 撮る</button><button class="btn dark" id="liveBtn" type="button">🎥 向けるだけ</button></div>
     <input id="shelfFile" type="file" accept="image/*" capture="environment" hidden>
-    <div id="liveBox" hidden><video id="liveVideo" playsinline muted autoplay></video><div class="liveBar"><span id="liveSt">値札に向けてください</span><button class="mini" id="liveStop" type="button">止める</button></div></div>
+    <div id="liveBox" hidden><video id="liveVideo" playsinline muted autoplay></video><div class="liveBar"><span id="liveSt">値札に向けて、手を止めてください</span><button class="mini" id="liveStop" type="button">止める</button></div></div>
     <div class="status err" id="staleSt"></div>
     <div class="status" id="ocrSt"></div>
     <label for="name">商品名・型番</label>
@@ -290,7 +290,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.17";
+  var APP_VERSION = "2026.11.21.18";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -895,7 +895,7 @@ async function liveTick() {
   if (Date.now() > live.until) { stopLive(`止めました（読み取り ${live.n}件）`); return; }
   if (live.busy || !v.videoWidth) return;
   const sig = frameSig(v);
-  if (live.prev && sigDiff(sig, live.prev) > 6) { live.prev = sig; st.textContent = "動かさずに値札へ向けてください"; return; }  // まだ動いている
+  if (live.prev && sigDiff(sig, live.prev) > 12) { live.prev = sig; st.textContent = "手を止めると読み取ります"; return; }  // まだ動いている
   live.prev = sig;
   if (live.last && sigDiff(sig, live.last) < 4) return;  // さっき読んだ画面と同じ
   live.busy = true; live.last = sig; st.textContent = "読み取り中…";
@@ -914,7 +914,7 @@ async function startLive() {
   if (!DATA) { st.className = "status err"; st.textContent = "設定タブで相場データを読み込んでから使ってください"; return; }
   if (!lsGet(LS_KEY, "")) { st.className = "status err"; st.textContent = "設定タブで Claude の APIキーを入れてください"; return; }
   try {
-    live.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    live.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } }, audio: false });
   } catch (e) { st.className = "status err"; st.textContent = "カメラを使えません（設定 → Safari → カメラ を「許可」にしてください）"; return; }
   st.textContent = "";
   $("liveVideo").srcObject = live.stream; $("liveBox").hidden = false; $("liveBtn").textContent = "🎥 止める";
