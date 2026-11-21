@@ -77,6 +77,9 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .grp{margin:14px 0 2px;padding:6px 10px;border-radius:8px;background:var(--line);font-size:14px;color:var(--ink,inherit)}.grp:first-child{margin-top:0}
 .mini{font-size:12px;font-weight:700;border-radius:8px;padding:8px 4px;text-align:center;text-decoration:none;background:var(--soft);color:#14415a;border:0}
 .mini.main{background:var(--blue);color:#fff}
+.sugg{border:1px solid var(--line);border-radius:10px;margin-top:4px;overflow:hidden;background:var(--card)}
+.sugg button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;font-size:15px;padding:11px 12px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink)}
+.sugg button:last-child{border-bottom:0}.sugg .s{flex:none}
 .hist{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .hist button{border:0;background:var(--soft);color:#14415a;border-radius:8px;padding:6px 10px;font-weight:700}
 .shop{padding:12px 0;border-bottom:1px solid var(--line)}.shop:last-child{border:0}
@@ -125,6 +128,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
     <div class="status" id="ocrSt"></div>
     <label for="name">商品名・型番</label>
     <input id="name" type="search" placeholder="例: Nikon FM2 / キヤノン New FD 50mm F1.4" autocomplete="off" enterkeyhint="search">
+    <div id="sugg" class="sugg" hidden></div>
     <label for="price">値札（税込・円）</label>
     <input id="price" inputmode="numeric" pattern="[0-9]*" placeholder="例: 18000" autocomplete="off">
   </div>
@@ -138,7 +142,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
         <span class="l">Sold（$・送料別）</span>
         <input id="soldUsd" inputmode="decimal" placeholder="例 250" autocomplete="off" aria-label="Soldで見た額（ドル・送料別）">
         <select id="soldCond" aria-label="Soldの状態"><option value="">Soldの状態</option><option>TOP MINT</option><option>MINT</option><option>Near MINT</option></select>
-        <button class="mini main" id="soldReg" type="button" disabled>相場に登録</button>
+        <button class="mini main" id="soldReg" type="button" disabled>登録して次へ</button>
         <span class="s" id="regSt"></span>
       </div>
     </div>
@@ -290,7 +294,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.21.18";
+  var APP_VERSION = "2026.11.21.19";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -325,6 +329,7 @@ function useData(d) {
   const sales = d.refs.filter((r) => r.tier <= 1).length;
   $("dataSt").textContent = `データ ${d.built}`;
   $("dataInfo").innerHTML = `作成 ${esc(d.built)}／相場 ${d.refs.length.toLocaleString()}件（うち販売実績 ${sales.toLocaleString()}件）／おすすめ候補 ${d.recs.length}機種／為替 1ドル=${d.cfg.fx}円`;
+  buildSugg(); restoreDraft();
   renderBrands(); renderRecs(); renderSweet(); calcRender(); look(); flushOutbox(); renderToday();
   const age = (Date.now() - Date.parse(String(d.built).replace(" ", "T") + "+09:00")) / 864e5;  // 相場データが古いと気づけるように
   $("staleSt").textContent = age > 2 ? `相場データが ${Math.floor(age)}日前（${d.built}）のままです。Mac の更新が止まっていないか確認を` : "";
@@ -483,7 +488,8 @@ function renderResult(name, price, r) {
 let pick = { rank: null, note: "", sold: null };
 function readSold() {
   const v = Number(String($("soldUsd").value).normalize("NFKC").replace(/[^0-9.]/g, ""));
-  const cond = $("soldCond").value;
+  let cond = $("soldCond").value;
+  if (!cond && pick.rank != null) { const rc = RANK_CHIPS.find(([k]) => k === pick.rank); if (rc) { cond = rc[1]; $("soldCond").value = cond; } }
   pick.sold = v > 0 ? { usd: v, cond } : null;
   $("soldUsd").parentNode.classList.toggle("on", !!pick.sold);
 }
@@ -498,19 +504,23 @@ function regState() {
   const b = $("soldReg"); if (!b) return;
   const m = localMemo($("name").value), same = m && pick.sold && m.usd === pick.sold.usd && (m.cond || "") === (pick.sold.cond || "");
   b.disabled = !pick.sold || !$("name").value.trim() || !!same;
-  b.textContent = same ? "登録済み" : m ? "登録し直す" : "相場に登録";
+  b.textContent = same ? "登録済み" : m ? "登録し直して次へ" : "登録して次へ";
   if (!same) $("regSt").textContent = "";
 }
-$("soldUsd").addEventListener("input", () => { readSold(); look(); autoLogTyped(); regState(); });
+$("soldUsd").addEventListener("input", () => { readSold(); look(); autoLogTyped(); regState(); saveDraft(); });
 $("soldCond").addEventListener("change", () => { readSold(); look(); autoLogTyped(); regState(); });
 $("soldReg").addEventListener("click", () => {
   const name = $("name").value.trim();
   if (!name || !pick.sold) return;
-  const memos = lsGet(LS_MEMO, {}); memos[memoKey(name)] = { usd: pick.sold.usd, cond: pick.sold.cond || "", t: nowJst() }; lsSet(LS_MEMO, memos);
+  const memos = lsGet(LS_MEMO, {}); memos[memoKey(name)] = { usd: pick.sold.usd, cond: pick.sold.cond || "", t: nowJst(), n: name }; lsSet(LS_MEMO, memos);
   const out = lsGet(LS_OUT, []);
   out.push([nowJst(), "相場登録", name, parsePrice($("price").value) || "", "", "", pick.sold.usd, $("shopName").value.trim(), pick.sold.cond || "", APP_VERSION]);
   lsSet(LS_OUT, out); flushOutbox(); regState();
-  $("regSt").textContent = `$${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""}で登録しました`;
+  const msg = `${name} を $${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""} で登録しました。次の商品をどうぞ`;
+  // 次へ: 入力を空にして商品名の欄へ（登録した相場は、次に同じ機種を調べると Sold 欄に入る）
+  $("name").value = ""; $("price").value = ""; pick = { rank: null, note: "", sold: null }; clearSold(); look(); saveDraft();
+  $("ocrSt").className = "status"; $("ocrSt").textContent = msg;
+  window.scrollTo({ top: 0 }); $("name").focus();
 });
 const RANK_CHIPS = [[10, "TOP MINT"], [9, "MINT"], [7, "Near MINT"]];
 function rankChips() {
@@ -732,8 +742,67 @@ $("sendBox").addEventListener("click", (e) => {
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") flushOutbox(); });
 
 function parsePrice(s) { const n = Number(String(s).normalize("NFKC").replace(/[^\d]/g, "")); return n > 0 ? n : null; }
-$("name").addEventListener("input", () => { queryTouched = false; catSel = "auto"; pick = { rank: null, note: "", sold: null }; clearSold(); look(); autoLogTyped(); });
-$("price").addEventListener("input", () => { look(); autoLogTyped(); });
+// 商品名の欄に入ったら全体を選ぶ。新しく打ち始めたら前の値札を消す（店の記録: 「pax」が前の商品の 60,280円のまま判定されていた）
+let nameFresh = false;
+$("name").addEventListener("focus", () => { nameFresh = true; setTimeout(() => { try { const el = $("name"); el.setSelectionRange(0, el.value.length); } catch (e) {} }, 0); renderSugg(); });
+$("name").addEventListener("blur", () => setTimeout(() => { $("sugg").hidden = true; }, 200));
+$("name").addEventListener("input", () => {
+  if (nameFresh) { nameFresh = false; if ($("price").value) $("price").value = ""; }
+  queryTouched = false; catSel = "auto"; pick = { rank: null, note: "", sold: null }; clearSold(); look(); autoLogTyped(); renderSugg(); saveDraft();
+});
+$("price").addEventListener("input", () => { look(); autoLogTyped(); saveDraft(); });
+
+// ---- 候補から選ぶ（2〜3文字で、相場のある機種・最近調べた物・登録した物）。小文字・全角・つづりの区切りが違っても当たる
+const nz = (t) => String(t || "").normalize("NFKC").toLowerCase().replace(/[\s\-_.\/()・]/g, "");
+let SUGG = [];
+function buildSugg() {
+  const seen = new Set(), out = [];
+  const add = (label, tag) => { const k = nz(label); if (!label || seen.has(k) || k.length < 3) return; seen.add(k); out.push({ label, k, tag }); };
+  for (const r of DATA.recs || []) add(r.label, r.sales ? `販売${r.sales}回` : "");
+  for (const r of DATA.refs || []) if (r.tier <= 2) { const q = core.titleToQuery(r.title || "") || ""; add(q, core.isMemo(r) ? "相場メモ" : ""); }
+  SUGG = out;
+}
+function renderSugg() {
+  const box = $("sugg"), q = $("name").value.trim();
+  const words = q.split(/\s+/).map(nz).filter(Boolean);
+  if (!DATA || !words.length || nz(q).length < 2) { box.hidden = true; return; }
+  const mine0 = lsGet(LS_HIST, []).map((x) => ({ label: x.name, k: nz(x.name), tag: "最近" }))
+    .concat(Object.entries(lsGet(LS_MEMO, {})).map(([k, m]) => ({ label: m.n || k, k: nz(m.n || k), tag: "登録済み" })));
+  const mine = mine0.slice().sort((a, b) => (b.tag === "登録済み") - (a.tag === "登録済み"));
+  const hit = (c) => words.every((w) => c.k.includes(w)) && c.k !== nz(q);
+  const list = [], seen = new Set();
+  for (const c of mine.concat(SUGG)) { if (list.length >= 6) break; if (seen.has(c.k) || !hit(c)) continue; seen.add(c.k); list.push(c); }
+  box.innerHTML = list.map((c, i) => `<button type="button" data-sg="${i}"><span>${esc(c.label)}</span><span class="s">${esc(c.tag || "")}</span></button>`).join("");
+  box.hidden = !list.length;
+  box.onclick = (e) => {
+    const b = e.target.closest("[data-sg]"); if (!b) return;
+    const c = list[+b.dataset.sg];
+    $("name").value = c.label; nameFresh = false; box.hidden = true;
+    queryTouched = false; catSel = "auto"; pick = { rank: null, note: "", sold: null }; clearSold(); look(); autoLogTyped(); saveDraft();
+    $("price").focus();
+  };
+  box.onpointerdown = (e) => e.preventDefault();   // 押した瞬間に欄から外れて候補が消えないように
+}
+
+// ---- 打った物を覚えておき、開き直しても戻す（eBay へ行って戻ったときに消えないように。60分まで）
+const LS_DRAFT = "storeDraft";
+function saveDraft() { lsSet(LS_DRAFT, { name: $("name").value, price: $("price").value, usd: $("soldUsd").value, cond: $("soldCond").value, t: Date.now() }); }
+function restoreDraft() {
+  const d = lsGet(LS_DRAFT, null);
+  if (!d || $("name").value || Date.now() - (d.t || 0) > 3600e3) return;
+  $("name").value = d.name || ""; $("price").value = d.price || ""; $("soldUsd").value = d.usd || ""; $("soldCond").value = d.cond || "";
+  if (d.usd) readSold();
+}
+
+// ---- Sold を見て戻ってきたら、すぐ $ の欄に打てるように
+let awaitSold = false;
+$("lSold").addEventListener("click", () => { awaitSold = true; saveDraft(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !awaitSold) return;
+  awaitSold = false;
+  const el = $("soldUsd"); if (!el || $("result").hidden) return;
+  el.scrollIntoView({ block: "center" }); setTimeout(() => el.focus(), 50);
+});
 $("query").addEventListener("input", () => { queryTouched = true; updateLinks(); });
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.target.blur(); remember(); } });
 for (const id of ["lSold", "lNow", "lPr"]) $(id).addEventListener("click", remember);
@@ -834,11 +903,13 @@ function renderShelf(note) {
     const sub = !c ? "" : x.price == null ? "値札が読めない" : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;
     return `<div class="shelf"><div class="tt"><b>${core.sweetSpot && core.sweetSpot(x.name) ? "★ " : ""}${esc(x.name)}</b><span class="s">${esc(sub)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
       <div class="pf ${cls}">${esc(big)}</div>
-      <button data-shelf="${i}">見る</button></div>`;
+      <button data-shelf="${i}" data-act="${!c ? "sold" : ok ? "buy" : "look"}">${!c ? "Sold" : ok ? "購入へ" : "見る"}</button></div>`;
   }).join("");
   el.onclick = (e) => {
     if (e.target.dataset.clear) { shelfRows = []; shelfSeen.clear(); renderShelf(); return; }
     const i = e.target.dataset.shelf; if (i == null) return; const x = rows[+i]; setInput(x.name, x.price || "", x.notes);
+    if (e.target.dataset.act === "sold") { awaitSold = true; saveDraft(); $("lSold").click(); }   // 相場なし → そのまま eBay の Sold を開く（戻ったら $ の欄へ）
+    else if (e.target.dataset.act === "buy") $("sendBox").scrollIntoView({ block: "center" });
   };
 }
 $("shelfBtn").onclick = () => $("shelfFile").click();
