@@ -31,7 +31,8 @@ LOG = DATA / "bid_log.csv"
 HISTORY = DATA / "bid_history.csv"  # 以前の入札分析シートの入札履歴（ledger_sync.py が古物台帳「共有_過去の入札」から作る）
 REPORT = ROOT / "reports" / "bid_results.md"
 FIELDS = ["auction_id", "title", "max_bid", "pay_max", "usd", "profit_at_max", "end", "trusted", "tentative", "store_tax",
-          "ship", "bid_at", "result", "final_price", "profit_final", "checked_at"]
+          "ship", "bid_at", "result", "final_price", "profit_final", "checked_at", "via"]
+PHONE = DATA / "phone_bids.csv"  # スマホの［予約］の記録（ledger_sync.py が古物台帳「共有_店舗」の「入札予約」の行から作る。2026-11-21）
 
 sys.path.insert(0, str(HERE))
 import appraise as ba  # noqa: E402
@@ -68,9 +69,33 @@ def import_extension_bids(downloads: Path | None = None, dest: Path | None = Non
             added += 1
         elif not old[aid].get("result"):
             old[aid].update({k: v for k, v in r.items() if k in FIELDS and v != ""})
-    for aid in [a for a, r in old.items() if a not in ext and not r.get("result")]:
+    for aid in [a for a, r in old.items() if a not in ext and not r.get("result") and r.get("via") != "phone"]:   # スマホで予約した分は消さない
         del old[aid]  # 拡張機能で取り消した（結果が出る前）
     _write(list(old.values()), dest)
+    return added
+
+
+def import_phone_bids(src: Path | None = None, dest: Path | None = None) -> int:
+    """スマホの［予約］（data/phone_bids.csv）を入札の記録に合わせる. 追加件数を返す.
+    同じオークションは足さない。スマホで外した予約（phone_bids.csv から消えた物）は、結果が出ていなければ記録からも消す
+    （残すと10日後に「負け」になり落札率がずれる）. phone_bids.csv が無い（まだ取り込んでいない）ときは何もしない."""
+    src, dest = src or PHONE, dest or LOG
+    if not src.exists():
+        return 0
+    new = _read(src)
+    keep = {(r.get("auction_id") or "").strip() for r in new}
+    rows = {r["auction_id"]: r for r in _read(dest)}
+    gone = [a for a, r in rows.items() if r.get("via") == "phone" and a not in keep and not r.get("result")]
+    for a in gone:
+        del rows[a]
+    added = 0
+    for r in new:
+        aid = (r.get("auction_id") or "").strip()
+        if aid and aid not in rows:
+            rows[aid] = dict(r, via="phone")
+            added += 1
+    if added or gone:
+        _write(list(rows.values()), dest)
     return added
 
 
@@ -360,7 +385,7 @@ def write_report(rows: list[dict], path: Path | None = None) -> dict:
 def run(cfg: dict | None = None, fx: float | None = None) -> dict | None:
     cfg = cfg or ba.load_config(None)
     fx = fx or float(cfg["fx"]["usd_jpy"])
-    added = import_extension_bids() + import_aucfan_snipes()
+    added = import_extension_bids() + import_aucfan_snipes() + import_phone_bids()
     rows = _read(LOG)
     if not rows:
         print("入札の結果: まだ記録がありません（拡張機能で入札したら［入札した］を押す）", file=sys.stderr)
