@@ -77,6 +77,8 @@ class InstantLaneJunk(unittest.TestCase):
         "OLYMPUS OM-D E-M5 MarkII ボディ グリップ付き",
         "Nikon F3 ジャンク 部品取り",   # 部品取りの本体はジャンクの本体（2026-11-16 ジャンク表記は気にしない）
         "Canon EOS 5D Mark IV HLD無し ボディ",
+        "OLYMPUS OM-D E-M5 ボディ グリップ HLD-6 付き",
+        "OLYMPUS E-M1 ボディ HLD-7付",
     ]
 
     def test_python(self):
