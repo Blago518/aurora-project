@@ -209,7 +209,7 @@ def bid_candidates(reports: Path | None = None, now: datetime | None = None) -> 
         tent = not good and r.get("仮判定") in ("◎", "○")
         if not (good or tent):
             continue
-        weak = good and r.get("根拠の強さ") == "確認してから"  # 頒布会リスト・鑑定表が根拠 → 確認してから
+        weak = good and r.get("根拠の強さ") == "確認してから"  # 鑑定表・リサーチ（推定）が根拠 → 確認してから（頒布会は確認不要。2026-11-18）
         url = r.get("ヤフオクURL") or ""
         m = re.search(r"/auction/([^/?#]+)", url)
         items.append({
