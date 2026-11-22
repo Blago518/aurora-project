@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.16";
+  var APP_VERSION = "2026.11.22.17";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -760,7 +760,7 @@ function modelWords(ws) {
       if (/^\d+(-\d+)?mm$/.test(l) || /^f\/?\d/.test(l) || LENS_LINE_WORDS.has(l) || LENS_FAMILY_RE.test(l)
           || /^(ai-?s?|non-?ai|af-?[spid]?|ef(-s)?|rf|fe|xf|dx|g|l|ii|iii|iv|macro|fisheye|limited|art|pro|gm|is|vr|da|fa|digital)$/.test(l)) out.push(w);   // 系統とマウント（DA・Zuiko Digital・VR）も残す（利益計算.md 11/19）
     }
-    return out.slice(0, 6);
+    return out.slice(0, 7);   // Nikon AF-S DX 18-55mm F3.5-5.6 G VR の VR まで
   }
   let model = false;
   for (const w of ws.slice(1)) {

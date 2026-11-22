@@ -332,9 +332,8 @@ class SiblingExcludes(unittest.TestCase):
             "Canon EOS 5D Mark II", "Canon EOS 5D Mark III", "Nikon Ai-S Nikkor 50mm F1.2", "Nikon Ai-S Nikkor 50mm F1.8", "Nikon F2 Photomic"]
     CASES = [("OLYMPUS オリンパス ZUIKO AUTO-W 24mm/F2 OMマウント 単焦点 広角レンズ 大口径 前後キャップ/レンズフード付 E66", ["-2.8"]),
              ("Olympus ZUIKO 24mm F2.8", []),          # 整数の「-2」は広すぎるので足さない
-             ("Canon AE-1 ボディ", ["-Program"]), ("Canon AE-1 Program", []),
-             ("ニコン Nikon F3 ボディ", ["-HP"]),       # ボディの F3 は F値ではなく型番
-             ("Canon EOS 5D ボディ", ["-II", "-III"]),
+             # ボディの世代語は外さない（「F3」とだけ書いた HP の売れた記録まで消えて相場を低く読む。2026-11-22 オーキド）
+             ("Canon AE-1 ボディ", []), ("ニコン Nikon F3 ボディ", []), ("Canon EOS 5D ボディ", []),
              ("Nikon Ai-S Nikkor 50mm F1.4", ["-1.2", "-1.8"]),
              ("Olympus XA1", []), ("Nikon Nikkor 35mm F2", [])]
 
@@ -356,6 +355,41 @@ class SiblingExcludes(unittest.TestCase):
             code = (f"const m=require({json.dumps(str(js))});const r={json.dumps([{'title': t} for t in self.REFS], ensure_ascii=False)};"
                     f"const t={json.dumps([c[0] for c in self.CASES], ensure_ascii=False)};"
                     "console.log(JSON.stringify(t.map(x=>m.siblingExcludes(m.titleToQuery(x),r))))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), [c[1] for c in self.CASES])
+
+
+class ModelQuery(unittest.TestCase):
+    """eBay の検索語は機種の語だけ（2026-11-22 オーナー「まだ sold や now 開くと管理番号が入ってる」「PC のヤフオク入札でも」）.
+    パソコンの拡張機能・毎朝のレポートの検索語（build_store.model_query / 拡張機能 modelQuery）。店舗アプリの modelWords と同じ決まり."""
+    CASES = [("OLYMPUS オリンパス ZUIKO AUTO-W 24mm/F2 OMマウント 単焦点 広角レンズ 大口径 前後キャップ/レンズフード付 E66", "Olympus ZUIKO 24mm F2"),
+             ("★特上美品★OLYMPUS XA1 A9M D.ZUIKO 35mm F4 オリンパス XA1 フラッシュ付 Point & Shoot フィルムカメラ 動作確認済 #101347", "Olympus XA1"),
+             ("Nikon F3 ボディ 動作品 N031", "Nikon F3"),
+             ("良品 Nikon coolpix P900 ブラック e6", "Nikon coolpix P900"),
+             ("Nikon AF-S DX 18-55mm F3.5-5.6G VR K11", "Nikon AF-S DX 18-55mm F3.5-5.6 G VR"),
+             ("Canon EOS 5D Mark II ボディ N031", "Canon EOS 5D Mark II"),
+             ("Mamiya RB67 Pro SD ボディ", "Mamiya RB67 Pro SD"),       # 削りすぎない（利益計算.md 11/19）
+             ("Canon New F-1 ボディ", "Canon New F-1"),
+             ("Canon EF 50mm F1.2L USM 美品", "Canon EF 50mm F1.2 L"),
+             ("Leica M6 TTL 0.85 ブラック", "Leica M6 TTL 0.85")]
+
+    def test_python(self):
+        import build_store as bs
+        for title, want in self.CASES:
+            self.assertEqual(bs.model_query(title), want, title)
+
+    def test_js_same(self):
+        import shutil, subprocess
+        import build_extension as bu
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bu.build_data(CFG, 150.0)
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"const m=require({json.dumps(str(js))});const t={json.dumps([c[0] for c in self.CASES], ensure_ascii=False)};"
+                    "console.log(JSON.stringify(t.map(x=>m.modelQuery(x))))")
             out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
         self.assertEqual(json.loads(out), [c[1] for c in self.CASES])
 

@@ -59,7 +59,12 @@ def fixture() -> dict:
     return d
 
 
-@unittest.skipUnless(_has_playwright(), "node と playwright がありません")
+HAS_PW = _has_playwright()
+if not HAS_PW:   # 黙って合格にしない（2026-11-22 オーキド）。Mac には playwright が無いので、回るのはクラウドの作業のときだけ
+    print("\n※ 店舗アプリの通しテスト（test_store_flow）は飛ばしました: node と playwright がありません", file=sys.stderr)
+
+
+@unittest.skipUnless(HAS_PW, "node と playwright がありません")
 class StoreBidFlow(unittest.TestCase):
     def test_bid_flow_as_user(self):
         with tempfile.TemporaryDirectory() as t:

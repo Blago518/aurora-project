@@ -45,7 +45,7 @@ def core_js() -> str:
     body = tpl[tpl.index("\n", a) + 1:b]
     names = ("titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, "
              "modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, "
-             "setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes")
+             "setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes, modelQuery")
     return (
         "// 自動生成ファイル: tools/build_store.py が tools/extension_template.js の @core 部分をコピーしたもの。\n"
         "// 直接編集しない（拡張機能と判定を一致させるため）。データは入っていない。\n"
@@ -154,6 +154,56 @@ def body_before_mm(title: str) -> bool:
         if tl in SERIES_BODY_WORDS:
             return True
     return False
+
+
+# eBay の検索語は機種の語だけ（2026-11-22 オーナー「まだ sold や now 開くと管理番号が入ってる」「PC のヤフオク入札でも」）。
+# 店舗アプリの modelWords と同じ決まりを、拡張機能・毎朝のレポートでも使う（拡張機能は core の modelQuery。test_appraise.ModelQuery で一致を確かめる）
+SERIES_WORDS_Q = re.compile(r"coolpix|powershot|ixy|eos|kiss|lumix|finepix|cyber-?shot|pen|om-d|stylus|mju|trip|rolleiflex|rolleicord|leica|hexar|electro|program|z", re.I)
+GEN_WORDS_Q = re.compile(r"ii|iii|iv|v|x|mark|mk\d?|n|hp|ttl|program|s|sp|qd|af|md|pro|sd|photomic|as|ftn|ti|hs|\d+(?:\.\d+)?", re.I)
+LENS_KEEP_Q = re.compile(r"ai-?s?|non-?ai|af-?[spid]?|ef(?:-s)?|rf|fe|xf|dx|g|l|ii|iii|iv|macro|fisheye|limited|art|pro|gm|is|vr|da|fa|digital")
+
+
+def model_words(ws: list[str]) -> list[str]:
+    """メーカー＋機種の語だけを残す（「Olympus ZUIKO AUTO-W 24mm F2 E66」→「Olympus ZUIKO 24mm F2」、「Nikon F3 N031」→「Nikon F3」）."""
+    if not ws:
+        return ws
+    t = " ".join(ws)
+    if LENS_LIKE_RE.search(t) and not body_before_mm(t):
+        out = [ws[0]]
+        for w in ws[1:]:
+            l = w.lower()
+            if (re.fullmatch(r"\d+(-\d+)?mm", l) or re.match(r"f/?\d", l) or l in LENS_LINE_WORDS or LENS_FAMILY_RE.search(l)
+                    or LENS_KEEP_Q.fullmatch(l)):
+                out.append(w)
+        return out[:7]  # Nikon AF-S DX 18-55mm F3.5-5.6 G VR の VR まで
+    out, model = [ws[0]], False
+    for w in ws[1:]:
+        l = w.lower()
+        if not model and (SERIES_WORDS_Q.fullmatch(l) or l == "new"):
+            out.append(w)
+            continue
+        if not model and ((re.search(r"[a-zα]", l) and re.search(r"\d", l)) or FIXED_BODY_RE.search(w) or re.fullmatch(r"\d{2,4}", l)):
+            out.append(w)
+            model = True
+            continue
+        if model and GEN_WORDS_Q.fullmatch(l):
+            out.append(w)
+            continue
+        if model:
+            break
+    return out if model else ws[:3]
+
+
+def model_query(title: str) -> str:
+    return " ".join(model_words(ba.title_to_query(title, 20).split()))
+
+
+def model_query_consts() -> dict:
+    """拡張機能の core に渡す決まり（Python の正規表現をそのまま JS に）."""
+    return {"lensLike": LENS_LIKE_RE.pattern, "kitWords": KIT_WORDS_RE.pattern, "fixedBody": FIXED_BODY_RE.pattern,
+            "lensFamily": LENS_FAMILY_RE.pattern, "lensMaker": LENS_MAKER_RE.pattern, "bodySkip": BODY_SKIP,
+            "seriesBody": sorted(SERIES_BODY_WORDS), "lensLine": sorted(LENS_LINE_WORDS),
+            "series": SERIES_WORDS_Q.pattern, "gen": GEN_WORDS_Q.pattern, "lensKeep": LENS_KEEP_Q.pattern}
 
 
 def rec_cat(kind: str, titles: list[str]) -> str:

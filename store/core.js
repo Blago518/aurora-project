@@ -171,30 +171,80 @@ function makeCore(DATA) {
     return [...new Set(words)].join(" ");
   }
   // 紛らわしい兄弟の機種を eBay の検索から外す語（2026-11-22 オーナーが「Olympus ZUIKO AUTO-W 24mm F2」に自分で「-2.8」を足した）。
-  // 相場データに、同じメーカー・同じ焦点距離で F値だけ違うレンズがあれば「-2.8」、同じ型に世代の語が付いたボディがあれば「-Program」「-II」。
+  // 相場データに、同じメーカー・同じ焦点距離で F値だけ違うレンズがあれば「-2.8」（ボディの世代語は外さない: 「F3」とだけ書いた HP の売れた記録まで消えて相場を低く読むため）。
   // 表示・リンクだけ（照合・判定には使わない）。Python の appraise.sibling_excludes と同じ
-  const SIBLING_WORDS = new Set(["program", "hp", "photomic", "ttl", "ii", "iii", "iv", "pro", "sd", "quartz", "date", "ql17", "motor"]);
-  const MM_RE = /^\d+(?:-\d+)?mm$/, FNUM_RE = /^f\d+(?:\.\d+)?$/, MODEL_RE = /^(?=.*\d)(?=.*[a-zα]).+$/;
+  const MM_RE = /^\d+(?:-\d+)?mm$/, FNUM_RE = /^f\d+(?:\.\d+)?$/;
   function siblingExcludes(query, refs, limit = 3) {
     const qt = tokensOf(query), brands = [...qt].filter((t) => BRAND_SET.has(t));
     if (!brands.length) return [];
     const mm = [...qt].filter((t) => MM_RE.test(t)).sort().join("|"), qf = [...qt].filter((t) => FNUM_RE.test(t));
-    const models = [...qt].filter((t) => MODEL_RE.test(t) && !MM_RE.test(t) && !(mm && FNUM_RE.test(t)));   // ボディの F3 は型番
     const out = [];
     for (const r of refs || []) {
       const rt = r.tset || (r.tset = new Set(r.tokens || tokensOf(r.title || "")));
       if (!brands.some((b) => rt.has(b))) continue;
-      if (mm) {
+      if (mm) {   // レンズだけ
         if ([...rt].filter((t) => MM_RE.test(t)).sort().join("|") !== mm || !qf.length) continue;
         const rf = [...rt].filter((t) => FNUM_RE.test(t));
         if (!rf.length || rf.some((f) => qt.has(f))) continue;
         for (const f of rf.sort()) if (f.includes(".")) out.push(f.slice(1));   // 「-2」のような整数は広すぎるので外さない
-      } else {
-        if (!models.length || !models.every((m) => rt.has(m)) || [...rt].some((t) => MM_RE.test(t))) continue;
-        for (const w of [...rt].sort()) if (SIBLING_WORDS.has(w) && !qt.has(w)) out.push(w);
       }
     }
-    return [...new Set(out)].slice(0, limit).map((w) => "-" + (/^[a-z]/.test(w) && w.length <= 3 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)));
+    return [...new Set(out)].slice(0, limit).map((w) => "-" + w);
+  }
+  // eBay の検索語は機種の語だけ（build_store.model_query と同じ。決まりの正規表現は C.modelQuery で Python から渡す）
+  const MQ = C.modelQuery ? {
+    lensLike: new RegExp(C.modelQuery.lensLike, "i"), kit: new RegExp(C.modelQuery.kitWords, "i"), fixed: new RegExp(C.modelQuery.fixedBody, "i"),
+    family: new RegExp(C.modelQuery.lensFamily, "i"), maker: new RegExp("^(?:" + C.modelQuery.lensMaker + ")", "i"), skip: new RegExp("^(?:" + C.modelQuery.bodySkip + ")$"),
+    seriesBody: new Set(C.modelQuery.seriesBody), line: new Set(C.modelQuery.lensLine), series: new RegExp("^(?:" + C.modelQuery.series + ")$", "i"),
+    gen: new RegExp("^(?:" + C.modelQuery.gen + ")$", "i"), keep: new RegExp("^(?:" + C.modelQuery.lensKeep + ")$") } : null;
+  function bodyBeforeMmQ(title) {
+    const t0 = String(title || "").normalize("NFKC");
+    if (MQ.kit.test(t0)) return true;
+    const hasFor = /\bfor\b|用/i.test(t0);
+    if (MQ.fixed.test(t0) && !hasFor) return true;
+    const toks = titleToQuery(title, 20).split(" ").filter(Boolean);
+    if (!hasFor && !MQ.maker.test(t0)) {
+      for (const t of toks.slice(1)) {
+        const tl = t.toLowerCase();
+        if (/^\d+(-\d+)?mm$/.test(tl) || MQ.family.test(tl)) break;
+        if (MQ.line.has(tl) || MQ.skip.test(tl)) continue;
+        if (/[a-zα]/.test(tl) && /\d/.test(tl)) return true;
+      }
+    }
+    if (MQ.family.test(t0) || hasFor) return false;
+    for (const t of toks.slice(1)) {
+      const tl = t.toLowerCase();
+      if (/^\d+(-\d+)?mm$/.test(tl)) return false;
+      if (MQ.line.has(tl) || MQ.skip.test(tl)) continue;
+      if (/[a-zα]/.test(tl) && /\d/.test(tl)) return true;
+      if (MQ.seriesBody.has(tl)) return true;
+    }
+    return false;
+  }
+  function modelWordsQ(ws) {
+    if (!ws.length) return ws;
+    const t = ws.join(" ");
+    if (MQ.lensLike.test(t) && !bodyBeforeMmQ(t)) {
+      const out = [ws[0]];
+      for (const w of ws.slice(1)) {
+        const l = w.toLowerCase();
+        if (/^\d+(-\d+)?mm$/.test(l) || /^f\/?\d/.test(l) || MQ.line.has(l) || MQ.family.test(l) || MQ.keep.test(l)) out.push(w);
+      }
+      return out.slice(0, 7);
+    }
+    const out = [ws[0]]; let model = false;
+    for (const w of ws.slice(1)) {
+      const l = w.toLowerCase();
+      if (!model && (MQ.series.test(l) || l === "new")) { out.push(w); continue; }
+      if (!model && ((/[a-zα]/.test(l) && /\d/.test(l)) || MQ.fixed.test(w) || /^\d{2,4}$/.test(l))) { out.push(w); model = true; continue; }
+      if (model && MQ.gen.test(l)) { out.push(w); continue; }
+      if (model) break;
+    }
+    return model ? out : ws.slice(0, 3);
+  }
+  function modelQuery(title) {
+    if (!MQ) return titleToQuery(title);
+    return modelWordsQ(titleToQuery(title, 20).split(" ").filter(Boolean)).join(" ");
   }
   const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
 
@@ -563,6 +613,6 @@ function makeCore(DATA) {
     return band && f <= band[1] + 1e-9 ? band[2] : "";
   }
 
-  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes };
+  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes, modelQuery };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { makeCore };
