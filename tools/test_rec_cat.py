@@ -89,7 +89,8 @@ console.log(JSON.stringify(cases.map(([k, t]) => {
                "Mamiya RB67 Sekor C 90mm F3.8", "Mamiya RZ67 Sekor Z 110mm F2.8 W", "Leica L39 Elmar 50mm F3.5",
                "Tamron SP 52B 90mm F2.5 Macro", "Olympus OM Zuiko 50mm F1.2", "Mamiya N 80mm F4 for Mamiya 7", "Bronica Zenzanon PS 80mm F2.8", "Mamiya Sekor C 80mm F2.8 for M645",
                "Hasselblad Planar 80mm F2.8 CF"],
-        "af": ["Nikon AF-S 200-500mm F5.6E ED VR", "Nikon AF-S DX 18-140mm", "Canon EF 70-200mm F2.8L IS II",
+        "af": ["Nikon 6.7-13mm F3.5-5.6", "Nikon 1 NIKKOR VR 6.7-13mm f/3.5-5.6", "Nikon 1 NIKKOR 10-30mm F3.5-5.6",  # 2026-11-22 Film に出ていた
+               "Nikon AF-S 200-500mm F5.6E ED VR", "Nikon AF-S DX 18-140mm", "Canon EF 70-200mm F2.8L IS II",
                "Sony FE 24-70mm F2.8 GM", "Contax Planar 45mm F2 G", "Nikon Z 24-70mm F4 S", "Sony SEL1635Z",
                "Tamron A09 28-75mm F2.8 Di", "Olympus M.Zuiko Digital ED 12-40mm F2.8"],
     }

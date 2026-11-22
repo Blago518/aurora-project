@@ -86,7 +86,7 @@ CAMERA_LINE_WORDS = ba.GENERATIONS | {"program", "pro", "super", "classic", "dx"
 
 
 # おすすめの4分類（2026-11-22 オーナー「MF、AF、Film、digital の4つのボタン。MFレンズ、AFレンズ、フィルムカメラ、デジタルカメラ」）。表示だけ
-AF_STRONG_RE = re.compile(r"\bAF[-\s]?[SPID]?\b|オートフォーカス|autofocus|\bUSM\b|\bSTM\b|\bHSM\b|\bSDM\b|\bSSM\b|\bSAM\b|"
+AF_STRONG_RE = re.compile(r"(?<![\d.])\d(?:\.\d)?-\d{1,2}(?:\.\d)?\s?mm\b|\bAF[-\s]?[SPID]?\b|オートフォーカス|autofocus|\bUSM\b|\bSTM\b|\bHSM\b|\bSDM\b|\bSSM\b|\bSAM\b|"
                           r"\bEF-?S?\s?\d|\bRF\s?\d|\bFE\s?\d|\bXF\s?\d|\bXC\s?\d|(?<![A-Za-z])M\.\s?ZUIKO|ZUIKO\s+DIGITAL|NIKKOR\s*Z\b|"
                           r"\bD\s?FA\b|\bDA\s?\*?\s?\d|\bFA\s?\*?\s?\d|Maxxum|Dynax|\bDC\b|\bDG\b|\bVR\b|\bVC\b|\bDi\b|\bLUMIX\s*G\b|"
                           r"Contax\s*(?:G\d?|645)\b|Nikon\s+Z\s?\d|Nikon\s*1\s+Nikkor|AT-X|(?:Planar|Biogon|Sonnar|Hologon)\b.*\b(?:for\s+)?G\s*$|\bHCD?\s?\d|\bSony\b|\bSEL\s?\d", re.I)
@@ -101,7 +101,7 @@ DIGITAL_CAM_RE = re.compile(r"digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megap
                             r"\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b", re.I)
 
 
-LENS_LIKE_RE = re.compile(r"(?<![\d.])\d{2,4}(?:-\d{2,4})?\s?mm\b.*\bF\s?/?\d|(?<![\d.])\d{1,3}-\d{2,3}\s?mm\b|\bSEL\s?\d{3,4}", re.I)
+LENS_LIKE_RE = re.compile(r"(?<![\d.])\d{1,4}(?:\.\d)?(?:-\d{1,4}(?:\.\d)?)?\s?mm\b.*\bF\s?/?\d|(?<![\d.])\d{1,3}(?:\.\d)?-\d{1,3}(?:\.\d)?\s?mm\b|\bSEL\s?\d{3,4}", re.I)  # 6.7-13mm（Nikon 1）のような小数もレンズ（2026-11-22）
 
 
 KIT_WORDS_RE = re.compile(r"\bbody\b|ボディ|\bw/|\bwith\b|\+|\bkit\b|付き?|セット|レンズキット", re.I)
@@ -135,7 +135,7 @@ def body_before_mm(title: str) -> bool:
     if not has_for and not LENS_MAKER_RE.match(t0):
         for t in toks[1:]:
             tl = t.lower()
-            if re.fullmatch(r"\d+(-\d+)?mm", tl) or LENS_FAMILY_RE.search(tl):
+            if re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm", tl) or LENS_FAMILY_RE.search(tl):
                 break
             if tl in LENS_LINE_WORDS or re.fullmatch(BODY_SKIP, tl):
                 continue
@@ -145,7 +145,7 @@ def body_before_mm(title: str) -> bool:
         return False
     for t in toks[1:]:
         tl = t.lower()
-        if re.fullmatch(r"\d+(-\d+)?mm", tl):
+        if re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm", tl):
             return False
         if tl in LENS_LINE_WORDS or re.fullmatch(BODY_SKIP, tl):
             continue
@@ -172,7 +172,7 @@ def model_words(ws: list[str]) -> list[str]:
         out = [ws[0]]
         for w in ws[1:]:
             l = w.lower()
-            if (re.fullmatch(r"\d+(-\d+)?mm", l) or re.match(r"f/?\d", l) or l in LENS_LINE_WORDS or LENS_FAMILY_RE.search(l)
+            if (re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm", l) or re.match(r"f/?\d", l) or l in LENS_LINE_WORDS or LENS_FAMILY_RE.search(l)
                     or LENS_KEEP_Q.fullmatch(l)):
                 out.append(w)
         return out[:7]  # Nikon AF-S DX 18-55mm F3.5-5.6 G VR の VR まで
@@ -230,7 +230,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         t = t.lower()
         return ["newfd"] if t in ("nfd", "fdn") else ["ai-s"] if t == "ais" else [t]
     low = [x for t in rest for x in norm(t)]
-    has_mm = any(re.fullmatch(r"\d+(-\d+)?mm", t) for t in low)
+    has_mm = any(re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm", t) for t in low)
     zoom = any(re.fullmatch(r"\d{1,3}-\d{2,3}mm", t) for t in low)   # ズームの焦点距離は F値が無くてもレンズ（AF-S DX 18-140mm）
     has_f = zoom or any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?[a-z]?", t) for t in low)  # F5.6E・F1.4G・F2.8L も F値（2026-11-22 200-500mm F5.6E がカメラに入っていた）
     kind = "lens" if has_mm and (has_f or "lens" in low) and not CAMERA_WORDS & set(low) and not body_before_mm(title) else "camera"
@@ -238,7 +238,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     def wanted(t: str) -> bool:
         if kind == "lens":
             # Nikon Z・Contax G のレンズは系統の語を残す（無いと MF のレンズと見分けられない。2026-11-22）
-            return bool(t in LENS_LINE_WORDS or re.fullmatch(r"\d+(-\d+)?mm", t) or re.fullmatch(r"f\d.*", t)
+            return bool(t in LENS_LINE_WORDS or re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm", t) or re.fullmatch(r"f\d.*", t)
                         or (t == "z" and brand == "Nikon") or (t == "g" and brand == "Contax"))
         return bool((re.search(r"\d", t) and t != "35mm") or t in CAMERA_LINE_WORDS)
 
