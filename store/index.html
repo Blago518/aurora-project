@@ -311,7 +311,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.14";
+  var APP_VERSION = "2026.11.22.15";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -716,7 +716,7 @@ function queryFor(name) {
 }
 // メーカー＋機種だけを残す（「OLYMPUS XA1 A9M D.ZUIKO 35mm F4 Point」→「OLYMPUS XA1」、「Bronica ZENZANON-PG 65mm f4」はそのまま）
 const SERIES_WORDS = /^(coolpix|powershot|ixy|eos|kiss|lumix|finepix|cyber-?shot|pen|om-d|stylus|mju|trip|rolleiflex|rolleicord|leica|hexar|electro|program|z)$/i;
-const GEN_WORDS = /^(ii|iii|iv|v|x|mark|mk\d?|n|hp|ttl|program|s|sp|qd|af|md|\d)$/i;
+const GEN_WORDS = /^(ii|iii|iv|v|x|mark|mk\d?|n|hp|ttl|program|s|sp|qd|af|md|pro|sd|photomic|as|ftn|ti|hs|\d+(\.\d+)?)$/i;   // 型の後ろに付いて値段が変わる語（New F-1・RB67 Pro SD・F2 Photomic AS・M6 TTL 0.85）
 function modelWords(ws) {
   if (!ws.length) return ws;
   const t = ws.join(" ");
@@ -725,15 +725,16 @@ function modelWords(ws) {
   if (isLens) {
     for (const w of ws.slice(1)) {
       const l = w.toLowerCase();
-      if (/^\d+(-\d+)?mm$/.test(l) || /^f\/?\d/.test(l) || LENS_LINE_WORDS.has(l) || LENS_FAMILY_RE.test(l) || /^(ai-?s?|af-?[spid]?|ef(-s)?|rf|fe|xf|dx|g|l)$/.test(l)) out.push(w);
+      if (/^\d+(-\d+)?mm$/.test(l) || /^f\/?\d/.test(l) || LENS_LINE_WORDS.has(l) || LENS_FAMILY_RE.test(l)
+          || /^(ai-?s?|non-?ai|af-?[spid]?|ef(-s)?|rf|fe|xf|dx|g|l|ii|iii|iv|macro|fisheye|limited|art|pro|gm|is|vr|da|fa|digital)$/.test(l)) out.push(w);   // 系統とマウント（DA・Zuiko Digital・VR）も残す（利益計算.md 11/19）
     }
     return out.slice(0, 6);
   }
   let model = false;
   for (const w of ws.slice(1)) {
     const l = w.toLowerCase();
-    if (!model && SERIES_WORDS.test(l)) { out.push(w); continue; }
-    if (!model && ((/[a-zα]/i.test(l) && /\d/.test(l)) || FIXED_BODY_RE.test(w))) { out.push(w); model = true; continue; }
+    if (!model && (SERIES_WORDS.test(l) || l === "new")) { out.push(w); continue; }   // New F-1 の New も残す
+    if (!model && ((/[a-zα]/i.test(l) && /\d/.test(l)) || FIXED_BODY_RE.test(w) || /^\d{2,4}$/.test(l))) { out.push(w); model = true; continue; }   // Pentax 67 II の 67 も型番
     if (model && GEN_WORDS.test(l)) { out.push(w); continue; }
     if (model) break;
   }
