@@ -311,7 +311,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.10";
+  var APP_VERSION = "2026.11.22.11";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -499,7 +499,7 @@ function renderResult(name, price, r) {
   { const bar = lsGet(LS_BIDBAR, null), cm = ctxMax(name, c);
     if (bar && bidCtx && bar.id === bidCtx.id && cm > 0 && bar.maxBid !== cm) { lsSet(LS_BIDBAR, Object.assign({}, bar, { maxBid: cm, redo: true })); setTimeout(renderBidBar, 0); } }
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
-    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
+    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
   // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
@@ -697,12 +697,13 @@ function renderCatChips() {
 $("catChips").onclick = (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catSel = b.dataset.cat; updateLinks(); };
 // core.js の ebay() のリンクにカテゴリを付ける（販売済み・出品中は _sacat、Product Research は categoryId）
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-const toSafari = (u) => (IOS && /^https:\/\//.test(u) ? "x-safari-" + u : u);
-// 2026-11-22: 1.5秒後に https で開き直す逃げ道はやめた（Safari を開く確認を待たずに eBay・ヤフオクのアプリへ飛ばしていた）。
+// 外のページは全部 Chrome で開く（2026-11-22 オーナー「Safariではなく、Chromeで開いてぜんぶ」。eBay・ヤフオクのアプリには飛ばさない）
+const toChrome = (u) => (IOS && /^https:\/\//.test(u) ? u.replace(/^https:\/\//, "googlechromes://") : u);
+// 2026-11-22: 1.5秒後に https で開き直す逃げ道はやめた（ブラウザを開く確認を待たずに eBay・ヤフオクのアプリへ飛ばしていた）。
 function linksWithCat(q, cat) {
   const L = core ? core.ebay(q) : ebayLinks(q);
   const M = cat === "0" ? L : { sold: L.sold + "&_sacat=" + cat, now: L.now + "&_sacat=" + cat, pr: L.pr + "&categoryId=" + cat };
-  return { sold: toSafari(M.sold), now: toSafari(M.now), pr: toSafari(M.pr) };
+  return { sold: toChrome(M.sold), now: toChrome(M.now), pr: toChrome(M.pr) };
 }
 
 let queryTouched = false;
@@ -1303,7 +1304,7 @@ function renderSweet() {
 // ［予約］: ヤフオクの URL をコピーして、拡張機能と同じオークファンの予約ページ（tools.aucfan.com/v2/snipe/item）を開く。
 //   上限額は画面の下の帯に出したまま（戻ってきても見える）。予約したら帯の［予約した］で記録する（押す前には記録しない）
 const LS_BIDF = "storeBidFilter", LS_BIDDONE = "storeBidDone", LS_BIDSORT = "storeBidSort";
-const SNIPE_URL = "https://tools.aucfan.com/v2/snipe/item?trflg=1";
+const SNIPE_URL = "https://tools.aucfan.com/v2/snipe/smpitem?via=spmenu";   // スマホ用の入札予約（URL を入れる画面。2026-11-22 オーナーが教えてくれた）
 let bidFilter = lsGet(LS_BIDF, "reserve"), bidSort = lsGet(LS_BIDSORT, "rank");
 function toast(msg) { const t = $("toast"); if (!t) return; t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2600); }
 function endAt(s) { const d = Date.parse(String(s || "").replace(" ", "T")); return isNaN(d) ? null : d; }
@@ -1313,16 +1314,16 @@ function dayLabel(d) { const t = new Date(), x = new Date(d); const same = (a, b
 function bidCard(i, B, done, now, tag) {
   const e = endAt(i.end), hm = e ? new Date(e).toTimeString().slice(0, 5) : "", soon = e && e - now < 3 * 3600e3;
   const did = done[i.id], at = String(B.built || "").slice(11, 16);
-  const L = { sold: toSafari(i.sold || ""), now: toSafari(i.now || "") };
+  const L = { sold: toChrome(i.sold || ""), now: toChrome(i.now || "") };
   const marks = [tag ? `<span class="tag ok">${esc(tag)}</span>` : "", i.check ? `<span class="tag tent">Sold で確かめて</span>` : "",
     i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
   return `<div class="bid${i.check ? " tent" : ""}${did ? " did" : ""}">
-    <div class="tt"><a href="${esc(toSafari(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
+    <div class="tt"><a href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
     <div class="s">${e ? `${esc(dayLabel(e))} ${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${esc(leftText(e - now))}</span>・` : ""}${esc(at)}時点 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
     <div class="max"><strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・この価格なら利益 ${yen(i.profit)}` : ""}</span></div>
-    <div class="links six"><a class="mini" href="${esc(toSafari(i.url))}" target="_blank" rel="noopener">ヤフオク</a><button class="mini" type="button" data-copy="${esc(i.url)}">URL</button>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
+    <div class="links six"><a class="mini" href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">ヤフオク</a><button class="mini" type="button" data-copy="${esc(i.url)}">URL</button>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
       <button class="mini" type="button" data-blook="${esc(i.id)}">調べる</button>
-      <a class="mini main" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
+      <a class="mini main" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
   </div>`;
 }
 function renderBids() {
