@@ -65,6 +65,11 @@ function checkCards(cards, when) {
     // 管理番号を検索語に入れない・紛らわしい兄弟の機種を外す（2026-11-22 オーナーの2つの画面）
     await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(150);
     const o1 = (await cardTexts(p)).find((c) => c.id === "o1"), oq = o1 && decodeURIComponent(((o1.links.find((l) => l[0] === "Sold") || [])[1] || "").match(/_nkw=([^&]*)/)?.[1] || "").replace(/\+/g, " ");
+    // レンズ固定のカメラはメーカー＋型だけ（2026-11-22「OLYMPUS XA1 A9M D.ZUIKO 35mm F4」で絞れなかった）
+    { await p.click('#bidChips [data-f="check"]'); await p.waitForTimeout(150);
+      const x2 = (await cardTexts(p)).find((c) => c.id === "x2"), xq = x2 && decodeURIComponent(((x2.links.find((l) => l[0] === "Sold") || [])[1] || "").match(/_nkw=([^&]*)/)?.[1] || "").replace(/\+/g, " ");
+      if (!x2 || !/^olympus xa1$/i.test(xq || "")) bad(`${lab}: XA1 の検索語がメーカー＋型だけでない: 「${xq}」`);
+      await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(150); }
     if (!o1) bad(`${lab}: o1 の出品が出ない`);
     else { if (/E66/i.test(oq)) bad(`${lab}: 検索語に管理番号 E66: 「${oq}」`); if (!/ -2\.8\b/.test(oq)) bad(`${lab}: F2.8 の別物を外す「-2.8」が無い: 「${oq}」`); }
     // 調べる → Sold を入れて登録 → 入札タブに戻り、その出品に ✓確認済みと出し直した額が出る

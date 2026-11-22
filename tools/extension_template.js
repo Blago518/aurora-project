@@ -279,6 +279,13 @@
     if (ws.length > 2 && /^[A-Za-z]{1,3}\d{1,5}$/.test(ws[ws.length - 1]) && !/^([Ff]\d+|[LlMm]39|[Mm]42|[Tt]\d)$/.test(ws[ws.length - 1]) && ws.slice(1, -1).some((w) => /\d/.test(w))) ws.pop();   // 末尾の管理番号は1つだけ。F値は引かない
     return ws.join(" ");
   }
+  function queryForTitle(title, query) {   // appraise.query_for_title と同じ
+    const t0 = String(title || "").normalize("NFKC");
+    // レンズ固定のカメラで、後ろにレンズの仕様がある物だけ（Hasselblad 500C/M は除く）
+    if (MQ && MQ.fixed.test(t0) && !/\bfor\b|用/i.test(t0) && /\d\s?mm/i.test(t0)) { const mq = modelQuery(title); if (mq) return mq; }
+    const q = query || titleToQuery(title);
+    return cleanQuery(ebaySearchQuery(q, title));
+  }
   function modelQuery(title) {
     if (!MQ) return "";   // 決まりが届いていない古いデータ（呼ぶ側が自分の決まりか titleToQuery に戻す）
     return modelWordsQ(titleToQuery(title, 20).split(" ").filter(Boolean)).join(" ");
@@ -873,7 +880,7 @@
       it.trusted = !!it.sellerId && trusted.has(it.sellerId);
       it.flags = detectFlags(it.title);
       it.query = titleToQuery(it.title);
-      it.eq = [cleanQuery(ebaySearchQuery(it.query, it.title))].concat(siblingExcludes(it.query, refs)).join(" ");  // eBay のリンク用（型と除外語・紛らわしい兄弟の機種を外す語入り）
+      it.eq = [queryForTitle(it.title, it.query)].concat(siblingExcludes(it.query, refs)).join(" ");  // eBay のリンク用（型と除外語・紛らわしい兄弟の機種を外す語入り）
       it.setParts = [];
       if (it.flags.includes("セット品") || KIT_RE.test(it.title)) {  // まとめ売り・レンズキットは中身ごとに
         for (const seg of setPartTitles(it.title)) {
@@ -1399,7 +1406,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
+    module.exports = { cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, queryForTitle, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 

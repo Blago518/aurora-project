@@ -249,6 +249,13 @@ function makeCore(DATA) {
     if (ws.length > 2 && /^[A-Za-z]{1,3}\d{1,5}$/.test(ws[ws.length - 1]) && !/^([Ff]\d+|[LlMm]39|[Mm]42|[Tt]\d)$/.test(ws[ws.length - 1]) && ws.slice(1, -1).some((w) => /\d/.test(w))) ws.pop();   // 末尾の管理番号は1つだけ。F値は引かない
     return ws.join(" ");
   }
+  function queryForTitle(title, query) {   // appraise.query_for_title と同じ
+    const t0 = String(title || "").normalize("NFKC");
+    // レンズ固定のカメラで、後ろにレンズの仕様がある物だけ（Hasselblad 500C/M は除く）
+    if (MQ && MQ.fixed.test(t0) && !/\bfor\b|用/i.test(t0) && /\d\s?mm/i.test(t0)) { const mq = modelQuery(title); if (mq) return mq; }
+    const q = query || titleToQuery(title);
+    return cleanQuery(ebaySearchQuery(q, title));
+  }
   function modelQuery(title) {
     if (!MQ) return "";   // 決まりが届いていない古いデータ（呼ぶ側が自分の決まりか titleToQuery に戻す）
     return modelWordsQ(titleToQuery(title, 20).split(" ").filter(Boolean)).join(" ");
@@ -620,6 +627,6 @@ function makeCore(DATA) {
     return band && f <= band[1] + 1e-9 ? band[2] : "";
   }
 
-  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes, modelQuery, cleanQuery, ebaySearchQuery };
+  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes, modelQuery, cleanQuery, ebaySearchQuery, queryForTitle };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { makeCore };

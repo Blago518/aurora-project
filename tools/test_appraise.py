@@ -408,10 +408,12 @@ class CleanQuery(unittest.TestCase):
              ("OM SYSTEM OM-1 Mark II", [], ["OM-1", "Mark", "II"]),
              ("TAMRON SP 90mm F2.5 52B", [], ["SP", "52B"]),
              ("Canon EF 50mm F1.2L USM 美品", [], ["EF", "L"]),
-             ("Nikon D750", [], ["D750"])]
+             ("Nikon D750", [], ["D750"]),
+             ("★特上美品★OLYMPUS XA1 A9M D.ZUIKO 35mm F4 オリンパス XA1 フラッシュ付 Point & Shoot フィルムカメラ 動作確認済 #101347", ["A9M", "D.ZUIKO", "35mm", "F4"], ["XA1"]),
+             ("CONTAX T2 チタンブラック Sonnar 38mm F2.8", ["38mm", "Sonnar"], ["T2"])]
 
     def _q(self, t):
-        return ba.clean_query(ba.ebay_search_query(ba.title_to_query(t), t))
+        return ba.query_for_title(t)
 
     def test_python(self):
         for title, gone, kept in self.CASES:
@@ -433,7 +435,7 @@ class CleanQuery(unittest.TestCase):
             js = Path(d) / "u.js"
             js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
             code = (f"const m=require({json.dumps(str(js))});const t={json.dumps([c[0] for c in self.CASES], ensure_ascii=False)};"
-                    "console.log(JSON.stringify(t.map(x=>m.cleanQuery(m.ebaySearchQuery(m.titleToQuery(x),x)))))")
+                    "console.log(JSON.stringify(t.map(x=>m.queryForTitle(x))))")
             out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
         self.assertEqual(json.loads(out), [self._q(c[0]) for c in self.CASES])
 

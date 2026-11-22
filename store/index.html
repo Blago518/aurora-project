@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.19";
+  var APP_VERSION = "2026.11.22.20";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -741,7 +741,7 @@ function queryFor(name) {
   // パソコン・毎朝のレポートと同じ作り: 今までの検索語（型・マウント・系統・外す語）から余計な語だけを引く（core.cleanQuery）。
   // 2026-11-22 オーナー「全然絞れてない」: 相場の商品名と共通の語を使う作りは「Olympus 35mm Point Shoot Film Camera」になり XA1 の Sold に mju II が並んだのでやめた
   let q = "";
-  try { q = core ? core.cleanQuery(core.ebaySearchQuery(core.titleToQuery(name), name)) : ""; } catch (e) { q = ""; }
+  try { q = core ? core.queryForTitle(name) : ""; } catch (e) { q = ""; }
   return withSiblings(withBronica(q ? q.split(" ") : modelWords(ebayQuery(name).split(/\s+/).filter(Boolean))));
 }
 // 紛らわしい兄弟の機種を外す語（-2.8・-Program など。core.siblingExcludes。2026-11-22 オーナーが自分で「-2.8」を足していた）
@@ -933,7 +933,7 @@ function restoreDraft() {
   $("name").value = d.name || ""; $("price").value = d.price || ""; $("soldUsd").value = d.usd || ""; $("soldCond").value = d.cond || "";
   if (d.usd) readSold();
   if (Array.isArray(d.shelf) && d.shelf.length && !shelfRows.length) {
-    shelfRows = d.shelf.map((x) => Object.assign({}, x, { r: lookup(x.name, x.price, { note: x.notes }) }));
+    shelfRows = d.shelf.map((x) => Object.assign({}, x, { r: lookup(x.name, x.price, soldOpt(x.name, { note: x.notes })) }));
     for (const x of shelfRows) shelfSeen.add(x.name.toLowerCase() + "|" + (x.price || ""));
     renderShelf();
   }
@@ -1085,7 +1085,7 @@ function addShelfItems(items) {
       const k = name.toLowerCase() + "|" + (t.price_tax_included_jpy || "");
       if (shelfSeen.has(k)) continue; shelfSeen.add(k);
       const row = { name, price: t.price_tax_included_jpy || null, notes: String(t.notes || "").trim() };
-      row.r = lookup(name, row.price, { note: row.notes });
+      row.r = lookup(name, row.price, soldOpt(name, { note: row.notes }));
       autoLog(name, row.price, row.r);
       added.push(row);
     }
@@ -1434,6 +1434,11 @@ function bidCard(i, B, done, now, tag) {
 // 確認済みの Sold で、その出品の上限額と今の価格での利益を出し直す（［調べる］と同じ lookup。国内送料・ストアの税抜も同じ）
 // ストアは入札欄の額が税抜（appraise.py と同じ言い方）。出し直した額で支払い額を出す
 const storeNote = (i, mx) => (/^ストア/.test(i.taxNote || "") && mx > 0 ? `（ストア: このまま入札。支払いは税込${Math.round(mx * (1 + (DATA.cfg.storeTaxPct || 10) / 100)).toLocaleString("ja-JP")}円）` : "");
+// 登録した Sold があれば、その額で計算する（調べる・入札・おすすめ・棚で同じ）
+function soldOpt(name, o) {
+  const ck = checkedFor(name); if (!ck) return o;
+  return Object.assign({}, o, { sold: { usd: ck.usd, cond: ck.cond }, rank: ck.own ? (ck.rank ?? null) : null, titleCond: !ck.own });
+}
 const signYen = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP") + "円";
 function bidRedo(i) {
   const ck = checkedFor(i.title); if (!ck || !DATA) return null;

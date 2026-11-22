@@ -1132,9 +1132,21 @@ def clean_query(q: str) -> str:
     return " ".join(ws)
 
 
+def query_for_title(title: str, query: str = "") -> str:
+    """eBay の検索語（3か所で同じ）: レンズ固定のカメラ（XA・T2・GR1 など）はメーカー＋型だけ（2026-11-22「OLYMPUS XA1 A9M D.ZUIKO 35mm F4」で絞れなかった）、
+    それ以外は今までの検索語から余計な語を引く. 拡張機能・店舗アプリの queryForTitle と同じ."""
+    import build_store  # build_store は appraise を読み込むので、ここで読む
+    if title and build_store.FIXED_BODY_RE.search(unicodedata.normalize("NFKC", title)) and not re.search(r"\bfor\b|用", title, re.I) and re.search(r"\d\s?mm", title, re.I):  # レンズの仕様が後ろにある物だけ（Hasselblad 500C/M は除く）
+        mq = build_store.model_query(title)
+        if mq:
+            return mq
+    q = query or title_to_query(title)
+    return clean_query(ebay_search_query(q, title))
+
+
 def eq_for(it) -> str:
-    """eBay のリンクの検索語: 今までの検索語（型の語・外す語入り）から余計な語を引き、紛らわしい F値を外す語を足す."""
-    return " ".join([clean_query(ebay_search_query(it.ebay_query, it.title))] + list(it.ebay_excl))
+    """eBay のリンクの検索語: query_for_title に紛らわしい F値を外す語を足す."""
+    return " ".join([query_for_title(it.title, it.ebay_query)] + list(it.ebay_excl))
 
 
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表・リサーチ（推定）"]
