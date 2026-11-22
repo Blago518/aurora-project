@@ -239,7 +239,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
   <div class="card">
     <h2 id="recTitle">おすすめ</h2>
     <div id="recList"><div class="empty">設定タブでデータを読み込んでください</div></div>
-    <p class="s">シリーズ（ミラーレス・デジタル一眼レフ・フィルム一眼レフ など）ごとにまとめて表示。並び順: 「高い物だけ」は1件の利益が大きい順、「すべて」は過去の平均利益 × 販売回数（自分の販売実績・Chatwork実績）。緑の金額＝税込でこの値段以下なら、利益2,000円以上かつ利益率8%以上（売値$99以下は4,000円以上）（国内送料0円で計算）。</p>
+    <p class="s">シリーズごとに、一眼レフを先・8mm・シネを最後に表示。シリーズの中は型の順（F2 → F3）。出す20品は「高い物だけ」は1件の利益が大きい物、「すべて」は過去の平均利益 × 販売回数の大きい物。緑の金額＝税込でこの値段以下なら、利益2,000円以上かつ利益率8%以上（売値$99以下は4,000円以上）（国内送料0円で計算）。</p>
   </div>
 </section>
 
@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.21";
+  var APP_VERSION = "2026.11.23.1";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -1173,8 +1173,11 @@ if (!REC_KINDS[recSel.kind]) recSel.kind = "mf";
 // 下の3つは tools/build_store.py の AF_STRONG_RE・MF_RE・DIGITAL_CAM_RE と同じ（Mac の分類が無い古いデータ用。test_rec_cat が一致を確かめる）
 const AF_STRONG_RE = /(?<![\d.])\d(?:\.\d)?-\d{1,2}(?:\.\d)?\s?mm\b|\bAF[-\s]?[SPID]?\b|オートフォーカス|autofocus|\bUSM\b|\bSTM\b|\bHSM\b|\bSDM\b|\bSSM\b|\bSAM\b|\bEF-?S?\s?\d|\bRF\s?\d|\bFE\s?\d|\bXF\s?\d|\bXC\s?\d|(?<![A-Za-z])M\.\s?ZUIKO|ZUIKO\s+DIGITAL|NIKKOR\s*Z\b|\bD\s?FA\b|\bDA\s?\*?\s?\d|\bFA\s?\*?\s?\d|Maxxum|Dynax|\bDC\b|\bDG\b|\bVR\b|\bVC\b|\bDi\b|\bLUMIX\s*G\b|Contax\s*(?:G\d?|645)\b|Nikon\s+Z\s?\d|Nikon\s*1\s+Nikkor|AT-X|(?:Planar|Biogon|Sonnar|Hologon)\b.*\b(?:for\s+)?G\s*$|\bHCD?\s?\d|\bSony\b|\bSEL\s?\d/i;
 const MF_RE = /\bMF\b|manual\s*focus|マニュアル|\bnon[-\s]?Ai\b|\bAi[-\s]?S?\b|\bNew\s?FD\b|\bnFD\b|\bFD\b|\bFL\b|Takumar|\bM42\b|\bMD\b|\bMC\b|Rokkor|\bOM\b|G\.?\s?Zuiko|\bL39\b|\bLTM\b|Leica\s*M\b|\bC\/?Y\b|\bAE[JG]\b|\bMM[JG]\b|Hasselblad|Mamiya|Bronica|Pentax\s*67|\b6x7\b|\bZ[FE]\.?2?\b|Loxia|Milvus|Voigtl|Helios|Jupiter|Industar/i;
-const DIGITAL_CAM_RE = /digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megapixel|万画素|デジタル|デジカメ|ミラーレス|コンデジ|coolpix|powershot|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|\bD\d{2,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV)x?\b|\bGR\s?DIGITAL\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|ILCE|\bNEX|\bK-(?:1|3|5|7|30|50|70|S\d|r|x)\b|\bKP\b|(?<!Minolta\s)α\s?\d|Sony\s*A7|\bA7[RSC]?\s?(?:I{1,3}|IV|M\d)?\b|RX100|\bGH\d|\bGX\d|(?:powershot|lumix|Canon)\s*G\d{1,2}\b|\bG\d{1,2}\s?X\b|\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b/i;
+const DIGITAL_CAM_RE = /digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megapixel|万画素|デジタル|デジカメ|ミラーレス|コンデジ|coolpix|powershot|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|\bD\d{1,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV)x?\b|\bGR\s?DIGITAL\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|ILCE|\bNEX|\bK-(?:1|3|5|7|30|50|70|S\d|r|x)\b|\bKP\b|(?<!Minolta\s)α\s?\d|Sony\s*A7|\bA7[RSC]?\s?(?:I{1,3}|IV|M\d)?\b|RX100|\bGH\d|\bGX\d|(?:powershot|lumix|Canon)\s*G\d{1,2}\b|\bG\d{1,2}\s?X\b|\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b/i;
 // 「カメラ」に入ったレンズ（焦点距離と F値がある。例: 200-500mm F5.6E）はレンズの枠へ。フィルム・デジタルの枠に出さない（2026-11-22 オーナー指摘）
+// F値を書かないレンズ（「Ai-S Nikkor 50mm 1.2」）もレンズ。35mm はレンズの系統の名前があるときだけ（tools/build_store.py の LENS_MM_RE・lens_like と同じ。2026-11-23）
+const LENS_MM_RE = /(?<![\d.])(?!35\s?mm)\d{1,4}(?:\.\d)?\s?mm\b/i;
+const LENS_MOUNT_RE = /\b(?:Ai(?:-?S)?|non-?Ai|AF-?[SD]?|New\s?FD|nFD|FD|FL|MD|MC|OM|EF|M42)\b/i;
 const LENS_LIKE_RE = /(?<![\d.])\d{1,4}(?:\.\d)?(?:-\d{1,4}(?:\.\d)?)?\s?mm\b.*\bF\s?\/?\d|(?<![\d.])\d{1,3}(?:\.\d)?-\d{1,3}(?:\.\d)?\s?mm\b|\bSEL\s?\d{3,4}/i;
 // tools/build_store.py の body_before_mm と同じ: 焦点距離より前にボディの型番（FM2・T2・GR1v・X100V・α-7 など）があればカメラ（レンズ付きで売れたボディ）
 const LENS_LINE_WORDS = new Set(["af", "af-d", "af-s", "ai", "ai-s", "batis", "biogon", "biotar", "distagon", "ef", "ef-s", "elmarit", "fd", "fe", "flektogon", "hexanon", "jena", "l", "loxia", "m42", "macro", "makro-planar", "mc", "md", "milvus", "new", "newfd", "noctilux", "nonai", "otus", "pancolar", "planar", "rf", "rokkor", "smc", "sonnar", "summicron", "summilux", "symmar", "takumar", "tessar", "vario-sonnar", "xenar", "xf", "ze", "zf", "zf.2", "zm", "zuiko"]);
@@ -1208,9 +1211,11 @@ function bodyBeforeMm(label) {
   }
   return false;
 }
-const recIsLens = (r) => (r.kind === "lens" || LENS_LIKE_RE.test(r.label)) && !bodyBeforeMm(r.label);
+const lensLike = (t) => LENS_LIKE_RE.test(t) || LENS_MM_RE.test(t) || (/(?<![\d.])35\s?mm\b/i.test(t) && (LENS_FAMILY_RE.test(t) || LENS_MOUNT_RE.test(t)));
+const recIsLens = (r) => (r.kind === "lens" || lensLike(r.label)) && !bodyBeforeMm(r.label);
 const recCat = (r) => {
-  if (r.cat && !(r.cat === "film" || r.cat === "digital") === recIsLens(r)) return r.cat;
+  // Mac の分類が「film」でも、名前がデジタル（D4s など）ならデジタルに（Mac が直るまでの古いデータ。2026-11-23）
+  if (r.cat && !(r.cat === "film" || r.cat === "digital") === recIsLens(r) && !(r.cat === "film" && DIGITAL_CAM_RE.test(r.label))) return r.cat;
   const t = r.label;
   // 古いデータの表示名は Di・M.Zuiko などを落としているので、社外メーカーのズームと 14mm 以下から始まる Olympus・Panasonic のズームは AF とみる（Mac の分類が届けば不要）
   const oldAf = /^(Tamron|Sigma|Tokina)\b.*\d+-\d+\s?mm/i.test(t) || /^(Olympus|Panasonic|OM)\b.*\b(?:[1-9]|1[0-4])-\d+\s?mm/i.test(t) || /^Nikon\b.*\b(?:6\.7-13|10-30|30-110|10-100|11-27\.5|30-74)\s?mm/i.test(t);   // Nikon 1 のズーム（2026-11-22 Film に出ていた）
@@ -1251,11 +1256,22 @@ function recSeries(label, kind) {
   if (has(/\s(645|6x6|6x7|67|RB67|RZ67|SL66)\s|hasselblad|rolleiflex|rolleicord|mamiya|bronica|中判|GA645|GW690|GSW690/i)) return "中判";
   if (has(/\sZ\s?\d{1,2}\s|\sZfc?\s|EOS\s*R\d*\s|EOS\s*M\d*\s|[\sα]7(?!\d)\s?[RSC]?\s?(I{1,3}|IV)?\s|\sA7[RSC]?\s|ILCE|NEX|X-(T|E|S|H|Pro)\d|OM-D|E-M\d|PEN\s*E-P|\sGH\d|ミラーレス/i)) return "ミラーレス";
   if (has(/coolpix|powershot|\sIXY|cyber-?shot|DSC-|RX100|\sGR\s?(I{1,3}|\d)?\s|X100|lumix|stylus\s*XZ|XZ-\d|TG-\d|\sP\d{3,4}\s|コンデジ|デジカメ/i)) return "コンパクトデジタル";
-  if (has(/\sD\d{2,4}\s|\sDf\s|EOS\s*(Kiss\s*X|\d{1,4}D|1D|5D|6D|7D)|\sK-\d|\sKP\s|(?<!Minolta\s)α\s?\d{2,3}\s|Sony\s*A\d{2,3}\s|ILCA|デジタル一眼/i)) return "デジタル一眼レフ";
+  if (has(/\sD\d{1,4}[a-z]?\s|\sDf\s|EOS\s*(Kiss\s*X|\d{1,4}D|1D|5D|6D|7D)|\sK-\d|\sKP\s|(?<!Minolta\s)α\s?\d{2,3}\s|Sony\s*A\d{2,3}\s|ILCA|デジタル一眼/i)) return "デジタル一眼レフ";
   if (has(/\s(28|35)\s?Ti\s|\sL35|\sT[23]\s|TVS|\sTix|\sXA\d?\s|mju|μ|\strip\s|hexar|rollei\s*35|\sGR1|klasse|natura|point\s*&?\s*shoot|zoom\s*\d{3}|\sTW\s|AF-1|コンパクト/i)) return "フィルムコンパクト";
   if (has(/leica|\sM\d\s|rangefinder|レンジファインダー|\sCLE?\s|bessa|leotax|nicca|canon\s*(P|7|VI|IV)\s/i)) return "レンジファインダー";
   if (has(/\d\s*mm/i)) return zoom ? "ズームレンズ" : "単焦点レンズ";   // 「カメラ」に入っているレンズ
   return "フィルム一眼レフ";
+}
+// シリーズの並び（2026-11-23 オーナー「一眼レフを優先表示」「8mm、シネマ用は1番下」）: 店でいちばん多く・売れる一眼レフを先に、珍しい物を後に
+const SERIES_ORDER = ["フィルム一眼レフ", "デジタル一眼レフ", "ミラーレス", "中判", "レンジファインダー", "フィルムコンパクト", "コンパクトデジタル",
+  "単焦点レンズ", "ズームレンズ", "テレコン", "フィルムカメラ", "デジタルカメラ", "ビデオカメラ", "8mm・シネ"];
+const seriesRank = (g) => { const i = SERIES_ORDER.indexOf(g); return i < 0 ? SERIES_ORDER.length - 1.5 : i; };
+// シリーズの中は型の名前順（F → F2 → F3 → F4、AE-1 → AE-1 Program。2026-11-23「F2の下にF3が来るように」）。
+// メーカー名と New を外して比べる。Nikon の EyeLevel（アイレベル）は F。レンズは焦点距離の順
+function familyKey(r) {
+  let t = String(r.label || "").replace(/^\S+\s+/, "").replace(/^New\s+/i, "").replace(/^Eye\s?Level\b/i, "F");
+  if (recIsLens(r)) { const m = t.match(/(\d+(?:\.\d)?)(?:-\d+(?:\.\d)?)?\s?mm/i); if (m) t = String(Math.round(parseFloat(m[1]) * 10)).padStart(6, "0") + " " + t; }
+  return t;
 }
 function renderRecs() {
   if (!DATA) return;
@@ -1264,7 +1280,9 @@ function renderRecs() {
   $("recTitle").textContent = `${brandName(recSel.brand)} の${REC_KINDS[recSel.kind]} おすすめ ${list.length}品`;
   // シリーズごとにまとめる。シリーズの順は、そのシリーズで一番上（利益が大きい）の品の順
   const groups = [];
-  list.forEach((r, i) => { const g = seriesIn(r); let G = groups.find((x) => x.name === g); if (!G) groups.push(G = { name: g, items: [] }); G.items.push([r, G.items.length]); });
+  list.forEach((r) => { const g = seriesIn(r); let G = groups.find((x) => x.name === g); if (!G) groups.push(G = { name: g, items: [] }); G.items.push(r); });
+  groups.sort((a, b) => seriesRank(a.name) - seriesRank(b.name));
+  for (const G of groups) G.items = G.items.sort((a, b) => familyKey(a).localeCompare(familyKey(b), "en", { numeric: true, sensitivity: "base" })).map((r, i) => [r, i]);
   const one = ([r, i]) => {
     // 登録した Sold があれば、その額で「以下なら買い」を出し直す（2026-11-22 オーナー「相場と状態を登録しても、おすすめの金額に反映されない」）
     const ck = checkedFor(r.label);

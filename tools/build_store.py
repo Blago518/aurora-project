@@ -95,13 +95,19 @@ MF_RE = re.compile(r"\bMF\b|manual\s*focus|マニュアル|\bnon[-\s]?Ai\b|\bAi[
                    r"Hasselblad|Mamiya|Bronica|Pentax\s*67|\b6x7\b|\bZ[FE]\.?2?\b|Loxia|Milvus|Voigtl|Helios|Jupiter|Industar", re.I)
 DIGITAL_CAM_RE = re.compile(r"digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megapixel|万画素|デジタル|デジカメ|ミラーレス|コンデジ|"
                             r"coolpix|powershot|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|"
-                            r"\bD\d{2,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|"
+                            r"\bD\d{1,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|"
                             r"X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV)x?\b|\bGR\s?DIGITAL\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|"
                             r"ILCE|\bNEX|\bK-(?:1|3|5|7|30|50|70|S\d|r|x)\b|\bKP\b|(?<!Minolta\s)α\s?\d|Sony\s*A7|\bA7[RSC]?\s?(?:I{1,3}|IV|M\d)?\b|RX100|\bGH\d|\bGX\d|(?:powershot|lumix|Canon)\s*G\d{1,2}\b|\bG\d{1,2}\s?X\b|"
                             r"\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b", re.I)
 
 
 LENS_LIKE_RE = re.compile(r"(?<![\d.])\d{1,4}(?:\.\d)?(?:-\d{1,4}(?:\.\d)?)?\s?mm\b.*\bF\s?/?\d|(?<![\d.])\d{1,3}(?:\.\d)?-\d{1,3}(?:\.\d)?\s?mm\b|\bSEL\s?\d{3,4}", re.I)  # 6.7-13mm（Nikon 1）のような小数もレンズ（2026-11-22）
+
+
+# F値を書かない・小数だけのレンズの商品名（「Ai-S Nikkor 50mm 1.2」「Ai 28mm」）もレンズ（2026-11-23 オーナー「フィルムカメラの nikon を選んでもレンズも全て表示される」）。
+# 「35mm」だけはフィルムの判（35mm フィルムカメラ）と区別できないので、レンズの系統の名前（Nikkor など）があるときだけ
+LENS_MM_RE = re.compile(r"(?<![\d.])(?!35\s?mm)\d{1,4}(?:\.\d)?\s?mm\b", re.I)
+LENS_MOUNT_RE = re.compile(r"\b(?:Ai(?:-?S)?|non-?Ai|AF-?[SD]?|New\s?FD|nFD|FD|FL|MD|MC|OM|EF|M42)\b", re.I)   # 35mm に付いたらレンズ（Ai 35mm）
 
 
 KIT_WORDS_RE = re.compile(r"\bbody\b|ボディ|\bw/|\bwith\b|\+|\bkit\b|付き?|セット|レンズキット", re.I)
@@ -156,6 +162,12 @@ def body_before_mm(title: str) -> bool:
     return False
 
 
+def lens_like(title: str) -> bool:
+    """焦点距離があるレンズの名前か（ボディの型番が前にある物は body_before_mm で別に見る）."""
+    t = unicodedata.normalize("NFKC", title)
+    return bool(LENS_LIKE_RE.search(t) or LENS_MM_RE.search(t) or (re.search(r"(?<![\d.])35\s?mm\b", t, re.I) and (LENS_FAMILY_RE.search(t) or LENS_MOUNT_RE.search(t))))
+
+
 # eBay の検索語は機種の語だけ（2026-11-22 オーナー「まだ sold や now 開くと管理番号が入ってる」「PC のヤフオク入札でも」）。
 # 店舗アプリの modelWords と同じ決まりを、拡張機能・毎朝のレポートでも使う（拡張機能は core の modelQuery。test_appraise.ModelQuery で一致を確かめる）
 SERIES_WORDS_Q = re.compile(r"coolpix|powershot|ixy|eos|kiss|lumix|finepix|cyber-?shot|pen|om-d|stylus|mju|trip|rolleiflex|rolleicord|leica|hexar|electro|program|z", re.I)
@@ -208,7 +220,7 @@ def model_query_consts() -> dict:
 
 def rec_cat(kind: str, titles: list[str]) -> str:
     """おすすめの分類: mf / af（レンズ）、film / digital（カメラ）. 同じ機種の売れた商品名の多数決."""
-    if kind != "lens" and titles and all(LENS_LIKE_RE.search(t) and not body_before_mm(t) for t in titles):
+    if kind != "lens" and titles and all(lens_like(t) and not body_before_mm(t) for t in titles):
         kind = "lens"   # 「カメラ」に入ったレンズ（ボディの型番が無く、焦点距離と F値がある）はレンズとして分ける
     if kind == "lens":
         af = sum(1 for t in titles if (AF_STRONG_RE.search(t) or re.search(r"\bSEL\s?\d", t, re.I)) and not re.search(r"\bMF\b|manual\s*focus", t, re.I))
@@ -233,7 +245,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     has_mm = any(re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm", t) for t in low)
     zoom = any(re.fullmatch(r"\d{1,3}-\d{2,3}mm", t) for t in low)   # ズームの焦点距離は F値が無くてもレンズ（AF-S DX 18-140mm）
     has_f = zoom or any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?[a-z]?", t) for t in low)  # F5.6E・F1.4G・F2.8L も F値（2026-11-22 200-500mm F5.6E がカメラに入っていた）
-    kind = "lens" if has_mm and (has_f or "lens" in low) and not CAMERA_WORDS & set(low) and not body_before_mm(title) else "camera"
+    kind = "lens" if has_mm and (has_f or "lens" in low or lens_like(title)) and not CAMERA_WORDS & set(low) and not body_before_mm(title) else "camera"
 
     def wanted(t: str) -> bool:
         if kind == "lens":
