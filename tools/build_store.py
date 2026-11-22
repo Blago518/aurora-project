@@ -106,7 +106,7 @@ LENS_LIKE_RE = re.compile(r"(?<![\d.])\d{1,4}(?:\.\d)?(?:-\d{1,4}(?:\.\d)?)?\s?m
 
 # F値を書かない・小数だけのレンズの商品名（「Ai-S Nikkor 50mm 1.2」「Ai 28mm」）もレンズ（2026-11-23 オーナー「フィルムカメラの nikon を選んでもレンズも全て表示される」）。
 # 「35mm」だけはフィルムの判（35mm フィルムカメラ）と区別できないので、レンズの系統の名前（Nikkor など）があるときだけ
-LENS_MM_RE = re.compile(r"(?<![\d.])(?!35\s?mm)\d{1,4}(?:\.\d)?\s?mm\b", re.I)
+LENS_MM_RE = re.compile(r"(?<![\d.])(?!35\s?mm)\d{1,4}(?:\.\d)?\s?mm\b|(?<![\d.])\d{1,2}(?:\.\d)?\s?cm\b", re.I)   # 古いレンズの 5cm・10.5cm も（2026-11-23）
 LENS_MOUNT_RE = re.compile(r"\b(?:Ai(?:-?S)?|non-?Ai|AF-?[SD]?|New\s?FD|nFD|FD|FL|MD|MC|OM|EF|M42)\b", re.I)   # 35mm に付いたらレンズ（Ai 35mm）
 
 
@@ -141,7 +141,7 @@ def body_before_mm(title: str) -> bool:
     if not has_for and not LENS_MAKER_RE.match(t0):
         for t in toks[1:]:
             tl = t.lower()
-            if re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm", tl) or LENS_FAMILY_RE.search(tl):
+            if re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?(?:mm|cm)", tl) or LENS_FAMILY_RE.search(tl):
                 break
             if tl in LENS_LINE_WORDS or re.fullmatch(BODY_SKIP, tl):
                 continue
@@ -151,7 +151,7 @@ def body_before_mm(title: str) -> bool:
         return False
     for t in toks[1:]:
         tl = t.lower()
-        if re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm", tl):
+        if re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?(?:mm|cm)", tl):
             return False
         if tl in LENS_LINE_WORDS or re.fullmatch(BODY_SKIP, tl):
             continue
@@ -165,6 +165,10 @@ def body_before_mm(title: str) -> bool:
 def lens_like(title: str) -> bool:
     """焦点距離があるレンズの名前か（ボディの型番が前にある物は body_before_mm で別に見る）."""
     t = unicodedata.normalize("NFKC", title)
+    toks = [w for w in t.split()[1:] if not LENS_FAMILY_RE.search(w) and w.lower() not in LENS_LINE_WORDS]   # Nikkor・Ai などは外して見る
+    # 型の語が無く、数字と F値だけの名前（「Nikon 2.5」「Nikon 105 2.5」）は単位を書かないレンズ（2026-11-23 Film の一番上に出ていた）
+    if toks and all(re.fullmatch(r"(?:f/?|1:)?\d+(?:\.\d+)?", w, re.I) for w in toks) and any("." in w or w[:1] in "fF" for w in toks):
+        return True
     return bool(LENS_LIKE_RE.search(t) or LENS_MM_RE.search(t) or (re.search(r"(?<![\d.])35\s?mm\b", t, re.I) and (LENS_FAMILY_RE.search(t) or LENS_MOUNT_RE.search(t))))
 
 
