@@ -311,7 +311,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.12";
+  var APP_VERSION = "2026.11.22.14";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -700,6 +700,46 @@ const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform 
 // 外のページは全部 Chrome で開く（2026-11-22 オーナー「Safariではなく、Chromeで開いてぜんぶ」。eBay・ヤフオクのアプリには飛ばさない）
 const toChrome = (u) => (IOS && /^https:\/\//.test(u) ? u.replace(/^https:\/\//, "googlechromes://") : u);
 // 2026-11-22: 1.5秒後に https で開き直す逃げ道はやめた（ブラウザを開く確認を待たずに eBay・ヤフオクのアプリへ飛ばしていた）。
+// eBay の検索語は「相場を当てた機種」と共通の語だけ（2026-11-22 オーナーの画面: ヤフオクの商品名そのままで「A9M」「Point」まで入り0件）。
+// 機種で検索すると、売れた数・出品の数（需給）が見える。相場が当たらないときは商品名の頭の4語
+function queryFor(name) {
+  const mine = ebayQuery(name).split(/\s+/).filter(Boolean);
+  let r = null;
+  try { r = DATA && lookup(name, null); } catch (e) { r = null; }
+  const ref = r && r.refs && r.refs.find((x) => !x.sold);
+  if (ref) {
+    const theirs = new Set(ebayQuery(ref.title).toLowerCase().split(/\s+/));
+    const common = mine.filter((w) => theirs.has(w.toLowerCase()));
+    if (common.length >= 2) return common.join(" ");
+  }
+  return modelWords(mine).join(" ");
+}
+// メーカー＋機種だけを残す（「OLYMPUS XA1 A9M D.ZUIKO 35mm F4 Point」→「OLYMPUS XA1」、「Bronica ZENZANON-PG 65mm f4」はそのまま）
+const SERIES_WORDS = /^(coolpix|powershot|ixy|eos|kiss|lumix|finepix|cyber-?shot|pen|om-d|stylus|mju|trip|rolleiflex|rolleicord|leica|hexar|electro|program|z)$/i;
+const GEN_WORDS = /^(ii|iii|iv|v|x|mark|mk\d?|n|hp|ttl|program|s|sp|qd|af|md|\d)$/i;
+function modelWords(ws) {
+  if (!ws.length) return ws;
+  const t = ws.join(" ");
+  const isLens = LENS_LIKE_RE.test(t) && !bodyBeforeMm(t);
+  const out = [ws[0]];
+  if (isLens) {
+    for (const w of ws.slice(1)) {
+      const l = w.toLowerCase();
+      if (/^\d+(-\d+)?mm$/.test(l) || /^f\/?\d/.test(l) || LENS_LINE_WORDS.has(l) || LENS_FAMILY_RE.test(l) || /^(ai-?s?|af-?[spid]?|ef(-s)?|rf|fe|xf|dx|g|l)$/.test(l)) out.push(w);
+    }
+    return out.slice(0, 6);
+  }
+  let model = false;
+  for (const w of ws.slice(1)) {
+    const l = w.toLowerCase();
+    if (!model && SERIES_WORDS.test(l)) { out.push(w); continue; }
+    if (!model && ((/[a-zα]/i.test(l) && /\d/.test(l)) || FIXED_BODY_RE.test(w))) { out.push(w); model = true; continue; }
+    if (model && GEN_WORDS.test(l)) { out.push(w); continue; }
+    if (model) break;
+  }
+  return model ? out : ws.slice(0, 3);
+}
+const ebayCatOf = (q) => (LENS_LIKE_RE.test(q) ? "3323" : DIGITAL_CAM_RE.test(q) ? "31388" : "15230");
 function linksWithCat(q, cat) {
   const L = core ? core.ebay(q) : ebayLinks(q);
   const M = cat === "0" ? L : { sold: L.sold + "&_sacat=" + cat, now: L.now + "&_sacat=" + cat, pr: L.pr + "&categoryId=" + cat };
@@ -725,7 +765,7 @@ function look() {
   const ctx = bidCtx && name === bidCtx.title ? bidCtx : null;
   const r = DATA && name.trim() ? lookup(name, price, ctx ? Object.assign({}, pick, { ship: ctx.ship, tax: /^ストア/.test(ctx.taxNote || "") }) : pick) : null;
   lastLook = r; $("sendBox").hidden = !name.trim();
-  if (!queryTouched) $("query").value = ebayQuery(name);
+  if (!queryTouched) $("query").value = queryFor(name);
   updateLinks();
   renderResult(name, price, r);
   regState();
@@ -1325,7 +1365,7 @@ function dayLabel(d) { const t = new Date(), x = new Date(d); const same = (a, b
 function bidCard(i, B, done, now, tag) {
   const e = endAt(i.end), hm = e ? new Date(e).toTimeString().slice(0, 5) : "", soon = e && e - now < 3 * 3600e3;
   const did = done[i.id], at = String(B.built || "").slice(11, 16);
-  const L = { sold: toChrome(i.sold || ""), now: toChrome(i.now || "") };
+  const L = (() => { const q = queryFor(i.title); return q ? linksWithCat(q, ebayCatOf(q)) : { sold: toChrome(i.sold || ""), now: toChrome(i.now || "") }; })();
   const marks = [tag ? `<span class="tag ok">${esc(tag)}</span>` : "", i.check ? `<span class="tag tent">Sold で確かめて</span>` : "",
     i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
   return `<div class="bid${i.check ? " tent" : ""}${did ? " did" : ""}">
