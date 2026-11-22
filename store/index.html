@@ -76,7 +76,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .rec .buy{font-size:14px;margin:4px 0 6px 30px}.rec .buy strong{font-size:17px;color:var(--good)}
 .rec .links{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:6px;margin-left:30px}
 .grp{margin:14px 0 2px;padding:6px 10px;border-radius:8px;background:var(--line);font-size:14px;color:var(--ink,inherit)}.grp:first-child{margin-top:0}
-.mini{font-size:12px;font-weight:700;border-radius:8px;padding:8px 4px;text-align:center;text-decoration:none;background:var(--soft);color:#14415a;border:0}
+.mini.off{opacity:.4;pointer-events:none}.mini{font-size:12px;font-weight:700;border-radius:8px;padding:8px 4px;text-align:center;text-decoration:none;background:var(--soft);color:#14415a;border:0}
 .mini.main{background:var(--blue);color:#fff}
 .sugg{border:1px solid var(--line);border-radius:10px;margin-top:4px;overflow:hidden;background:var(--card)}
 .sugg button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;font-size:15px;padding:11px 12px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink)}
@@ -629,6 +629,7 @@ const ebayLinks = (q) => ({
 function ebayQuery(name) {
   let t = String(name).normalize("NFKC");
   if (DATA) for (const [ja, en] of DATA.consts.brandsJa.concat(DATA.consts.wordsJa)) t = t.split(ja).join(` ${en} `);
+  t = t.replace(/(\d)\s*[・･]\s*(\d)/g, "$1.$2").replace(/(\d)\s*mm\s*\/\s*(f)/gi, "$1mm $2");   // 「f5・6」→ f5.6、「250mm/f5.6」→ 250mm f5.6（2026-11-22 実際の予約リスト）
   t = t.replace(/[^\x21-\x7Eαµ]+/g, " ").replace(/[\[\](){}<>!?#*"'`,;~^|\\]+/g, " ");
   const seen = new Set(), out = [];
   for (const w of t.split(/\s+/)) {
@@ -737,10 +738,12 @@ function queryFor(name) {
   if (ref) {
     const theirs = new Set(ebayQuery(ref.title).toLowerCase().split(/\s+/));
     const common = mine.filter((w) => theirs.has(w.toLowerCase()));
-    if (common.length >= 2) return common.join(" ");
+    if (common.length >= 2) return withBronica(common).join(" ");
   }
-  return modelWords(mine).join(" ");
+  return withBronica(modelWords(mine)).join(" ");
 }
+// 「Zenza」だけでは Bronica の出品に当たりにくい（2026-11-22 実際の予約リスト「ZENZA BRONICA MC 250mm」→「ZENZA MC …」）
+const withBronica = (ws) => (ws.some((w) => /^zenza$/i.test(w)) && !ws.some((w) => /^bronica$/i.test(w)) ? ws.flatMap((w) => (/^zenza$/i.test(w) ? [w, "Bronica"] : [w])) : ws);
 // メーカー＋機種だけを残す（「OLYMPUS XA1 A9M D.ZUIKO 35mm F4 Point」→「OLYMPUS XA1」、「Bronica ZENZANON-PG 65mm f4」はそのまま）
 const SERIES_WORDS = /^(coolpix|powershot|ixy|eos|kiss|lumix|finepix|cyber-?shot|pen|om-d|stylus|mju|trip|rolleiflex|rolleicord|leica|hexar|electro|program|z)$/i;
 const GEN_WORDS = /^(ii|iii|iv|v|x|mark|mk\d?|n|hp|ttl|program|s|sp|qd|af|md|pro|sd|photomic|as|ftn|ti|hs|\d+(\.\d+)?)$/i;   // 型の後ろに付いて値段が変わる語（New F-1・RB67 Pro SD・F2 Photomic AS・M6 TTL 0.85）
@@ -1399,17 +1402,20 @@ function bidCard(i, B, done, now, tag) {
     ck ? (ck.own ? `<span class="tag done">✓ Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} 確認済み</span>`
       : `<span class="tag same">同じ機種の Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} で計算</span>`) : i.check ? `<span class="tag tent">Sold で確かめて</span>` : "",
     i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
-  const mx = r ? r.maxBid : i.maxBid, pf = r ? r.profit : i.profit, no = r && (!(mx > 0) || (i.price && i.price > mx));
-  const maxHtml = r
-    ? `<div class="max${no ? " no" : ""}">${yn(!no)}${mx > 0 ? `<strong>${yen(mx)}</strong><span class="s">まで入札${storeNote(i, mx)}・` : `<span class="s">基準を満たす入札額なし・`}Sold で出し直し${pf != null ? `・現在価格 ${yen(i.price)} で買ったときの利益 ${signYen(pf)}${no && pf > 0 && r.minProfit ? `（基準 ${yen(r.minProfit)} に届かない）` : ""}` : ""}</span></div>`
-    : `<div class="max${i.price > i.maxBid ? " no" : ""}">${yn(!(i.price > i.maxBid))}<strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・この価格なら利益 ${yen(i.profit)}` : ""}</span></div>`;
+  // 印と言葉を同じ向きに（2026-11-22 オーキド: NO の横に「まで入札」を書かない）。Mac の候補も出し直した額も同じ形
+  const mx = r ? r.maxBid : i.maxBid, pf = r ? r.profit : i.profit, no = !(mx > 0) || (i.price && i.price > mx);
+  const tax = r ? storeNote(i, mx) : i.taxNote ? "（" + esc(i.taxNote) + "）" : "";
+  const nowTx = i.price && pf != null ? `現在 ${yen(i.price)}（利益 ${signYen(pf)}${no && pf > 0 && r && r.minProfit ? `・基準 ${yen(r.minProfit)}` : ""}）` : "";
+  const maxHtml = `<div class="max${no ? " no" : ""}">${yn(!no)}${!(mx > 0) ? `<span class="s">基準を満たす入札額なし</span>`
+    : no ? `<strong>上限 ${yen(mx)}</strong><span class="s">${tax}${nowTx}</span>`
+    : `<strong>${yen(mx)}</strong><span class="s">まで入札${tax}${nowTx ? "・" + nowTx : ""}</span>`}</div>`;
   return `<div class="bid${i.check && !(ck && ck.own) ? " tent" : ""}${did ? " did" : ""}" data-card="${esc(i.id)}">
     <div class="tt"><a href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
     <div class="s">${e ? `${esc(dayLabel(e))} ${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${esc(leftText(e - now))}</span>・` : ""}${esc(at)}時点 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
     ${maxHtml}
     <div class="links six"><a class="mini" href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">ヤフオク</a><button class="mini" type="button" data-copy="${esc(i.url)}">URL</button>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
       <button class="mini" type="button" data-blook="${esc(i.id)}">調べる</button>
-      <a class="mini main" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
+      ${no && !did ? `<span class="mini off" title="現在価格が上限を超えています">予約</span>` : `<a class="mini main" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a>`}</div>
   </div>`;
 }
 // 確認済みの Sold で、その出品の上限額と今の価格での利益を出し直す（［調べる］と同じ lookup。国内送料・ストアの税抜も同じ）
@@ -1440,7 +1446,7 @@ function renderBids() {
   const reserve = (B.reserve || []).map((r) => byId[r.id] && Object.assign({}, byId[r.id], { _tag: r.kind === "即決" ? "即決で買える" : "今日の予約" })).filter(Boolean);
   const sure = live.filter((i) => !i.check), check = live.filter((i) => i.check);
   if (bidFilter === "reserve" && !reserve.length) bidFilter = "sure";
-  $("bidChips").innerHTML = [["reserve", `今日の予約 ${reserve.filter((x) => x._tag === "今日の予約").length}`], ["sure", `確認不要 ${sure.length}`], ["check", `Sold で確かめる ${check.length}`]]
+  $("bidChips").innerHTML = [["reserve", `今日の予約 ${reserve.length}`], ["sure", `確認不要 ${sure.length}`], ["check", `Sold で確かめる ${check.length}`]]
     .map(([k, t]) => `<button class="chip" data-f="${k}" aria-pressed="${k === bidFilter}">${t}</button>`).join("");
   $("bidInfo").innerHTML = `${esc(B.built)} 作成（価格はその時点）・<button class="linkbtn" type="button" data-sort="1">${bidSort === "end" ? "Mac の一覧の順に戻す" : "終わる順に並べる"}</button>`;
   let list = bidFilter === "reserve" ? reserve : bidFilter === "check" ? check : sure;
@@ -1489,7 +1495,7 @@ $("bidInfo").onclick = (e) => { if (!e.target.dataset.sort) return; bidSort = bi
 function ctxMax(name, c) {
   if (!bidCtx || name !== bidCtx.title) return 0;
   if (!pick.sold && pick.rank == null) return bidCtx.maxBid || 0;
-  return c && c.maxBid > 0 ? c.maxBid : 0;
+  return c && c.maxBid > 0 && !(bidCtx.price > c.maxBid) ? c.maxBid : 0;   // 現在価格が上限を超えたら予約の額を出さない（勝てない予約をさせない）
 }
 $("result").addEventListener("click", (e) => { if (e.target.closest("[data-ctxsnipe]") && bidCtx) startSnipe(bidCtx, ctxMax($("name").value, lastLook && lastLook.calc)); });
 $("bidList").onclick = (e) => {
