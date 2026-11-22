@@ -32,7 +32,8 @@ def fixture() -> dict:
     import build_extension as bx
     cfg = ba.load_config(None)
     d = bx.build_data(cfg, float(cfg["fx"]["usd_jpy"]))
-    d.update(kind="aurora-store", built="test", sweet=[], recs=[], trivia=[], trusted=[], kantei=[], memoHist={})
+    d.update(kind="aurora-store", built="test", sweet=[], trivia=[], trusted=[], kantei=[], memoHist={},
+             recs=[{"label": "Canon AE-1", "brand": "Canon", "kind": "camera", "cat": "film", "usd": 400, "maxBuy": 40000, "sales": 3, "profit": 5000, "basis": "販売実績"}])
     d.pop("inbox", None)
     ref = lambda t, usd: {"title": t, "price": usd, "tier": 1, "source": "販売実績", "acc": False, "tokens": sorted(ba._tokens(t))}  # 実際のデータと同じ形
     d["refs"] = [ref("Olympus XA1", 160), ref("Canon AE-1 Program", 180), ref("Nikon D750", 600),

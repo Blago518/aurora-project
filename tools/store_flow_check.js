@@ -99,6 +99,21 @@ function checkCards(cards, when) {
     if (!/入札欄に入れる額/.test(await p.textContent("#bidBar"))) bad(`${lab}: 予約の帯が出ない`);
     await p.click('[data-bbar="done"]'); await p.waitForTimeout(250);
     if (!/入札予約/.test((await p.evaluate(() => localStorage.getItem("storeOutbox"))) || "")) bad(`${lab}: ［予約した］が記録されない`);
+    // おすすめ → 調べる → Sold を登録 → おすすめに戻り、金額が出し直される（2026-11-22 オーナー「おすすめの金額に反映されない」）
+    await p.click('nav [data-tab="rec"]'); await p.waitForTimeout(150);
+    await p.evaluate(() => { recSel.brand = "Canon"; recSel.kind = "film"; renderBrands(); renderRecs(); });
+    const recBuy = async () => (await p.$eval('#recList [data-rec="Canon AE-1"] .buy', (x) => x.textContent.replace(/\s+/g, " ")).catch(() => ""));
+    const rb0 = await recBuy();
+    if (!rb0) bad(`${lab}: おすすめに Canon AE-1 が出ない`);
+    else {
+      await p.click('#recList [data-rec="Canon AE-1"] [data-look]'); await p.waitForTimeout(250);
+      await p.fill("#soldUsd", "75"); await p.dispatchEvent("#soldUsd", "input"); await p.waitForTimeout(150);
+      await p.click("#soldReg"); await p.waitForTimeout(500);
+      const t2 = await p.$eval('nav [aria-selected="true"]', (x) => x.dataset.tab);
+      if (t2 !== "rec") bad(`${lab}: おすすめから登録しても、おすすめに戻らない（${t2}）`);
+      const rb1 = await recBuy();
+      if (rb1 === rb0 || !/Sold \$75/.test(rb1)) bad(`${lab}: おすすめの金額に登録した Sold が反映されない: ${rb0} → ${rb1}`);
+    }
     // 横にはみ出さない・使わない言葉が無い（全部のタブ）
     for (const t of ["look", "rec", "sweet", "calc", "bid", "shop", "set"]) {
       await p.click(`nav [data-tab="${t}"]`); await p.waitForTimeout(120);
