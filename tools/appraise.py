@@ -2067,7 +2067,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
             {
                 "判定": mark,
                 "枠": "安心" if it.trusted else "チャレンジ",
-                # 確認不要＝根拠が 自分の販売実績・Chatwork実績・自分で登録した相場（または手入力）。頒布会リスト・鑑定表（推定）は確認してから
+                # 確認不要＝根拠が 自分の販売実績・Chatwork実績・頒布会（講師陣が売れやすい物を選んだ。2026-11-18・22 オーナー）・自分で登録した相場。鑑定表・リサーチ（推定）は確認してから
                 "根拠の強さ": "確認不要" if (it.ebay_price_usd is not None or (it.history_matches and source_tier(it.history_matches[0]) <= SURE_TIER))
                 else "確認してから" if it.expected_price_usd is not None else "",
                 "国内送料": it.domestic_shipping_jpy,
@@ -2527,7 +2527,7 @@ eBay手数料 FVF{cfg['ebay']['final_value_fee_pct']}%+海外{cfg['ebay']['inter
 {''.join(cards['安心']) or '<p class="summary">ありません（ストアのページを開くと、フォロー中なら拡張機能が自動で安心ストアに登録します）。</p>'}
 <h2>チャレンジ枠（その他の出品者）{len(cards['チャレンジ'])}件</h2>
 {''.join(cards['チャレンジ']) or '<p class="summary">基準を満たす出品はありませんでした。</p>'}
-<h2>確認してから入札: 根拠が頒布会リスト・鑑定表（推定）の ◎○ {len(cards['確認'])}件</h2>
+<h2>確認してから入札: 根拠が鑑定表・リサーチ（推定）の ◎○ {len(cards['確認'])}件</h2>
 <p class="summary">売れた価格ではない根拠です。sold を見て、売れた商品代が相場以上なら拡張機能の［直す$］で登録 → 入札候補に上がります。</p>
 {''.join(cards['確認']) or '<p class="summary">ありません。</p>'}
 <h2>確認してから入札: 仮◎○（相場は未登録・eBay出品中の価格で仮に計算）{len(tent)}件</h2>
