@@ -138,9 +138,10 @@ function checkCards(cards, when) {
       x.labels.forEach((l, i) => { if (x.wants[i] && x.wants[i] !== x.kind) bad(`${lab}: おすすめ ${x.kind}/${x.b} に別の枠の「${l}」（${x.wants[i]}）`); });
       const gi = (g) => x.groups.indexOf(g);
       if (gi("8mm・シネ") >= 0 && gi("8mm・シネ") !== x.groups.length - 1) bad(`${lab}: おすすめ ${x.kind}/${x.b} で 8mm・シネ が最後でない: ${x.groups}`);
+      if ((x.kind === "film" || x.kind === "digital") && x.groups.some((g) => /レンズ|テレコン/.test(g))) bad(`${lab}: おすすめ ${x.kind}/${x.b} にレンズの見出し: ${x.groups}`);
       for (const slr of ["フィルム一眼レフ", "デジタル一眼レフ"]) if (gi(slr) > 0) bad(`${lab}: おすすめ ${x.kind}/${x.b} で ${slr} が先頭でない: ${x.groups}`);
       if (x.kind === "film" && x.b === "Nikon") {
-        const order = ["Nikon EyeLevel silver", "Nikon F2", "Nikon F3", "Nikon F4", "Nikon FM2", "Nikon New FM2"];
+        const order = ["Nikon EyeLevel silver", "Nikon F2", "Nikon F2 50mm F1.4", "Nikon F2 55mm", "Nikon F3", "Nikon F4", "Nikon FM2", "Nikon New FM2"];
         const pos = order.map((l) => x.labels.indexOf(l));
         if (pos.some((v, i) => v < 0 || (i && v !== pos[i - 1] + 1))) bad(`${lab}: Nikon のフィルム一眼レフが型の順に並ばない: ${x.labels}`);
       }

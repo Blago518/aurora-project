@@ -80,7 +80,8 @@ console.log(JSON.stringify(cases.map(([k, t]) => {
                  # 「w/」を書かずにボディとレンズ名が並ぶ形（2026-11-22 オーキド指摘）
                  "Nikon FM2 Nikkor 50mm F1.4", "Olympus OM-2N Zuiko 50mm F1.8", "Bronica SQ-A Zenzanon 80mm F2.8",
                  "Mamiya C330 Sekor 80mm F2.8", "Mamiya M645 1000S Sekor C 80mm F2.8", "Pentax 67 II SMC 105mm F2.4",
-                 "Minolta CLE M-Rokkor 40mm F2"],
+                 "Minolta CLE M-Rokkor 40mm F2", "Nikon F2 Photomic 55mm nonAi", "Nikon F2 Ai 50mm F1.4", "Nikon S2 Nikkor-H 5cm F2",
+                 "Nikon L35AD ISO1000", "Canon 7", "Mamiya 6"],
         "digital": ["Fujifilm X100V 23mm F2", "Nikon D750 24.3MP Body", "Sony α7 III Body", "Ricoh GR III 18.3mm F2.8",
                     "Canon EOS 5D Mark II 24-105mm F4", "Canon PowerShot G7 X Mark II", "Leica M10 Body", "Nikon Z 6II Body",
                     "Canon IXY 310", "Olympus OM-D E-M5 Mark II", "Nikon Df 50mm F1.8G", "Ricoh GR IIIx",
@@ -92,7 +93,9 @@ console.log(JSON.stringify(cases.map(([k, t]) => {
                "Hasselblad Planar 80mm F2.8 CF",
                # F値を書かないレンズ（2026-11-23 オーナー「フィルムカメラの nikon を選んでもレンズも全て表示される」）
                "Nikon Ai-S Nikkor 50mm 1.2", "Nikon Ai 28mm", "Nikon Nikkor-S Auto 50mm 1.4", "Nikon Ai Nikkor 35mm 2",
-               "Canon New FD 135mm 2.5"],
+               "Canon New FD 135mm 2.5",
+               # 単位の無い・cm で書いた古いレンズ（2026-11-23 Film の一番上に「Nikon 2.5」）
+               "Nikon Nikkor-P 10.5cm f2.5", "Nikon Nikkor-H 5cm f2", "Nikon Nikkor 105 2.5", "Leica Elmar 5cm F3.5"],
         "af": ["Nikon 6.7-13mm F3.5-5.6", "Nikon 1 NIKKOR VR 6.7-13mm f/3.5-5.6", "Nikon 1 NIKKOR 10-30mm F3.5-5.6",  # 2026-11-22 Film に出ていた
                "Nikon AF-S 200-500mm F5.6E ED VR", "Nikon AF-S DX 18-140mm", "Canon EF 70-200mm F2.8L IS II",
                "Sony FE 24-70mm F2.8 GM", "Contax Planar 45mm F2 G", "Nikon Z 24-70mm F4 S", "Sony SEL1635Z",

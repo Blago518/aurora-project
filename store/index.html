@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.23.1";
+  var APP_VERSION = "2026.11.23.2";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -1176,7 +1176,7 @@ const MF_RE = /\bMF\b|manual\s*focus|マニュアル|\bnon[-\s]?Ai\b|\bAi[-\s]?S
 const DIGITAL_CAM_RE = /digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megapixel|万画素|デジタル|デジカメ|ミラーレス|コンデジ|coolpix|powershot|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|\bD\d{1,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV)x?\b|\bGR\s?DIGITAL\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|ILCE|\bNEX|\bK-(?:1|3|5|7|30|50|70|S\d|r|x)\b|\bKP\b|(?<!Minolta\s)α\s?\d|Sony\s*A7|\bA7[RSC]?\s?(?:I{1,3}|IV|M\d)?\b|RX100|\bGH\d|\bGX\d|(?:powershot|lumix|Canon)\s*G\d{1,2}\b|\bG\d{1,2}\s?X\b|\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b/i;
 // 「カメラ」に入ったレンズ（焦点距離と F値がある。例: 200-500mm F5.6E）はレンズの枠へ。フィルム・デジタルの枠に出さない（2026-11-22 オーナー指摘）
 // F値を書かないレンズ（「Ai-S Nikkor 50mm 1.2」）もレンズ。35mm はレンズの系統の名前があるときだけ（tools/build_store.py の LENS_MM_RE・lens_like と同じ。2026-11-23）
-const LENS_MM_RE = /(?<![\d.])(?!35\s?mm)\d{1,4}(?:\.\d)?\s?mm\b/i;
+const LENS_MM_RE = /(?<![\d.])(?!35\s?mm)\d{1,4}(?:\.\d)?\s?mm\b|(?<![\d.])\d{1,2}(?:\.\d)?\s?cm\b/i;
 const LENS_MOUNT_RE = /\b(?:Ai(?:-?S)?|non-?Ai|AF-?[SD]?|New\s?FD|nFD|FD|FL|MD|MC|OM|EF|M42)\b/i;
 const LENS_LIKE_RE = /(?<![\d.])\d{1,4}(?:\.\d)?(?:-\d{1,4}(?:\.\d)?)?\s?mm\b.*\bF\s?\/?\d|(?<![\d.])\d{1,3}(?:\.\d)?-\d{1,3}(?:\.\d)?\s?mm\b|\bSEL\s?\d{3,4}/i;
 // tools/build_store.py の body_before_mm と同じ: 焦点距離より前にボディの型番（FM2・T2・GR1v・X100V・α-7 など）があればカメラ（レンズ付きで売れたボディ）
@@ -1196,7 +1196,7 @@ function bodyBeforeMm(label) {
   if (!hasFor && !LENS_MAKER_RE.test(t0)) {
     for (const t of toks) {
       const tl = t.toLowerCase();
-      if (/^\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm$/.test(tl) || LENS_FAMILY_RE.test(tl)) break;
+      if (/^\d+(?:\.\d)?(-\d+(?:\.\d)?)?(?:mm|cm)$/.test(tl) || LENS_FAMILY_RE.test(tl)) break;
       if (LENS_LINE_WORDS.has(tl) || BODY_SKIP_RE.test(tl)) continue;
       if (/[a-zα]/.test(tl) && /\d/.test(tl)) return true;
     }
@@ -1204,14 +1204,15 @@ function bodyBeforeMm(label) {
   if (LENS_FAMILY_RE.test(t0) || hasFor) return false;
   for (const t of toks) {
     const tl = t.toLowerCase();
-    if (/^\d+(?:\.\d)?(-\d+(?:\.\d)?)?mm$/.test(tl)) return false;
+    if (/^\d+(?:\.\d)?(-\d+(?:\.\d)?)?(?:mm|cm)$/.test(tl)) return false;
     if (LENS_LINE_WORDS.has(tl) || BODY_SKIP_RE.test(tl)) continue;
     if (/[a-zα]/.test(tl) && /\d/.test(tl)) return true;
     if (SERIES_BODY_WORDS.has(tl)) return true;
   }
   return false;
 }
-const lensLike = (t) => LENS_LIKE_RE.test(t) || LENS_MM_RE.test(t) || (/(?<![\d.])35\s?mm\b/i.test(t) && (LENS_FAMILY_RE.test(t) || LENS_MOUNT_RE.test(t)));
+const bareLens = (t) => { const w = String(t).trim().split(/\s+/).slice(1).filter((x) => !LENS_FAMILY_RE.test(x) && !LENS_LINE_WORDS.has(x.toLowerCase())); return w.length > 0 && w.every((x) => /^(?:f\/?|1:)?\d+(?:\.\d+)?$/i.test(x)) && w.some((x) => x.includes(".") || /^f/i.test(x)); };   // 「Nikon 2.5」（build_store.lens_like と同じ）
+const lensLike = (t) => bareLens(t) || LENS_LIKE_RE.test(t) || LENS_MM_RE.test(t) || (/(?<![\d.])35\s?mm\b/i.test(t) && (LENS_FAMILY_RE.test(t) || LENS_MOUNT_RE.test(t)));
 const recIsLens = (r) => (r.kind === "lens" || lensLike(r.label)) && !bodyBeforeMm(r.label);
 const recCat = (r) => {
   // Mac の分類が「film」でも、名前がデジタル（D4s など）ならデジタルに（Mac が直るまでの古いデータ。2026-11-23）
@@ -1240,7 +1241,10 @@ function renderBrands() {
 // 種類の枠と食い違う見出しを出さない（Film の中に「デジタル一眼レフ」など。2026-11-22）
 const DIGITAL_SERIES = new Set(["ミラーレス", "コンパクトデジタル", "デジタル一眼レフ", "ビデオカメラ"]);
 function seriesIn(r) {
-  const c = recCat(r), g = recSeries(r.label, recIsLens(r) ? "lens" : r.kind);
+  const c = recCat(r);
+  let g = recSeries(r.label, recIsLens(r) ? "lens" : r.kind);
+  // ボディ＋レンズで売れたカメラ（「Nikon F2 Ai 50mm F1.4」）は、焦点距離を外してボディのシリーズに（Film の中に「単焦点レンズ」を出さない。2026-11-23）
+  if ((c === "film" || c === "digital") && /レンズ|テレコン/.test(g)) g = recSeries(String(r.label).replace(/\s\S*\d(?:mm|cm)\b.*$/i, ""), "camera");
   if (c === "film" && DIGITAL_SERIES.has(g)) return "フィルムカメラ";
   if (c === "digital" && !DIGITAL_SERIES.has(g)) return "デジタルカメラ";
   if ((c === "mf" || c === "af") && !/レンズ|テレコン/.test(g)) return "単焦点レンズ";
@@ -1258,7 +1262,7 @@ function recSeries(label, kind) {
   if (has(/coolpix|powershot|\sIXY|cyber-?shot|DSC-|RX100|\sGR\s?(I{1,3}|\d)?\s|X100|lumix|stylus\s*XZ|XZ-\d|TG-\d|\sP\d{3,4}\s|コンデジ|デジカメ/i)) return "コンパクトデジタル";
   if (has(/\sD\d{1,4}[a-z]?\s|\sDf\s|EOS\s*(Kiss\s*X|\d{1,4}D|1D|5D|6D|7D)|\sK-\d|\sKP\s|(?<!Minolta\s)α\s?\d{2,3}\s|Sony\s*A\d{2,3}\s|ILCA|デジタル一眼/i)) return "デジタル一眼レフ";
   if (has(/\s(28|35)\s?Ti\s|\sL35|\sT[23]\s|TVS|\sTix|\sXA\d?\s|mju|μ|\strip\s|hexar|rollei\s*35|\sGR1|klasse|natura|point\s*&?\s*shoot|zoom\s*\d{3}|\sTW\s|AF-1|コンパクト/i)) return "フィルムコンパクト";
-  if (has(/leica|\sM\d\s|rangefinder|レンジファインダー|\sCLE?\s|bessa|leotax|nicca|canon\s*(P|7|VI|IV)\s/i)) return "レンジファインダー";
+  if (has(/leica|\sM\d\s|Nikon\s+S[234]?\s|Nikon\s+SP\s|rangefinder|レンジファインダー|\sCLE?\s|bessa|leotax|nicca|canon\s*(P|7|VI|IV)\s/i)) return "レンジファインダー";
   if (has(/\d\s*mm/i)) return zoom ? "ズームレンズ" : "単焦点レンズ";   // 「カメラ」に入っているレンズ
   return "フィルム一眼レフ";
 }

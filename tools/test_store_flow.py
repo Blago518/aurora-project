@@ -48,6 +48,12 @@ NIKON_RECS = [
     _rec("Nikon D750", "camera", "digital", "digital", 8000),
     _rec("Nikon Z 6II", "camera", "digital", "digital", 9500),
     _rec("Nikon 35Ti", "camera", "film", "film", 12000),
+    # 2026-11-23 2枚目の画面写真: 単位の無いレンズが一眼レフの一番上、ボディ＋レンズが「単焦点レンズ」の見出しに
+    _rec("Nikon 2.5", "camera", "film", "mf", 329),
+    _rec("Nikon 10.5cm F2.5", "camera", "film", "mf", 500),
+    _rec("Nikon F2 55mm", "camera", "film", "film", 901),
+    _rec("Nikon F2 50mm F1.4", "camera", "film", "film", -134),
+    _rec("Nikon L35AD ISO1000", "camera", "film", "film", -1416),
 ]
 
 
