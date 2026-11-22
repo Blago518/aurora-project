@@ -326,6 +326,40 @@ class Variants(unittest.TestCase):
         self.assertEqual(json.loads(out), py)
 
 
+class SiblingExcludes(unittest.TestCase):
+    """紛らわしい兄弟の機種を eBay の検索から外す語（2026-11-22 オーナーが「Olympus ZUIKO AUTO-W 24mm F2」に自分で「-2.8」を足した）."""
+    REFS = ["Olympus Zuiko 24mm F2.8", "Olympus Zuiko 24mm F2", "Canon AE-1 Program", "Canon AE-1", "Nikon F3 HP", "Nikon F3",
+            "Canon EOS 5D Mark II", "Canon EOS 5D Mark III", "Nikon Ai-S Nikkor 50mm F1.2", "Nikon Ai-S Nikkor 50mm F1.8", "Nikon F2 Photomic"]
+    CASES = [("OLYMPUS オリンパス ZUIKO AUTO-W 24mm/F2 OMマウント 単焦点 広角レンズ 大口径 前後キャップ/レンズフード付 E66", ["-2.8"]),
+             ("Olympus ZUIKO 24mm F2.8", []),          # 整数の「-2」は広すぎるので足さない
+             ("Canon AE-1 ボディ", ["-Program"]), ("Canon AE-1 Program", []),
+             ("ニコン Nikon F3 ボディ", ["-HP"]),       # ボディの F3 は F値ではなく型番
+             ("Canon EOS 5D ボディ", ["-II", "-III"]),
+             ("Nikon Ai-S Nikkor 50mm F1.4", ["-1.2", "-1.8"]),
+             ("Olympus XA1", []), ("Nikon Nikkor 35mm F2", [])]
+
+    def test_python(self):
+        rows = [{"title": t} for t in self.REFS]
+        for title, want in self.CASES:
+            self.assertEqual(ba.sibling_excludes(ba.title_to_query(title), rows), want, title)
+
+    def test_js_same(self):
+        import shutil, subprocess
+        import build_extension as bu
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bu.build_data(CFG, 150.0)
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"const m=require({json.dumps(str(js))});const r={json.dumps([{'title': t} for t in self.REFS], ensure_ascii=False)};"
+                    f"const t={json.dumps([c[0] for c in self.CASES], ensure_ascii=False)};"
+                    "console.log(JSON.stringify(t.map(x=>m.siblingExcludes(m.titleToQuery(x),r))))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), [c[1] for c in self.CASES])
+
+
 class NoScraping(unittest.TestCase):
     """eBay の規約順守: eBay のページを自動取得するコードが無いこと."""
 

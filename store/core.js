@@ -170,6 +170,32 @@ function makeCore(DATA) {
     }
     return [...new Set(words)].join(" ");
   }
+  // 紛らわしい兄弟の機種を eBay の検索から外す語（2026-11-22 オーナーが「Olympus ZUIKO AUTO-W 24mm F2」に自分で「-2.8」を足した）。
+  // 相場データに、同じメーカー・同じ焦点距離で F値だけ違うレンズがあれば「-2.8」、同じ型に世代の語が付いたボディがあれば「-Program」「-II」。
+  // 表示・リンクだけ（照合・判定には使わない）。Python の appraise.sibling_excludes と同じ
+  const SIBLING_WORDS = new Set(["program", "hp", "photomic", "ttl", "ii", "iii", "iv", "pro", "sd", "quartz", "date", "ql17", "motor"]);
+  const MM_RE = /^\d+(?:-\d+)?mm$/, FNUM_RE = /^f\d+(?:\.\d+)?$/, MODEL_RE = /^(?=.*\d)(?=.*[a-zα]).+$/;
+  function siblingExcludes(query, refs, limit = 3) {
+    const qt = tokensOf(query), brands = [...qt].filter((t) => BRAND_SET.has(t));
+    if (!brands.length) return [];
+    const mm = [...qt].filter((t) => MM_RE.test(t)).sort().join("|"), qf = [...qt].filter((t) => FNUM_RE.test(t));
+    const models = [...qt].filter((t) => MODEL_RE.test(t) && !MM_RE.test(t) && !(mm && FNUM_RE.test(t)));   // ボディの F3 は型番
+    const out = [];
+    for (const r of refs || []) {
+      const rt = r.tset || (r.tset = new Set(r.tokens || tokensOf(r.title || "")));
+      if (!brands.some((b) => rt.has(b))) continue;
+      if (mm) {
+        if ([...rt].filter((t) => MM_RE.test(t)).sort().join("|") !== mm || !qf.length) continue;
+        const rf = [...rt].filter((t) => FNUM_RE.test(t));
+        if (!rf.length || rf.some((f) => qt.has(f))) continue;
+        for (const f of rf.sort()) if (f.includes(".")) out.push(f.slice(1));   // 「-2」のような整数は広すぎるので外さない
+      } else {
+        if (!models.length || !models.every((m) => rt.has(m)) || [...rt].some((t) => MM_RE.test(t))) continue;
+        for (const w of [...rt].sort()) if (SIBLING_WORDS.has(w) && !qt.has(w)) out.push(w);
+      }
+    }
+    return [...new Set(out)].slice(0, limit).map((w) => "-" + (/^[a-z]/.test(w) && w.length <= 3 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)));
+  }
   const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
 
   function detectFlags(title) {
@@ -537,6 +563,6 @@ function makeCore(DATA) {
     return band && f <= band[1] + 1e-9 ? band[2] : "";
   }
 
-  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE, sweetSpot };
+  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { makeCore };

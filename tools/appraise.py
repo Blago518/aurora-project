@@ -127,6 +127,7 @@ class Item:
     fetch_note: str = ""
     flags: list[str] = field(default_factory=list)
     history_matches: list[dict] = field(default_factory=list)
+    ebay_excl: list[str] = field(default_factory=list)  # 紛らわしい兄弟の機種を外す語（sibling_excludes）
     expected_price_usd: float | None = None
     price_source: str = ""
     calc: dict = field(default_factory=dict)
@@ -1086,6 +1087,42 @@ def ebay_search_query(query: str, title: str = "") -> str:
     return " ".join(dict.fromkeys(words))
 
 
+_BRAND_LOWER = {b.lower() for b in BRANDS_EN.values()}
+# 紛らわしい兄弟の機種を eBay の検索から外す語（拡張機能の siblingExcludes と同じ。表示・リンクだけ）
+SIBLING_WORDS = {"program", "hp", "photomic", "ttl", "ii", "iii", "iv", "pro", "sd", "quartz", "date", "ql17", "motor"}
+_MM_RE, _FNUM_RE = re.compile(r"\d+(?:-\d+)?mm"), re.compile(r"f\d+(?:\.\d+)?")
+
+
+def sibling_excludes(query: str, rows: list[dict], limit: int = 3) -> list[str]:
+    """2026-11-22 オーナーが「Olympus ZUIKO AUTO-W 24mm F2」に自分で「-2.8」を足した。相場データに、同じメーカー・同じ焦点距離で
+    F値だけ違うレンズがあれば「-2.8」、同じ型に世代の語（Program・HP・II など）が付いたボディがあれば「-Program」「-II」を返す."""
+    qt = _tokens(query)
+    brands = {t for t in qt if t in _BRAND_LOWER}
+    if not brands:
+        return []
+    mm = "|".join(sorted(t for t in qt if _MM_RE.fullmatch(t)))
+    qf = [t for t in qt if _FNUM_RE.fullmatch(t)]
+    models = [t for t in qt if re.search(r"\d", t) and re.search(r"[a-zα]", t) and not _MM_RE.fullmatch(t) and not (mm and _FNUM_RE.fullmatch(t))]  # ボディの F3 は型番
+    out: list[str] = []
+    for r in rows:
+        rt = r.get("_tokens") or _tokens(r.get("ebay_query") or r.get("title") or "")
+        if not (rt & brands):
+            continue
+        if mm:
+            if "|".join(sorted(t for t in rt if _MM_RE.fullmatch(t))) != mm or not qf:
+                continue
+            rf = [t for t in rt if _FNUM_RE.fullmatch(t)]
+            if not rf or any(f in qt for f in rf):
+                continue
+            out += [f[1:] for f in sorted(rf) if "." in f]  # 「-2」のような整数は広すぎるので外さない
+        else:
+            if not models or not all(m in rt for m in models) or any(_MM_RE.fullmatch(t) for t in rt):
+                continue
+            out += [w for w in sorted(rt) if w in SIBLING_WORDS and w not in qt]
+    words = list(dict.fromkeys(out))[:limit]
+    return ["-" + (w.upper() if w[:1].isalpha() and len(w) <= 3 else w[:1].upper() + w[1:]) for w in words]
+
+
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表・リサーチ（推定）"]
 
 
@@ -2029,6 +2066,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
                 item.calc = calculate(item, cfg, fx)
                 continue
 
+        item.ebay_excl = sibling_excludes(item.ebay_query, sales)
         # 照合はタイトル全体（検索語は7語に絞っているため）
         item.history_matches = match_prefer_memo(f"{item.ebay_query} {item.title}", memo, others)
         if not item.history_matches and kantei:
@@ -2062,7 +2100,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
     for it in items:
         mark, reason = judge(it)
         c = it.calc
-        links = ebay_links(ebay_search_query(it.ebay_query, it.title)) if it.ebay_query else {}
+        links = ebay_links(" ".join([ebay_search_query(it.ebay_query, it.title)] + it.ebay_excl)) if it.ebay_query else {}
         rows.append(
             {
                 "判定": mark,
@@ -2089,7 +2127,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "即決価格": it.buy_now_jpy,
                 "入札数": it.bids,
                 "終了": it.end_time,
-                "eBay検索語": ebay_search_query(it.ebay_query, it.title) if it.ebay_query else "",
+                "eBay検索語": " ".join([ebay_search_query(it.ebay_query, it.title)] + it.ebay_excl) if it.ebay_query else "",
                 "eBay販売済みURL": links.get("sold", ""),
                 "eBay出品中URL": links.get("active", ""),
                 "eBayProductResearchURL": links.get("research", ""),

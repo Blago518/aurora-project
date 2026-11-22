@@ -738,10 +738,12 @@ function queryFor(name) {
   if (ref) {
     const theirs = new Set(ebayQuery(ref.title).toLowerCase().split(/\s+/));
     const common = mine.filter((w) => theirs.has(w.toLowerCase()));
-    if (common.length >= 2) return withBronica(common).join(" ");
+    if (common.length >= 2) return withSiblings(withBronica(common));
   }
-  return withBronica(modelWords(mine)).join(" ");
+  return withSiblings(withBronica(modelWords(mine)));
 }
+// 紛らわしい兄弟の機種を外す語（-2.8・-Program など。core.siblingExcludes。2026-11-22 オーナーが自分で「-2.8」を足していた）
+const withSiblings = (ws) => { const q = ws.join(" "); let ex = []; try { ex = DATA && core.siblingExcludes ? core.siblingExcludes(q, DATA.refs) : []; } catch (e) { ex = []; } return ex.length ? q + " " + ex.join(" ") : q; };
 // 「Zenza」だけでは Bronica の出品に当たりにくい（2026-11-22 実際の予約リスト「ZENZA BRONICA MC 250mm」→「ZENZA MC …」）
 const withBronica = (ws) => (ws.some((w) => /^zenza$/i.test(w)) && !ws.some((w) => /^bronica$/i.test(w)) ? ws.flatMap((w) => (/^zenza$/i.test(w) ? [w, "Bronica"] : [w])) : ws);
 // メーカー＋機種だけを残す（「OLYMPUS XA1 A9M D.ZUIKO 35mm F4 Point」→「OLYMPUS XA1」、「Bronica ZENZANON-PG 65mm f4」はそのまま）
