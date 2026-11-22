@@ -1,0 +1,240 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+.h1c{text-align:left;color:#ff0010;font-size:1.5em;font-weight:bold;line-height:1.5em;padding:20px;max-width:100%;border:1px solid black;border-radius:0.5em;-moz-border-radius:0.5em;-webkit-border-radius:0.5em;-o-border-radius:0.5em;-ms-border-radius:0.5em;}
+.h2c{font-size:1.3em;padding:5px 15px;background-color:#FFE566;margin-left:10px;margin-top:30px;border-left:8px solid #FF0000;border-bottom:1px solid #FFCC33;}
+.h3c{font-size:1.2em;border-left:10px solid black;margin-left:20px;margin-top:20px;padding-left:10px;}
+.hello{margin-left:20px;color:#ff6a35;}
+.sm{color:#ff6a35;}
+.desc_a{color:red;}
+.desc{color:black;}
+.cond{color:red;font-weight:bold;font-size:1.3em;}
+.bd{color:#002cfd;}
+.nt{margin-top:40px;margin-left:40px;}
+.at{color:red;font-size:1.3em;font-weight:bold;}
+.tp{margin-top:20px;}
+.d{margin-top:20px;margin-left:40px;}
+.d2{margin-top:10px;margin-left:40px;}
+.d3{margin-left:40px;}
+#main{max-width:100%;border:1px solid;border-radius:0.5em;-moz-border-radius:0.5em;-webkit-border-radius:0.5em;-o-border-radius:0.5em;-ms-border-radius:0.5em;}
+img{max-width:100%;}
+.optics-beautiful{display:none;color:#ff6a35;}
+.optics-check[data-fog*="no fog"][data-fungus*="no fungus"][data-balsam*="no balsam"][data-scratch*="no scratch"] .optics-beautiful,
+.optics-check[data-fog*="no haze"][data-fungus*="no fungus"][data-balsam*="no balsam"][data-scratch*="no scratch"] .optics-beautiful,
+.optics-check[data-fog*="no fog"][data-fungus*="no fungus"][data-balsam*="no separation"][data-scratch*="no scratch"] .optics-beautiful,
+.optics-check[data-fog*="no haze"][data-fungus*="no fungus"][data-balsam*="no separation"][data-scratch*="no scratch"] .optics-beautiful{display:inline;}
+.placeholder-hide[data-placeholder*="※"]{display:none;}
+@media screen and (min-width:768px){
+#main{margin:0 auto;max-width:100%;}
+}
+</style>
+
+<h1 class="h1c">%title% %sku%</h1>
+<h2 class="h2c">Description</h2>
+<h3 class="h3c">Total Condition;</h3>
+<div class="d2 cond">
+<!--TMPL_IF name=is_unused-->Unused<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_unused-->Almost Unused<!--/TMPL_IF-->
+<!--TMPL_IF name=is_top_mint-->Top MINT<!--/TMPL_IF-->
+<!--TMPL_IF name=is_mint-->MINT<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_mint-->Almost MINT<!--/TMPL_IF-->
+<!--TMPL_IF name=is_near_mint-->Near MINT<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc5-->Excellent+++++<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc4-->Excellent++++<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc3-->Excellent+++<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc-->Excellent<!--/TMPL_IF-->
+<!--TMPL_IF name=is_as_is-->As-Is<!--/TMPL_IF-->
+<!--TMPL_IF name=is_for_parts-->For Parts<!--/TMPL_IF-->
+<!--TMPL_IF name=is_brand_new-->Brand New<!--/TMPL_IF-->
+</div>
+
+<!--TMPL_IF name=ext_condition-->
+<div class="d2 sm placeholder-hide" data-placeholder="%ext_condition%">%ext_condition%</div>
+<!--/TMPL_IF-->
+
+<!--TMPL_IF name=sn-->
+<h3 class="h3c">Serial Number;</h3>
+<div class="d2 desc">%sn% </div>
+<!--/TMPL_IF-->
+
+<h3 class="h3c">Appearance;</h3>
+<div class="d2 sm">
+<!--TMPL_IF name=is_unused-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_unused-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_top_mint-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_mint-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_mint-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_near_mint-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc5-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc4-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc3-->Appearance is clean.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc-->Appearance is clean.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_as_is-->Appearance is clean.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_for_parts-->Appearance is clean.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_brand_new-->Appearance is beautiful.<!--/TMPL_IF-->
+</div>
+
+<div class="d3 desc">
+<!--TMPL_IF name=hyoka_ap-->%hyoka_ap%<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_unused--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_unused--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_top_mint--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_mint-->It shows minimal signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_mint-->tiny scuffs from normal use.<br>It shows minimal signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_near_mint-->tiny scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc5-->tiny scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc4-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc3-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_as_is-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_for_parts-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_brand_new--><!--/TMPL_IF-->
+*Please check photos.
+</div>
+
+<!--TMPL_IF name=view_optics-->
+<h3 class="h3c">Optics;</h3>
+
+<!--TMPL_IF name=view_optics_finder-->
+<div class="d2 desc optics-check" data-fog="%hyoka_op_f_fog%" data-fungus="%hyoka_op_f_fungus%" data-balsam="%hyoka_op_f_balsam%" data-scratch="%hyoka_op_f_scratch%">
+-Finder: <span class="placeholder-hide" data-placeholder="%finder1_name%">%finder1_name%</span><span class="optics-beautiful"> Beautiful condition.</span>
+</div>
+<div class="d3 desc">
+%hyoka_op_f_fog%
+<br>%hyoka_op_f_fungus%
+<br>%hyoka_op_f_balsam%
+<br>%hyoka_op_f_scratch%
+<br>%hyoka_op_f_dust%
+<!--TMPL_IF name=hyoka_op_f_yellow--><br>%hyoka_op_f_yellow%<!--/TMPL_IF-->
+<!--TMPL_IF name=hyoka_op_f_dirt--><br>%hyoka_op_f_dirt%<!--/TMPL_IF-->
+<!--TMPL_IF name=ext_finder_sort-->
+<br>%hyoka_op_f_affect_view%
+</div>
+<!--TMPL_IF name=ext_finder-->
+<span class="placeholder-hide" data-placeholder="%ext_finder%">%ext_finder%</span>
+<!--/TMPL_IF-->
+<!--TMPL_ELSE-->
+<!--TMPL_IF name=ext_finder-->
+<br><span class="placeholder-hide" data-placeholder="%ext_finder%">%ext_finder%</span>
+<!--/TMPL_IF-->
+<br>%hyoka_op_f_affect_view%
+</div>
+<!--/TMPL_IF-->
+<!--/TMPL_IF-->
+
+<!--TMPL_IF name=view_optics_lens-->
+<div class="d2 desc optics-check" data-fog="%hyoka_op_fog%" data-fungus="%hyoka_op_fungus%" data-balsam="%hyoka_op_balsam%" data-scratch="%hyoka_op_scratch%">
+-Lens: <span class="placeholder-hide" data-placeholder="%lens1_name%">%lens1_name%</span><span class="optics-beautiful"> Beautiful condition.</span>
+</div>
+<div class="d3 desc">
+%hyoka_op_fog%
+<br>%hyoka_op_fungus%
+<br>%hyoka_op_balsam%
+<br>%hyoka_op_scratch%
+<br>%hyoka_op_dust%
+<!--TMPL_IF name=hyoka_op_yellow--><br>%hyoka_op_yellow%<!--/TMPL_IF-->
+<!--TMPL_IF name=hyoka_op_dirt--><br>%hyoka_op_dirt%<!--/TMPL_IF-->
+<!--TMPL_IF name=ext_lens_sort-->
+<br>%hyoka_op_affect_shoot%
+</div>
+<!--TMPL_IF name=ext_lens-->
+<span class="placeholder-hide" data-placeholder="%ext_lens%">%ext_lens%</span>
+<!--/TMPL_IF-->
+<!--TMPL_ELSE-->
+<!--TMPL_IF name=ext_lens-->
+<br><span class="placeholder-hide" data-placeholder="%ext_lens%">%ext_lens%</span>
+<!--/TMPL_IF-->
+<br>%hyoka_op_affect_shoot%
+</div>
+<!--/TMPL_IF-->
+<!--/TMPL_IF-->
+<!--/TMPL_IF-->
+
+<h3 class="h3c">Functional;</h3>
+<div class="d2 sm">
+<!--TMPL_IF name=is_unused-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_unused-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_top_mint-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_mint-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_mint-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_near_mint-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc5-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc4--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc3--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_as_is--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_for_parts--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_brand_new-->It works properly.<!--/TMPL_IF-->
+</div>
+
+<!--TMPL_IF name=hyoka_func-->
+<div class="d3 desc">%hyoka_func%</div>
+<!--/TMPL_IF-->
+
+<h3 class="h3c">Bundled Items;</h3>
+<!--TMPL_IF name=bundle-->
+<div class="d2 sm">%bundle%</div>
+<!--/TMPL_IF-->
+
+<div class="d3 desc">All you can see on the picture will be included in a set of a package.</div>
+
+<div class="nt">
+Above condition is based on my own opinion.<br>
+Please check the photo carefully.<br>
+Please feel free to contact me for any questions!<br>
+Thank you.
+</div>
+
+<h2 class="h2c">Shipping</h2>
+<div class="d2 desc">
+<!--TMPL_IF name=my_send_notice-->
+%my_send_notice%
+<!--TMPL_ELSE-->
+I send a product by <span class="at">FedEx or DHL</span>.
+<!--/TMPL_IF-->
+<br>I attach the tracking number.<br>
+Please bid it without worrying.
+</div>
+
+<div class="d desc_a tp">
+Shipping is available from Monday to Friday.<br>
+Weekends are not available because office is closed.
+</div>
+
+<h2 class="h2c">Returns</h2>
+<div class="d2 desc_a">Unconditional Return Policy</div>
+
+<div class="d desc tp">
+Customer service and satisfaction are very important to us.<br>
+I have an unconditional return policy if notified within 30 days of the receipt of the item.
+</div>
+
+<div class="d desc tp">
+All returned items must be the original condition.<br>
+All return requests must be made within 30 days of the receipt of the item.
+</div>
+
+<div class="d desc_a tp">
+Please contact me first for return before you ship it back to me.<br>
+The postage of the returned goods is a %cost_paid% burden.
+</div>
+
+<h2 class="h2c">International Buyers</h2>
+<div class="d2 desc">
+Please Note:<br>
+To Our International Customers<br>
+Important Notice:<br><br>
+
+- For the United States (for items priced under $2,500)<br>
+Import duties, taxes, and charges are included in the item price or shipping cost. (DDP)<br><br>
+
+- For the United States (for items priced at $2,500 or more)<br>
+Import duties, taxes, and charges are <strong class="bd">not included</strong> in the item price or shipping cost.<br>
+These charges are the buyer's responsibility (DDU).<br><br>
+
+- For All Other Countries<br>
+Import duties, taxes, and charges are not included in the item price or shipping cost.<br>
+These charges are the buyer's responsibility.<br>
+Please check with your country's customs office to determine what these additional costs will be prior to bidding or buying.<br>
+We will absolutely refuse any requests for false customs declarations.
+</div>
