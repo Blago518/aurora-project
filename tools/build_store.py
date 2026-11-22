@@ -100,10 +100,15 @@ DIGITAL_CAM_RE = re.compile(r"digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megap
                             r"\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b", re.I)
 
 
+LENS_LIKE_RE = re.compile(r"(?<![\d.])\d{2,4}(?:-\d{2,4})?\s?mm\b.*\bF\s?/?\d|\bSEL\s?\d{3,4}", re.I)
+
+
 def rec_cat(kind: str, titles: list[str]) -> str:
     """おすすめの分類: mf / af（レンズ）、film / digital（カメラ）. 同じ機種の売れた商品名の多数決."""
+    if kind != "lens" and LENS_LIKE_RE.search(" ".join(titles)):
+        kind = "lens"   # 「カメラ」に入ったレンズ（焦点距離と F値がある）はレンズとして分ける。フィルムカメラ・デジタルの枠に出さない
     if kind == "lens":
-        af = sum(1 for t in titles if AF_STRONG_RE.search(t) and not re.search(r"\bMF\b|manual\s*focus", t, re.I))
+        af = sum(1 for t in titles if (AF_STRONG_RE.search(t) or re.search(r"\bSEL\s?\d", t, re.I)) and not re.search(r"\bMF\b|manual\s*focus", t, re.I))
         mf = sum(1 for t in titles if MF_RE.search(t) and not AF_STRONG_RE.search(t))
         return "af" if af > mf else "mf"
     dg = sum(1 for t in titles if DIGITAL_CAM_RE.search(t))
@@ -121,7 +126,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         return ["newfd"] if t in ("nfd", "fdn") else ["ai-s"] if t == "ais" else [t]
     low = [x for t in rest for x in norm(t)]
     has_mm = any(re.fullmatch(r"\d+(-\d+)?mm", t) for t in low)
-    has_f = any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?", t) for t in low)
+    has_f = any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?[a-z]?", t) for t in low)  # F5.6E・F1.4G・F2.8L も F値（2026-11-22 200-500mm F5.6E がカメラに入っていた）
     kind = "lens" if has_mm and (has_f or "lens" in low) and not CAMERA_WORDS & set(low) else "camera"
 
     def wanted(t: str) -> bool:
@@ -141,6 +146,12 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         if kind != "camera" or not names:
             return None
         keep, shown = [t.lower() for t in names[:2]], names[:2]
+    if kind == "camera":
+        # 表示名にシリーズの語を残す（「Canon 310」→「Canon IXY 310」、「Nikon fc」→「Nikon Z fc」。2026-11-22）。比べるキーは変えない
+        series = set(ba.LINE_WORDS) | {"z", "d-lux", "v-lux", "c-lux", "trip", "electro", "zoom", "system", "eos"}
+        shown = [t for t in rest if t.lower() in series or t in shown]
+        seen = set()
+        shown = [t for t in shown if not (t.lower() in seen or seen.add(t.lower()))]
     label = " ".join([brand] + shown)
     return label, " ".join([brand.lower()] + keep), kind
 
@@ -164,7 +175,7 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
         if not k:
             continue
         label, key, kind = k
-        g = groups.setdefault(key, {"label": label, "brand": label.split()[0], "kind": kind,
+        g = groups.setdefault(key, {"label": label, "brand": "Carl Zeiss" if label.startswith("Carl Zeiss") else label.split()[0], "kind": kind,
                                     "sales": [], "lists": [], "titles": []})
         g["titles"].append(r.get("title") or title)
         tier = ba.source_tier(r)
@@ -188,7 +199,7 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
         n = len(g["sales"])
         out.append({
             "label": g["label"], "brand": g["brand"], "kind": g["kind"],
-            "cat": rec_cat(g["kind"], g["titles"] + [g["label"]]),
+            "cat": rec_cat(g["kind"], g["titles"] or [g["label"]]),   # 表示名は型の語を落とすので（IXY 310 → Canon 310）、元の商品名で決める
             "sales": n, "lists": len(g["lists"]), "usd": usd,
             "basis": (["販売実績", "Chatwork実績", "頒布会"][min(s["tier"] for s in good)] if good else "鑑定表（推定）"),
             "maxBuy": calc["max_bid_jpy"], "breakeven": calc["breakeven_bid_jpy"],

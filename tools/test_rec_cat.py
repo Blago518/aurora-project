@@ -40,5 +40,34 @@ class RecCat(unittest.TestCase):
         self.assertEqual(bs.rec_cat("lens", ["Nikon 50mm F1.4", "Nikon AF 50mm F1.4D", "Nikon AF Nikkor 50mm 1.4D"]), "af")
 
 
+    def test_js_same(self):
+        """店舗アプリの古いデータ用の分類（index.html の recCat）が Python と同じ."""
+        import json
+        import shutil
+        import subprocess
+        from pathlib import Path
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        html = (Path(__file__).resolve().parent.parent / "store" / "index.html").read_text(encoding="utf-8")
+        import re
+        src = "\n".join(re.search(r"^const %s = .*$" % n, html, re.M).group(0)
+                         for n in ("AF_STRONG_RE", "DIGITAL_CAM_RE", "LENS_LIKE_RE"))
+        cases = [("lens", t) for ts in self.LENS.values() for t in ts] + [("camera", t) for ts in self.CAMERA.values() for t in ts]
+        js = src + """
+const cases = %s;
+console.log(JSON.stringify(cases.map(([k, t]) => {
+  const lens = k === "lens" || LENS_LIKE_RE.test(t);
+  return lens ? (AF_STRONG_RE.test(t) && !/\\bMF\\b|manual\\s*focus/i.test(t) ? "af" : "mf") : (DIGITAL_CAM_RE.test(t) ? "digital" : "film");
+})));""" % json.dumps(cases, ensure_ascii=False)
+        out = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out, [bs.rec_cat(k, [t]) for k, t in cases])
+
+    def test_lens_in_camera(self):
+        """「カメラ」に入ったレンズ（200-500mm F5.6E）はレンズの枠へ（2026-11-22 オーナー指摘）."""
+        self.assertEqual(bs.rec_key("Nikon AF-S 200-500mm F5.6E ED VR")[2], "lens")
+        self.assertIn(bs.rec_cat("camera", ["Nikon AF-S 200-500mm F5.6E ED VR"]), ("af", "mf"))
+        self.assertEqual(bs.rec_cat("camera", ["Nikon R10 SUPER 8mm"]), "film")
+
+
 if __name__ == "__main__":
     unittest.main()
