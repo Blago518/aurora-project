@@ -104,7 +104,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .bid .links .mini{white-space:nowrap;display:flex;align-items:center;justify-content:center;font-size:13px}
 .yn{display:inline-block;font-size:.5em;font-weight:900;letter-spacing:.04em;border-radius:6px;padding:.15em .45em;margin-right:.35em;vertical-align:.35em;color:#fff;line-height:1.2}.yn.solo{font-size:.8em;vertical-align:0}.yn.ok{background:var(--good)}.yn.no{background:var(--bad)}
 .bid .max .yn{font-size:13px;vertical-align:4px;margin-right:6px}#capText .yn{font-size:15px;vertical-align:1px}
-.tag.done{background:#e6f4ea;color:var(--good)}.tag.same{background:#eef2f7;color:var(--sub)}.bid .max{flex-wrap:wrap}.bid .max strong{white-space:nowrap}.bid .max .s{flex:1 1 12em;min-width:0}.bid .max.no strong{color:var(--bad)}.bid.flash{background:#fff7d6;transition:background .3s}
+.tag.done{background:#e6f4ea;color:var(--good)}.tag.same{background:#eef2f7;color:var(--sub)}.bid .max{flex-wrap:wrap}.bid .max strong{white-space:nowrap}.bid .max .s{flex:1 1 12em;min-width:0}.bid .max.no strong{color:var(--bad)}.rec.flash,.bid.flash{background:#fff7d6;transition:background .3s}
 .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin:2px 4px 0 0;background:#fdecea;color:var(--bad)}
 .tag.trust{background:#e6f4ee;color:var(--good)}.tag.tent{background:var(--warnbg);color:var(--warn)}.tag.ok{background:#e6f4ee;color:var(--good)}
 .hot,.bid .mk small.hot{color:var(--bad);font-weight:800}
@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.16";
+  var APP_VERSION = "2026.11.22.20";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -554,7 +554,7 @@ const localMemo = (n) => lsGet(LS_MEMO, {})[memoKey(n)] || null;
 // 確認済み（2026-11-22 オーナー「相場調べて、利益みて、登録して戻ると、何も変わってないし、確認済みのチェックもない」）:
 // 登録した Sold を機種の検索語（queryFor）ごとにも持ち、入札タブの同じ機種の出品をその額で出し直す
 const LS_CHECKED = "storeChecked";
-const checkKey = (n) => memoKey(queryFor(n) || n);
+const checkKey = (n) => memoKey(modelWords(ebayQuery(n).split(/\s+/).filter(Boolean)).join(" ") || n);   // 同じ機種かは機種の語で（eBay の検索語とは別）
 const isSetTitle = (n) => { try { return core.detectFlags(n).includes("セット品") || core.KIT_RE.test(n); } catch (e) { return false; } };
 function checkedFor(n) {
   const all = lsGet(LS_CHECKED, {}), own = all[memoKey(n)];
@@ -591,11 +591,18 @@ $("soldReg").addEventListener("click", () => {
   { const ck = lsGet(LS_CHECKED, {}), v = { usd: pick.sold.usd, cond: pick.sold.cond || "", rank: pick.rank, t: nowJst(), n: name };
     v.set = isSetTitle(name); ck[memoKey(name)] = v; ck["q:" + checkKey(name)] = v; lsSet(LS_CHECKED, ck); }
   regState();
-  const fromBid = bidCtx && name === bidCtx.title ? bidCtx.id : null;
+  const fromBid = bidCtx && name === bidCtx.title ? bidCtx.id : null, fromRec = recCtx && name === recCtx ? recCtx : null;
   const msg = `${name} は $${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""} で${same ? "登録済みです" : "登録しました"}。次の商品をどうぞ`;
   // 次へ: 入力を空にして商品名の欄へ（登録した相場は、次に同じ機種を調べると Sold 欄に入る）
   $("name").value = ""; $("price").value = ""; pick = { rank: null, note: "", sold: null }; clearSold(); look(); saveDraft();
   $("ocrSt").className = "status"; $("ocrSt").textContent = msg;
+  if (fromRec) {   // おすすめから来たときはおすすめに戻り、その機種を出す（出し直した額）
+    recCtx = null; showTab("rec"); renderRecs();
+    const card = document.querySelector(`#recList [data-rec="${CSS.escape(fromRec)}"]`);
+    if (card) { card.scrollIntoView({ block: "center" }); card.classList.add("flash"); setTimeout(() => card.classList.toggle("flash", false), 1600); } else window.scrollTo({ top: 0 });
+    toast("Sold を登録して金額を出し直しました");
+    return;
+  }
   if (fromBid) {   // 入札タブから来たときは入札タブに戻り、その出品を出す（出し直した上限額と ✓確認済み）
     bidCtx = null; showTab("bid");
     const card = document.querySelector(`#bidList [data-card="${CSS.escape(fromBid)}"]`);
@@ -731,17 +738,14 @@ const toChrome = (u) => (IOS && /^https:\/\//.test(u) ? u.replace(/^https:\/\//,
 // eBay の検索語は「相場を当てた機種」と共通の語だけ（2026-11-22 オーナーの画面: ヤフオクの商品名そのままで「A9M」「Point」まで入り0件）。
 // 機種で検索すると、売れた数・出品の数（需給）が見える。相場が当たらないときは商品名の頭の4語
 function queryFor(name) {
-  const mine = ebayQuery(name).split(/\s+/).filter(Boolean);
-  let r = null;
-  try { r = DATA && lookup(name, null); } catch (e) { r = null; }
-  const ref = r && r.refs && r.refs.find((x) => !x.sold);
-  if (ref) {
-    const theirs = new Set(ebayQuery(ref.title).toLowerCase().split(/\s+/));
-    const common = mine.filter((w) => theirs.has(w.toLowerCase()));
-    if (common.length >= 2) return withBronica(common).join(" ");
-  }
-  return withBronica(modelWords(mine)).join(" ");
+  // パソコン・毎朝のレポートと同じ作り: 今までの検索語（型・マウント・系統・外す語）から余計な語だけを引く（core.cleanQuery）。
+  // 2026-11-22 オーナー「全然絞れてない」: 相場の商品名と共通の語を使う作りは「Olympus 35mm Point Shoot Film Camera」になり XA1 の Sold に mju II が並んだのでやめた
+  let q = "";
+  try { q = core ? core.queryForTitle(name) : ""; } catch (e) { q = ""; }
+  return withSiblings(withBronica(q ? q.split(" ") : modelWords(ebayQuery(name).split(/\s+/).filter(Boolean))));
 }
+// 紛らわしい兄弟の機種を外す語（-2.8・-Program など。core.siblingExcludes。2026-11-22 オーナーが自分で「-2.8」を足していた）
+const withSiblings = (ws) => { const q = ws.join(" "); let ex = []; try { ex = DATA && core.siblingExcludes ? core.siblingExcludes(q, DATA.refs) : []; } catch (e) { ex = []; } return ex.length ? q + " " + ex.join(" ") : q; };
 // 「Zenza」だけでは Bronica の出品に当たりにくい（2026-11-22 実際の予約リスト「ZENZA BRONICA MC 250mm」→「ZENZA MC …」）
 const withBronica = (ws) => (ws.some((w) => /^zenza$/i.test(w)) && !ws.some((w) => /^bronica$/i.test(w)) ? ws.flatMap((w) => (/^zenza$/i.test(w) ? [w, "Bronica"] : [w])) : ws);
 // メーカー＋機種だけを残す（「OLYMPUS XA1 A9M D.ZUIKO 35mm F4 Point」→「OLYMPUS XA1」、「Bronica ZENZANON-PG 65mm f4」はそのまま）
@@ -758,7 +762,7 @@ function modelWords(ws) {
       if (/^\d+(-\d+)?mm$/.test(l) || /^f\/?\d/.test(l) || LENS_LINE_WORDS.has(l) || LENS_FAMILY_RE.test(l)
           || /^(ai-?s?|non-?ai|af-?[spid]?|ef(-s)?|rf|fe|xf|dx|g|l|ii|iii|iv|macro|fisheye|limited|art|pro|gm|is|vr|da|fa|digital)$/.test(l)) out.push(w);   // 系統とマウント（DA・Zuiko Digital・VR）も残す（利益計算.md 11/19）
     }
-    return out.slice(0, 6);
+    return out.slice(0, 7);   // Nikon AF-S DX 18-55mm F3.5-5.6 G VR の VR まで
   }
   let model = false;
   for (const w of ws.slice(1)) {
@@ -929,7 +933,7 @@ function restoreDraft() {
   $("name").value = d.name || ""; $("price").value = d.price || ""; $("soldUsd").value = d.usd || ""; $("soldCond").value = d.cond || "";
   if (d.usd) readSold();
   if (Array.isArray(d.shelf) && d.shelf.length && !shelfRows.length) {
-    shelfRows = d.shelf.map((x) => Object.assign({}, x, { r: lookup(x.name, x.price, { note: x.notes }) }));
+    shelfRows = d.shelf.map((x) => Object.assign({}, x, { r: lookup(x.name, x.price, soldOpt(x.name, { note: x.notes })) }));
     for (const x of shelfRows) shelfSeen.add(x.name.toLowerCase() + "|" + (x.price || ""));
     renderShelf();
   }
@@ -1081,7 +1085,7 @@ function addShelfItems(items) {
       const k = name.toLowerCase() + "|" + (t.price_tax_included_jpy || "");
       if (shelfSeen.has(k)) continue; shelfSeen.add(k);
       const row = { name, price: t.price_tax_included_jpy || null, notes: String(t.notes || "").trim() };
-      row.r = lookup(name, row.price, { note: row.notes });
+      row.r = lookup(name, row.price, soldOpt(name, { note: row.notes }));
       autoLog(name, row.price, row.r);
       added.push(row);
     }
@@ -1262,9 +1266,16 @@ function renderRecs() {
   const groups = [];
   list.forEach((r, i) => { const g = seriesIn(r); let G = groups.find((x) => x.name === g); if (!G) groups.push(G = { name: g, items: [] }); G.items.push([r, G.items.length]); });
   const one = ([r, i]) => {
+    // 登録した Sold があれば、その額で「以下なら買い」を出し直す（2026-11-22 オーナー「相場と状態を登録しても、おすすめの金額に反映されない」）
+    const ck = checkedFor(r.label);
+    let buy = r.maxBuy, usdTxt = `想定${nusd(r.usd)}（送料別）`;
+    if (ck) {
+      try { const x = lookup(r.label, null, { sold: { usd: ck.usd, cond: ck.cond }, rank: ck.own ? (ck.rank ?? null) : null, titleCond: !ck.own, note: "" }); if (x.calc) buy = x.calc.maxBid; } catch (e) {}
+      usdTxt = `✓ Sold $${ck.usd}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} で計算`;
+    }
     const L = linksWithCat(withEx(r.label), recIsLens(r) ? "3323" : recCat(r) === "digital" ? "31388" : "15230");
-    return `<div class="rec"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
-      <div class="buy">税込 <strong>${yen(r.maxBuy)}</strong> 以下なら買い <span class="s">／想定${nusd(r.usd)}（送料別）${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
+    return `<div class="rec" data-rec="${esc(r.label)}"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
+      <div class="buy">税込 <strong>${buy > 0 ? yen(buy) : "上限なし"}</strong>${buy > 0 ? " 以下なら買い" : ""} <span class="s">／${usdTxt}${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
       <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">Sold</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">Now</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
   };
   $("recList").innerHTML = list.length ? groups.map((G) => `<h3 class="grp">${esc(G.name)} <span class="s">${G.items.length}品</span></h3>` + G.items.map(one).join("")).join("") : `<div class="empty">この条件の販売実績はまだありません</div>`;
@@ -1272,7 +1283,8 @@ function renderRecs() {
 $("brandChips").onclick = (e) => { const b = e.target.dataset.brand; if (b == null) return; recSel.brand = b; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
 $("highChips").onclick = (e) => { const h = e.target.dataset.high; if (h == null) return; recSel.high = h === "1"; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
 $("kindChips").onclick = (e) => { const k = e.target.dataset.kind; if (!k) return; recSel.kind = k; lsSet(LS_REC, recSel); renderBrands(); renderRecs(); };
-$("recList").onclick = (e) => { const n = e.target.dataset.look; if (n) setInput(n, ""); };
+let recCtx = null;   // おすすめの［調べる］から来た機種（登録したらおすすめに戻る）
+$("recList").onclick = (e) => { const n = e.target.dataset.look; if (n) { setInput(n, ""); bidCtx = null; recCtx = n; } };
 
 // ------------------------------------------------------------ 計算（eBay利益電卓・店舗仕入れ）
 // 計算は core.calculate（拡張機能・調べると同じ）。入れる$は送料別の商品代 → 送料$40を足して送料込みで計算。
@@ -1422,6 +1434,11 @@ function bidCard(i, B, done, now, tag) {
 // 確認済みの Sold で、その出品の上限額と今の価格での利益を出し直す（［調べる］と同じ lookup。国内送料・ストアの税抜も同じ）
 // ストアは入札欄の額が税抜（appraise.py と同じ言い方）。出し直した額で支払い額を出す
 const storeNote = (i, mx) => (/^ストア/.test(i.taxNote || "") && mx > 0 ? `（ストア: このまま入札。支払いは税込${Math.round(mx * (1 + (DATA.cfg.storeTaxPct || 10) / 100)).toLocaleString("ja-JP")}円）` : "");
+// 登録した Sold があれば、その額で計算する（調べる・入札・おすすめ・棚で同じ）
+function soldOpt(name, o) {
+  const ck = checkedFor(name); if (!ck) return o;
+  return Object.assign({}, o, { sold: { usd: ck.usd, cond: ck.cond }, rank: ck.own ? (ck.rank ?? null) : null, titleCond: !ck.own });
+}
 const signYen = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP") + "円";
 function bidRedo(i) {
   const ck = checkedFor(i.title); if (!ck || !DATA) return null;

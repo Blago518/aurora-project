@@ -127,6 +127,7 @@ class Item:
     fetch_note: str = ""
     flags: list[str] = field(default_factory=list)
     history_matches: list[dict] = field(default_factory=list)
+    ebay_excl: list[str] = field(default_factory=list)  # 紛らわしい兄弟の機種を外す語（sibling_excludes）
     expected_price_usd: float | None = None
     price_source: str = ""
     calc: dict = field(default_factory=dict)
@@ -1086,6 +1087,79 @@ def ebay_search_query(query: str, title: str = "") -> str:
     return " ".join(dict.fromkeys(words))
 
 
+_BRAND_LOWER = {b.lower() for b in BRANDS_EN.values()}
+# 紛らわしい兄弟の機種を eBay の検索から外す語（拡張機能の siblingExcludes と同じ。表示・リンクだけ）
+_MM_RE, _FNUM_RE = re.compile(r"\d+(?:-\d+)?mm"), re.compile(r"f\d+(?:\.\d+)?")
+
+
+def sibling_excludes(query: str, rows: list[dict], limit: int = 3) -> list[str]:
+    """2026-11-22 オーナーが「Olympus ZUIKO AUTO-W 24mm F2」に自分で「-2.8」を足した。相場データに、同じメーカー・同じ焦点距離で
+    F値だけ違うレンズがあれば「-2.8」を返す（レンズだけ。ボディの世代語は外さない: 「F3」とだけ書いた HP の売れた記録まで消えて相場を低く読むため）."""
+    qt = _tokens(query)
+    brands = {t for t in qt if t in _BRAND_LOWER}
+    if not brands:
+        return []
+    mm = "|".join(sorted(t for t in qt if _MM_RE.fullmatch(t)))
+    qf = [t for t in qt if _FNUM_RE.fullmatch(t)]
+    out: list[str] = []
+    for r in rows:
+        rt = r.get("_tokens") or _tokens(r.get("ebay_query") or r.get("title") or "")
+        if not (rt & brands):
+            continue
+        if mm:  # レンズだけ
+            if "|".join(sorted(t for t in rt if _MM_RE.fullmatch(t))) != mm or not qf:
+                continue
+            rf = [t for t in rt if _FNUM_RE.fullmatch(t)]
+            if not rf or any(f in qt for f in rf):
+                continue
+            out += [f[1:] for f in sorted(rf) if "." in f]  # 「-2」のような整数は広すぎるので外さない
+    words = list(dict.fromkeys(out))[:limit]
+    return ["-" + w for w in words]
+
+
+# 検索語から引く余計な語（種類の語）。型・マウント・系統の語は引かない
+JUNK_QUERY_WORDS = {"point", "shoot", "film", "camera", "compact"}
+_CODE_RE = re.compile(r"[A-Za-z]{1,3}\d{1,5}")
+
+
+def clean_query(q: str) -> str:
+    """今までの検索語から、余計な語だけを引く（2026-11-22 オーナー「まだ sold や now 開くと管理番号が入ってる」）.
+    種類の語（Point・Film など）と、型番より後ろの末尾の管理番号（E66・N031・e6・W0988）. 拡張機能の cleanQuery と同じ."""
+    ws = [w for w in q.split() if w.lower() not in JUNK_QUERY_WORDS]
+    # 末尾の管理番号は1つだけ引く。F値（F2）は引かない
+    if len(ws) > 2 and _CODE_RE.fullmatch(ws[-1]) and not re.fullmatch(r"[Ff]\d+|[LlMm]39|[Mm]42|[Tt]\d", ws[-1]) and any(re.search(r"\d", w) for w in ws[1:-1]):
+        ws.pop()
+    return " ".join(ws)
+
+
+def query_for_title(title: str, query: str = "") -> str:
+    """eBay の検索語（3か所で同じ）: レンズ固定のカメラ（XA・T2・GR1 など）はメーカー＋型だけ（2026-11-22「OLYMPUS XA1 A9M D.ZUIKO 35mm F4」で絞れなかった）、
+    それ以外は今までの検索語から余計な語を引く. 拡張機能・店舗アプリの queryForTitle と同じ."""
+    import build_store  # build_store は appraise を読み込むので、ここで読む
+    if title and build_store.FIXED_BODY_RE.search(unicodedata.normalize("NFKC", title)) and not re.search(r"\bfor\b|用", title, re.I) and re.search(r"\d\s?mm", title, re.I):  # レンズの仕様が後ろにある物だけ（Hasselblad 500C/M は除く）
+        ws = []
+        for w in clean_query(ebay_search_query(query or title_to_query(title), title)).split():
+            if re.fullmatch(r"\d+(?:-\d+)?mm|[Ff]/?\d+(?:\.\d+)?", w):
+                break
+            if build_store.LENS_FAMILY_RE.search(w) or re.fullmatch(r"[Aa]\d{1,2}[Mm]?", w):
+                continue
+            ws.append(w)
+        # 型の名前（Mamiya 7 の 7 など、1桁で落ちる語）を補う
+        m = build_store.FIXED_BODY_RE.search(unicodedata.normalize("NFKC", title))
+        for x in (m.group().split() if m else []):
+            if ws and x.lower() not in {w.lower() for w in ws}:
+                ws.insert(1, x)
+        if len(ws) >= 2:
+            return " ".join(ws)
+    q = query or title_to_query(title)
+    return clean_query(ebay_search_query(q, title))
+
+
+def eq_for(it) -> str:
+    """eBay のリンクの検索語: query_for_title に紛らわしい F値を外す語を足す."""
+    return " ".join([query_for_title(it.title, it.ebay_query)] + list(it.ebay_excl))
+
+
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表・リサーチ（推定）"]
 
 
@@ -2029,6 +2103,7 @@ def analyze(items: list[Item], sales: list[dict], cfg: dict, fx: float, offline:
                 item.calc = calculate(item, cfg, fx)
                 continue
 
+        item.ebay_excl = sibling_excludes(item.ebay_query, sales)
         # 照合はタイトル全体（検索語は7語に絞っているため）
         item.history_matches = match_prefer_memo(f"{item.ebay_query} {item.title}", memo, others)
         if not item.history_matches and kantei:
@@ -2062,7 +2137,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
     for it in items:
         mark, reason = judge(it)
         c = it.calc
-        links = ebay_links(ebay_search_query(it.ebay_query, it.title)) if it.ebay_query else {}
+        links = ebay_links(eq_for(it)) if it.ebay_query else {}
         rows.append(
             {
                 "判定": mark,
@@ -2089,7 +2164,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "即決価格": it.buy_now_jpy,
                 "入札数": it.bids,
                 "終了": it.end_time,
-                "eBay検索語": ebay_search_query(it.ebay_query, it.title) if it.ebay_query else "",
+                "eBay検索語": eq_for(it) if it.ebay_query else "",
                 "eBay販売済みURL": links.get("sold", ""),
                 "eBay出品中URL": links.get("active", ""),
                 "eBayProductResearchURL": links.get("research", ""),

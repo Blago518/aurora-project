@@ -26,6 +26,11 @@ ROOT = HERE.parent
 SOURCES = ("reference_prices.csv", "chatwork_sales.csv", "price_memo.csv", "research_prices.csv")
 
 
+
+def _model_query_consts() -> dict:
+    import build_store  # build_store は build_extension を読み込むので、ここで読む
+    return build_store.model_query_consts()
+
 def build_data(cfg: dict, fx: float) -> dict:
     refs, rows = [], []
     for name in SOURCES:
@@ -92,7 +97,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "defaultWinRate": cfg.get("win_score", {}).get("default_rate", 0.2),
         },
         "consts": {
-            "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN,
+            "brandsJa": ba.BRANDS_JA, "wordsJa": ba.WORDS_JA, "brandsEn": ba.BRANDS_EN, "modelQuery": _model_query_consts(),
             # 型の語（modelWord・isFNumber・setPartTitles。appraise.py と同じ表）
             "lensWords": ba.LENS_WORDS, "bodyCodeSkip": sorted(ba.BODY_CODE_SKIP), "bodyCodeOk": sorted(ba.BODY_CODE_OK),
             "filmFormatAfter": ba.FILM_FORMAT_AFTER.pattern,

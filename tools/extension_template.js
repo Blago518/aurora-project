@@ -200,6 +200,107 @@
     }
     return [...new Set(words)].join(" ");
   }
+  // 紛らわしい兄弟の機種を eBay の検索から外す語（2026-11-22 オーナーが「Olympus ZUIKO AUTO-W 24mm F2」に自分で「-2.8」を足した）。
+  // 相場データに、同じメーカー・同じ焦点距離で F値だけ違うレンズがあれば「-2.8」（ボディの世代語は外さない: 「F3」とだけ書いた HP の売れた記録まで消えて相場を低く読むため）。
+  // 表示・リンクだけ（照合・判定には使わない）。Python の appraise.sibling_excludes と同じ
+  const MM_RE = /^\d+(?:-\d+)?mm$/, FNUM_RE = /^f\d+(?:\.\d+)?$/;
+  function siblingExcludes(query, refs, limit = 3) {
+    const qt = tokensOf(query), brands = [...qt].filter((t) => BRAND_SET.has(t));
+    if (!brands.length) return [];
+    const mm = [...qt].filter((t) => MM_RE.test(t)).sort().join("|"), qf = [...qt].filter((t) => FNUM_RE.test(t));
+    const out = [];
+    for (const r of refs || []) {
+      const rt = r.tset || (r.tset = new Set(r.tokens || tokensOf(r.title || "")));
+      if (!brands.some((b) => rt.has(b))) continue;
+      if (mm) {   // レンズだけ
+        if ([...rt].filter((t) => MM_RE.test(t)).sort().join("|") !== mm || !qf.length) continue;
+        const rf = [...rt].filter((t) => FNUM_RE.test(t));
+        if (!rf.length || rf.some((f) => qt.has(f))) continue;
+        for (const f of rf.sort()) if (f.includes(".")) out.push(f.slice(1));   // 「-2」のような整数は広すぎるので外さない
+      }
+    }
+    return [...new Set(out)].slice(0, limit).map((w) => "-" + w);
+  }
+  // eBay の検索語は機種の語だけ（build_store.model_query と同じ。決まりの正規表現は C.modelQuery で Python から渡す）
+  const MQ = C.modelQuery ? {
+    lensLike: new RegExp(C.modelQuery.lensLike, "i"), kit: new RegExp(C.modelQuery.kitWords, "i"), fixed: new RegExp(C.modelQuery.fixedBody, "i"),
+    family: new RegExp(C.modelQuery.lensFamily, "i"), maker: new RegExp("^(?:" + C.modelQuery.lensMaker + ")", "i"), skip: new RegExp("^(?:" + C.modelQuery.bodySkip + ")$"),
+    seriesBody: new Set(C.modelQuery.seriesBody), line: new Set(C.modelQuery.lensLine), series: new RegExp("^(?:" + C.modelQuery.series + ")$", "i"),
+    gen: new RegExp("^(?:" + C.modelQuery.gen + ")$", "i"), keep: new RegExp("^(?:" + C.modelQuery.lensKeep + ")$") } : null;
+  function bodyBeforeMmQ(title) {
+    const t0 = String(title || "").normalize("NFKC");
+    if (MQ.kit.test(t0)) return true;
+    const hasFor = /\bfor\b|用/i.test(t0);
+    if (MQ.fixed.test(t0) && !hasFor) return true;
+    const toks = titleToQuery(title, 20).split(" ").filter(Boolean);
+    if (!hasFor && !MQ.maker.test(t0)) {
+      for (const t of toks.slice(1)) {
+        const tl = t.toLowerCase();
+        if (/^\d+(-\d+)?mm$/.test(tl) || MQ.family.test(tl)) break;
+        if (MQ.line.has(tl) || MQ.skip.test(tl)) continue;
+        if (/[a-zα]/.test(tl) && /\d/.test(tl)) return true;
+      }
+    }
+    if (MQ.family.test(t0) || hasFor) return false;
+    for (const t of toks.slice(1)) {
+      const tl = t.toLowerCase();
+      if (/^\d+(-\d+)?mm$/.test(tl)) return false;
+      if (MQ.line.has(tl) || MQ.skip.test(tl)) continue;
+      if (/[a-zα]/.test(tl) && /\d/.test(tl)) return true;
+      if (MQ.seriesBody.has(tl)) return true;
+    }
+    return false;
+  }
+  function modelWordsQ(ws) {
+    if (!ws.length) return ws;
+    const t = ws.join(" ");
+    if (MQ.lensLike.test(t) && !bodyBeforeMmQ(t)) {
+      const out = [ws[0]];
+      for (const w of ws.slice(1)) {
+        const l = w.toLowerCase();
+        if (/^\d+(-\d+)?mm$/.test(l) || /^f\/?\d/.test(l) || MQ.line.has(l) || MQ.family.test(l) || MQ.keep.test(l)) out.push(w);
+      }
+      return out.slice(0, 7);
+    }
+    const out = [ws[0]]; let model = false;
+    for (const w of ws.slice(1)) {
+      const l = w.toLowerCase();
+      if (!model && (MQ.series.test(l) || l === "new")) { out.push(w); continue; }
+      if (!model && ((/[a-zα]/.test(l) && /\d/.test(l)) || MQ.fixed.test(w) || /^\d{2,4}$/.test(l))) { out.push(w); model = true; continue; }
+      if (model && MQ.gen.test(l)) { out.push(w); continue; }
+      if (model) break;
+    }
+    return model ? out : ws.slice(0, 3);
+  }
+  // 今までの検索語から余計な語だけを引く（Python の appraise.clean_query と同じ）
+  const JUNK_QUERY_WORDS = new Set(["point", "shoot", "film", "camera", "compact"]);
+  function cleanQuery(q) {
+    const ws = String(q || "").split(" ").filter((w) => w && !JUNK_QUERY_WORDS.has(w.toLowerCase()));
+    if (ws.length > 2 && /^[A-Za-z]{1,3}\d{1,5}$/.test(ws[ws.length - 1]) && !/^([Ff]\d+|[LlMm]39|[Mm]42|[Tt]\d)$/.test(ws[ws.length - 1]) && ws.slice(1, -1).some((w) => /\d/.test(w))) ws.pop();   // 末尾の管理番号は1つだけ。F値は引かない
+    return ws.join(" ");
+  }
+  function queryForTitle(title, query) {   // appraise.query_for_title と同じ
+    const t0 = String(title || "").normalize("NFKC");
+    // レンズ固定のカメラで、後ろにレンズの仕様がある物だけ（Hasselblad 500C/M は除く）
+    if (MQ && MQ.fixed.test(t0) && !/\bfor\b|用/i.test(t0) && /\d\s?mm/i.test(t0)) {
+      const ws = [];
+      for (const w of cleanQuery(ebaySearchQuery(query || titleToQuery(title), title)).split(" ").filter(Boolean)) {
+        if (/^(\d+(?:-\d+)?mm|[Ff]\/?\d+(?:\.\d+)?)$/.test(w)) break;
+        if (MQ.family.test(w) || /^[Aa]\d{1,2}[Mm]?$/.test(w)) continue;
+        ws.push(w);
+      }
+      // 型の名前（Mamiya 7 の 7 など、1桁で落ちる語）を補う
+      const m = t0.match(MQ.fixed);
+      for (const x of (m ? m[0].split(/\s+/) : [])) if (ws.length && !ws.some((w) => w.toLowerCase() === x.toLowerCase())) ws.splice(1, 0, x);
+      if (ws.length >= 2) return ws.join(" ");
+    }
+    const q = query || titleToQuery(title);
+    return cleanQuery(ebaySearchQuery(q, title));
+  }
+  function modelQuery(title) {
+    if (!MQ) return "";   // 決まりが届いていない古いデータ（呼ぶ側が自分の決まりか titleToQuery に戻す）
+    return modelWordsQ(titleToQuery(title, 20).split(" ").filter(Boolean)).join(" ");
+  }
   const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
 
   function detectFlags(title) {
@@ -790,7 +891,7 @@
       it.trusted = !!it.sellerId && trusted.has(it.sellerId);
       it.flags = detectFlags(it.title);
       it.query = titleToQuery(it.title);
-      it.eq = ebaySearchQuery(it.query, it.title);  // eBay のリンク用（型と除外語入り）
+      it.eq = [queryForTitle(it.title, it.query)].concat(siblingExcludes(it.query, refs)).join(" ");  // eBay のリンク用（型と除外語・紛らわしい兄弟の機種を外す語入り）
       it.setParts = [];
       if (it.flags.includes("セット品") || KIT_RE.test(it.title)) {  // まとめ売り・レンズキットは中身ごとに
         for (const seg of setPartTitles(it.title)) {
@@ -1316,7 +1417,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
+    module.exports = { cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, queryForTitle, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 
