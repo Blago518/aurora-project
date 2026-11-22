@@ -242,8 +242,15 @@ function makeCore(DATA) {
     }
     return model ? out : ws.slice(0, 3);
   }
+  // 今までの検索語から余計な語だけを引く（Python の appraise.clean_query と同じ）
+  const JUNK_QUERY_WORDS = new Set(["point", "shoot", "film", "camera", "compact"]);
+  function cleanQuery(q) {
+    const ws = String(q || "").split(" ").filter((w) => w && !JUNK_QUERY_WORDS.has(w.toLowerCase()));
+    if (ws.length > 2 && /^[A-Za-z]{1,3}\d{1,5}$/.test(ws[ws.length - 1]) && !/^([Ff]\d+|[LlMm]39|[Mm]42|[Tt]\d)$/.test(ws[ws.length - 1]) && ws.slice(1, -1).some((w) => /\d/.test(w))) ws.pop();   // 末尾の管理番号は1つだけ。F値は引かない
+    return ws.join(" ");
+  }
   function modelQuery(title) {
-    if (!MQ) return titleToQuery(title);
+    if (!MQ) return "";   // 決まりが届いていない古いデータ（呼ぶ側が自分の決まりか titleToQuery に戻す）
     return modelWordsQ(titleToQuery(title, 20).split(" ").filter(Boolean)).join(" ");
   }
   const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
@@ -613,6 +620,6 @@ function makeCore(DATA) {
     return band && f <= band[1] + 1e-9 ? band[2] : "";
   }
 
-  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes, modelQuery };
+  return { titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes, modelQuery, cleanQuery, ebaySearchQuery };
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { makeCore };

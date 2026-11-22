@@ -272,8 +272,15 @@
     }
     return model ? out : ws.slice(0, 3);
   }
+  // 今までの検索語から余計な語だけを引く（Python の appraise.clean_query と同じ）
+  const JUNK_QUERY_WORDS = new Set(["point", "shoot", "film", "camera", "compact"]);
+  function cleanQuery(q) {
+    const ws = String(q || "").split(" ").filter((w) => w && !JUNK_QUERY_WORDS.has(w.toLowerCase()));
+    if (ws.length > 2 && /^[A-Za-z]{1,3}\d{1,5}$/.test(ws[ws.length - 1]) && !/^([Ff]\d+|[LlMm]39|[Mm]42|[Tt]\d)$/.test(ws[ws.length - 1]) && ws.slice(1, -1).some((w) => /\d/.test(w))) ws.pop();   // 末尾の管理番号は1つだけ。F値は引かない
+    return ws.join(" ");
+  }
   function modelQuery(title) {
-    if (!MQ) return titleToQuery(title);
+    if (!MQ) return "";   // 決まりが届いていない古いデータ（呼ぶ側が自分の決まりか titleToQuery に戻す）
     return modelWordsQ(titleToQuery(title, 20).split(" ").filter(Boolean)).join(" ");
   }
   const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
@@ -866,7 +873,7 @@
       it.trusted = !!it.sellerId && trusted.has(it.sellerId);
       it.flags = detectFlags(it.title);
       it.query = titleToQuery(it.title);
-      it.eq = [ebaySearchQuery(modelQuery(it.title) || it.query, it.title)].concat(siblingExcludes(it.query, refs)).join(" ");  // eBay のリンク用（型と除外語・紛らわしい兄弟の機種を外す語入り）
+      it.eq = [cleanQuery(ebaySearchQuery(it.query, it.title))].concat(siblingExcludes(it.query, refs)).join(" ");  // eBay のリンク用（型と除外語・紛らわしい兄弟の機種を外す語入り）
       it.setParts = [];
       if (it.flags.includes("セット品") || KIT_RE.test(it.title)) {  // まとめ売り・レンズキットは中身ごとに
         for (const seg of setPartTitles(it.title)) {
@@ -1392,7 +1399,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
+    module.exports = { cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 

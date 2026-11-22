@@ -45,7 +45,7 @@ def core_js() -> str:
     body = tpl[tpl.index("\n", a) + 1:b]
     names = ("titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, "
              "modelKey, ebay, median, roundDown, matchPreferMemo, isMemo, conditionOf, conditionAdjusted, conditionNote, "
-             "setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes, modelQuery")
+             "setPartTitles, setValue, KIT_RE, sweetSpot, siblingExcludes, modelQuery, cleanQuery, ebaySearchQuery")
     return (
         "// 自動生成ファイル: tools/build_store.py が tools/extension_template.js の @core 部分をコピーしたもの。\n"
         "// 直接編集しない（拡張機能と判定を一致させるため）。データは入っていない。\n"

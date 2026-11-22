@@ -394,6 +394,50 @@ class ModelQuery(unittest.TestCase):
         self.assertEqual(json.loads(out), [c[1] for c in self.CASES])
 
 
+class CleanQuery(unittest.TestCase):
+    """余計な語は引き、今まで残していた語（型・マウント・系統・外す語）は残す（2026-11-22）. Python と拡張機能で同じ."""
+    CASES = [("OLYMPUS オリンパス ZUIKO AUTO-W 24mm/F2 OMマウント 単焦点 広角レンズ 大口径 前後キャップ/レンズフード付 E66", ["E66"], ["ZUIKO", "24mm", "F2"]),
+             ("Nikon F3 ボディ 動作品 N031", ["N031"], ["F3"]),
+             ("良品 Nikon coolpix P900 ブラック e6", ["e6"], ["P900"]),
+             ("★ニコン Nikon D750 ボディ★ W0988＃5829", ["W0988"], ["D750"]),
+             ("【美品】Olympus XA1 35mm f/4 Point & Shoot Film Camera オリンパス フィルムカメラ #C-128", ["Point", "Film", "Camera"], ["XA1"]),
+             ("SMC PENTAX-DA 40mm F2.8 Limited", [], ["DA", "40mm", "Limited"]),
+             ("Hasselblad 500C/M ボディ", [], ["500C", "M"]),
+             ("Carl Zeiss Planar T* 85mm F1.4 AEJ CONTAX", [], ["Planar", "AEJ", "-MMJ"]),
+             ("Canon 7 + 50mm F1.8 L39", [], ["L39"]),
+             ("OM SYSTEM OM-1 Mark II", [], ["OM-1", "Mark", "II"]),
+             ("TAMRON SP 90mm F2.5 52B", [], ["SP", "52B"]),
+             ("Canon EF 50mm F1.2L USM 美品", [], ["EF", "L"]),
+             ("Nikon D750", [], ["D750"])]
+
+    def _q(self, t):
+        return ba.clean_query(ba.ebay_search_query(ba.title_to_query(t), t))
+
+    def test_python(self):
+        for title, gone, kept in self.CASES:
+            q = self._q(title).split()
+            for w in gone:
+                self.assertNotIn(w, q, f"{title} → {q}")
+            for w in kept:
+                self.assertTrue(any(w.lower() in x.lower() for x in q), f"{w} が消えた: {title} → {q}")
+
+    def test_js_same(self):
+        import shutil, subprocess
+        import build_extension as bu
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bu.build_data(CFG, 150.0)
+        ba.set_known_models([r["title"] for r in data["refs"] + data["kantei"]])
+        tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            js = Path(d) / "u.js"
+            js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
+            code = (f"const m=require({json.dumps(str(js))});const t={json.dumps([c[0] for c in self.CASES], ensure_ascii=False)};"
+                    "console.log(JSON.stringify(t.map(x=>m.cleanQuery(m.ebaySearchQuery(m.titleToQuery(x),x)))))")
+            out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(out), [self._q(c[0]) for c in self.CASES])
+
+
 class NoScraping(unittest.TestCase):
     """eBay の規約順守: eBay のページを自動取得するコードが無いこと."""
 

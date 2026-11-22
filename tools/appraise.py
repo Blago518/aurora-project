@@ -1117,11 +1117,24 @@ def sibling_excludes(query: str, rows: list[dict], limit: int = 3) -> list[str]:
     return ["-" + w for w in words]
 
 
+# 検索語から引く余計な語（種類の語）。型・マウント・系統の語は引かない
+JUNK_QUERY_WORDS = {"point", "shoot", "film", "camera", "compact"}
+_CODE_RE = re.compile(r"[A-Za-z]{1,3}\d{1,5}")
+
+
+def clean_query(q: str) -> str:
+    """今までの検索語から、余計な語だけを引く（2026-11-22 オーナー「まだ sold や now 開くと管理番号が入ってる」）.
+    種類の語（Point・Film など）と、型番より後ろの末尾の管理番号（E66・N031・e6・W0988）. 拡張機能の cleanQuery と同じ."""
+    ws = [w for w in q.split() if w.lower() not in JUNK_QUERY_WORDS]
+    # 末尾の管理番号は1つだけ引く。F値（F2）は引かない
+    if len(ws) > 2 and _CODE_RE.fullmatch(ws[-1]) and not re.fullmatch(r"[Ff]\d+|[LlMm]39|[Mm]42|[Tt]\d", ws[-1]) and any(re.search(r"\d", w) for w in ws[1:-1]):
+        ws.pop()
+    return " ".join(ws)
+
+
 def eq_for(it) -> str:
-    """eBay のリンクの検索語: 機種の語だけ（build_store.model_query。管理番号・状態の語を入れない）＋型の語＋紛らわしい F値を外す語."""
-    import build_store  # build_store は appraise を読み込むので、ここで読む
-    base = build_store.model_query(it.title) if it.title else ""
-    return " ".join([ebay_search_query(base or it.ebay_query, it.title)] + list(it.ebay_excl))
+    """eBay のリンクの検索語: 今までの検索語（型の語・外す語入り）から余計な語を引き、紛らわしい F値を外す語を足す."""
+    return " ".join([clean_query(ebay_search_query(it.ebay_query, it.title))] + list(it.ebay_excl))
 
 
 SOURCE_LABELS = ["自分の販売実績", "Chatwork販売実績", "頒布会リスト", "鑑定表・リサーチ（推定）"]
