@@ -1137,9 +1137,20 @@ def query_for_title(title: str, query: str = "") -> str:
     それ以外は今までの検索語から余計な語を引く. 拡張機能・店舗アプリの queryForTitle と同じ."""
     import build_store  # build_store は appraise を読み込むので、ここで読む
     if title and build_store.FIXED_BODY_RE.search(unicodedata.normalize("NFKC", title)) and not re.search(r"\bfor\b|用", title, re.I) and re.search(r"\d\s?mm", title, re.I):  # レンズの仕様が後ろにある物だけ（Hasselblad 500C/M は除く）
-        mq = build_store.model_query(title)
-        if mq:
-            return mq
+        ws = []
+        for w in clean_query(ebay_search_query(query or title_to_query(title), title)).split():
+            if re.fullmatch(r"\d+(?:-\d+)?mm|[Ff]/?\d+(?:\.\d+)?", w):
+                break
+            if build_store.LENS_FAMILY_RE.search(w) or re.fullmatch(r"[Aa]\d{1,2}[Mm]?", w):
+                continue
+            ws.append(w)
+        # 型の名前（Mamiya 7 の 7 など、1桁で落ちる語）を補う
+        m = build_store.FIXED_BODY_RE.search(unicodedata.normalize("NFKC", title))
+        for x in (m.group().split() if m else []):
+            if ws and x.lower() not in {w.lower() for w in ws}:
+                ws.insert(1, x)
+        if len(ws) >= 2:
+            return " ".join(ws)
     q = query or title_to_query(title)
     return clean_query(ebay_search_query(q, title))
 

@@ -252,7 +252,18 @@ function makeCore(DATA) {
   function queryForTitle(title, query) {   // appraise.query_for_title と同じ
     const t0 = String(title || "").normalize("NFKC");
     // レンズ固定のカメラで、後ろにレンズの仕様がある物だけ（Hasselblad 500C/M は除く）
-    if (MQ && MQ.fixed.test(t0) && !/\bfor\b|用/i.test(t0) && /\d\s?mm/i.test(t0)) { const mq = modelQuery(title); if (mq) return mq; }
+    if (MQ && MQ.fixed.test(t0) && !/\bfor\b|用/i.test(t0) && /\d\s?mm/i.test(t0)) {
+      const ws = [];
+      for (const w of cleanQuery(ebaySearchQuery(query || titleToQuery(title), title)).split(" ").filter(Boolean)) {
+        if (/^(\d+(?:-\d+)?mm|[Ff]\/?\d+(?:\.\d+)?)$/.test(w)) break;
+        if (MQ.family.test(w) || /^[Aa]\d{1,2}[Mm]?$/.test(w)) continue;
+        ws.push(w);
+      }
+      // 型の名前（Mamiya 7 の 7 など、1桁で落ちる語）を補う
+      const m = t0.match(MQ.fixed);
+      for (const x of (m ? m[0].split(/\s+/) : [])) if (ws.length && !ws.some((w) => w.toLowerCase() === x.toLowerCase())) ws.splice(1, 0, x);
+      if (ws.length >= 2) return ws.join(" ");
+    }
     const q = query || titleToQuery(title);
     return cleanQuery(ebaySearchQuery(q, title));
   }

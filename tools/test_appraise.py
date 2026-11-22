@@ -410,7 +410,11 @@ class CleanQuery(unittest.TestCase):
              ("Canon EF 50mm F1.2L USM 美品", [], ["EF", "L"]),
              ("Nikon D750", [], ["D750"]),
              ("★特上美品★OLYMPUS XA1 A9M D.ZUIKO 35mm F4 オリンパス XA1 フラッシュ付 Point & Shoot フィルムカメラ 動作確認済 #101347", ["A9M", "D.ZUIKO", "35mm", "F4"], ["XA1"]),
-             ("CONTAX T2 チタンブラック Sonnar 38mm F2.8", ["38mm", "Sonnar"], ["T2"])]
+             ("CONTAX T2 チタンブラック Sonnar 38mm F2.8", ["38mm", "Sonnar"], ["T2"]),
+             ("Mamiya 7 II 80mm F4 セット", ["80mm"], ["7", "II"]),
+             ("Hasselblad 500C/M Planar 80mm F2.8 A12", ["80mm", "A12"], ["500C", "M"]),
+             ("Yashica Electro 35 GSN 45mm F1.7", ["45mm"], ["Electro", "GSN"]),
+             ("Konica Hexar AF 35mm F2", ["35mm"], ["Hexar", "AF"])]
 
     def _q(self, t):
         return ba.query_for_title(t)
