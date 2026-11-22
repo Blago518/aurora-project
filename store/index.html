@@ -495,7 +495,7 @@ function renderResult(name, price, r) {
     : price == null && canPay(c, ok) ? "値札を入れると利益を出します"
     : r.mark === "要確認" ? storeReason(r.reason).replace(/^ジャンク・/, "")
     : /光学難/.test(r.reason) ? storeReason(r.reason).replace(/^ジャンク・/, "")
-    : ok && price != null ? `${bidCtx && name === bidCtx.title ? "現在価格" : "値札"} ${yen(price)} で買ったときの利益`
+    : ok && price != null ? `${bidCtx && name === bidCtx.title ? `${String((DATA.bids && DATA.bids.built) || "").slice(11, 16)}時点の価格` : "値札"} ${yen(price)} で買ったときの利益`
     : !canPay(c, ok) ? `この相場${lowNote(c)}では利益${c.minProfit.toLocaleString()}円の基準に届かない`
     : price == null ? "値札を入れると利益を出します"
     : `値札 ${yen(price)} では基準（利益${DATA.cfg.minMarginPct}%・${c.minProfit.toLocaleString()}円）に届かない`;
@@ -1405,9 +1405,10 @@ function bidCard(i, B, done, now, tag) {
   // 印と言葉を同じ向きに（2026-11-22 オーキド: NO の横に「まで入札」を書かない）。Mac の候補も出し直した額も同じ形
   const mx = r ? r.maxBid : i.maxBid, pf = r ? r.profit : i.profit, no = !(mx > 0) || (i.price && i.price > mx);
   const tax = r ? storeNote(i, mx) : i.taxNote ? "（" + esc(i.taxNote) + "）" : "";
-  const nowTx = i.price && pf != null ? `現在 ${yen(i.price)}（利益 ${signYen(pf)}${no && pf > 0 && r && r.minProfit ? `・基準 ${yen(r.minProfit)}` : ""}）` : "";
-  const maxHtml = `<div class="max${no ? " no" : ""}">${yn(!no)}${!(mx > 0) ? `<span class="s">基準を満たす入札額なし</span>`
-    : no ? `<strong>上限 ${yen(mx)}</strong><span class="s">${tax}${nowTx}</span>`
+  const nowTx = i.price && pf != null ? `この価格なら利益 ${signYen(pf)}${no && pf > 0 && r && r.minProfit ? `（基準 ${yen(r.minProfit)}）` : ""}` : "";
+  const sure = r ? r.ck.own : !i.check;   // OK の緑は、根拠が確認不要の物と ✓確認済みの物だけ（確かめる前は NO だけ出す。2026-11-22 オーキド）
+  const maxHtml = `<div class="max${no ? " no" : ""}">${no ? yn(false) : sure ? yn(true) : ""}${!(mx > 0) ? `<strong>上限なし</strong>`
+    : no ? `<strong>上限 ${yen(mx)}</strong><span class="s">${[tax, nowTx].filter(Boolean).join("・")}</span>`
     : `<strong>${yen(mx)}</strong><span class="s">まで入札${tax}${nowTx ? "・" + nowTx : ""}</span>`}</div>`;
   return `<div class="bid${i.check && !(ck && ck.own) ? " tent" : ""}${did ? " did" : ""}" data-card="${esc(i.id)}">
     <div class="tt"><a href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
@@ -1415,7 +1416,7 @@ function bidCard(i, B, done, now, tag) {
     ${maxHtml}
     <div class="links six"><a class="mini" href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">ヤフオク</a><button class="mini" type="button" data-copy="${esc(i.url)}">URL</button>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
       <button class="mini" type="button" data-blook="${esc(i.id)}">調べる</button>
-      ${no && !did ? `<span class="mini off" title="現在価格が上限を超えています">予約</span>` : `<a class="mini main" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a>`}</div>
+      ${no && !did ? `<span class="mini off" title="価格が上限を超えています">予約</span>` : `<a class="mini main" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a>`}</div>
   </div>`;
 }
 // 確認済みの Sold で、その出品の上限額と今の価格での利益を出し直す（［調べる］と同じ lookup。国内送料・ストアの税抜も同じ）
