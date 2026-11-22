@@ -228,6 +228,12 @@ def main(argv=None) -> int:
     ok &= run("build_extension.py")
     bids = None if args.no_bids else bid_list()
     ok &= run("build_store.py")  # 入札リストの後に（入札候補もスマホに届ける）
+    if not args.dry_run:
+        try:
+            import ledger_sync
+            ledger_sync.upload_recs()  # おすすめ全部 → 古物台帳「Mac_おすすめ」（クラウドで枠の誤りを見て直す）
+        except Exception as e:  # noqa: BLE001
+            print(f"  おすすめの一覧を送れませんでした（{e}）")
     ok &= run("build_knowledge.py")
     dashboard()
     results = None

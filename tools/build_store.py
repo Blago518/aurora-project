@@ -19,6 +19,7 @@ import re
 import shutil
 import statistics
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -86,24 +87,81 @@ CAMERA_LINE_WORDS = ba.GENERATIONS | {"program", "pro", "super", "classic", "dx"
 
 # おすすめの4分類（2026-11-22 オーナー「MF、AF、Film、digital の4つのボタン。MFレンズ、AFレンズ、フィルムカメラ、デジタルカメラ」）。表示だけ
 AF_STRONG_RE = re.compile(r"\bAF[-\s]?[SPID]?\b|オートフォーカス|autofocus|\bUSM\b|\bSTM\b|\bHSM\b|\bSDM\b|\bSSM\b|\bSAM\b|"
-                          r"\bEF-?S?\s?\d|\bRF\s?\d|\bFE\s?\d|\bXF\s?\d|\bXC\s?\d|M\.?\s?ZUIKO|ZUIKO\s+DIGITAL|NIKKOR\s*Z\b|"
+                          r"\bEF-?S?\s?\d|\bRF\s?\d|\bFE\s?\d|\bXF\s?\d|\bXC\s?\d|(?<![A-Za-z])M\.\s?ZUIKO|ZUIKO\s+DIGITAL|NIKKOR\s*Z\b|"
                           r"\bD\s?FA\b|\bDA\s?\*?\s?\d|\bFA\s?\*?\s?\d|Maxxum|Dynax|\bDC\b|\bDG\b|\bVR\b|\bVC\b|\bDi\b|\bLUMIX\s*G\b|"
-                          r"Contax\s*(?:G\d?|645)\b|(?:Planar|Biogon|Sonnar|Hologon)\b.*\b(?:for\s+)?G\s*$|\bHCD?\s?\d|\bSony\b|\bSEL\s?\d", re.I)
+                          r"Contax\s*(?:G\d?|645)\b|Nikon\s+Z\s?\d|Nikon\s*1\s+Nikkor|AT-X|(?:Planar|Biogon|Sonnar|Hologon)\b.*\b(?:for\s+)?G\s*$|\bHCD?\s?\d|\bSony\b|\bSEL\s?\d", re.I)
 MF_RE = re.compile(r"\bMF\b|manual\s*focus|マニュアル|\bnon[-\s]?Ai\b|\bAi[-\s]?S?\b|\bNew\s?FD\b|\bnFD\b|\bFD\b|\bFL\b|Takumar|\bM42\b|"
                    r"\bMD\b|\bMC\b|Rokkor|\bOM\b|G\.?\s?Zuiko|\bL39\b|\bLTM\b|Leica\s*M\b|\bC/?Y\b|\bAE[JG]\b|\bMM[JG]\b|"
                    r"Hasselblad|Mamiya|Bronica|Pentax\s*67|\b6x7\b|\bZ[FE]\.?2?\b|Loxia|Milvus|Voigtl|Helios|Jupiter|Industar", re.I)
 DIGITAL_CAM_RE = re.compile(r"digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megapixel|万画素|デジタル|デジカメ|ミラーレス|コンデジ|"
                             r"coolpix|powershot|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|"
                             r"\bD\d{2,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|"
-                            r"X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV|DIGITAL)\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|"
+                            r"X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV)x?\b|\bGR\s?DIGITAL\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|"
                             r"ILCE|\bNEX|\bK-(?:1|3|5|7|30|50|70|S\d|r|x)\b|\bKP\b|(?<!Minolta\s)α\s?\d|Sony\s*A7|\bA7[RSC]?\s?(?:I{1,3}|IV|M\d)?\b|RX100|\bGH\d|\bGX\d|(?:powershot|lumix|Canon)\s*G\d{1,2}\b|\bG\d{1,2}\s?X\b|"
                             r"\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b", re.I)
 
 
+LENS_LIKE_RE = re.compile(r"(?<![\d.])\d{2,4}(?:-\d{2,4})?\s?mm\b.*\bF\s?/?\d|(?<![\d.])\d{1,3}-\d{2,3}\s?mm\b|\bSEL\s?\d{3,4}", re.I)
+
+
+KIT_WORDS_RE = re.compile(r"\bbody\b|ボディ|\bw/|\bwith\b|\+|\bkit\b|付き?|セット|レンズキット", re.I)
+# レンズ固定・ボディの名前（後ろにレンズ名があってもカメラ）。「for ◯◯」「◯◯用」はそのボディ用のレンズ
+FIXED_BODY_RE = re.compile(r"rolleiflex|rolleicord|\bhexar\b|\bT[234]\b|\bTVS\b|\bGR1\w*|\bX100\w*|\bTC-1\b|\b\d\dTi\b|klasse|natura|"
+                           r"\btrip\s*35|\bmju|\bXA\d?\b|\bGA645|\bGW690|\bGSW690|\bGF670|\bbessa|Mamiya\s*[67]\b|minox|"
+                           r"Contax\s*(?:G[12]|RTS|aria|139|167|RX|ST|AX|S2)\b|Leica\s*M\d{1,2}\b|Leica\s*(?:III?\w*|II)\b|"
+                           r"Hasselblad\s*\d{3}\s?[A-Z]{1,3}\b|\bQL17\b|Electro\s*35|\bSQ-?A\w*\b|\bETR\w*\b|\bC[23]\d0\b|\bM645\b|\b1000S\b|\bCLE\b|\bDf\b|"
+                           r"Makina|Pentax\s*67\s*II|Pentax\s*6x7\b|\bRB67\s*Pro|\bRZ67\s*Pro", re.I)
+# レンズの系統の名前とレンズメーカー（マウント名の FD・Ai などは含めない）
+LENS_FAMILY_RE = re.compile(r"nikkor|zuiko|takumar|rokkor|sekor|elmar|elmarit|summicron|summilux|summaron|noctilux|planar|sonnar|"
+                            r"distagon|tessar|biogon|hexanon|zenzanon|xenar|xenotar|symmar|angulon|serenar|nokton|ultron|heliar|skopar|"
+                            r"jupiter|helios|industar|biotar|flektogon|pancolar|tamron|sigma|tokina|samyang|rokinon|vivitar|soligor|"
+                            r"yongnuo|laowa|7artisans|ttartisan|canon\s+lens", re.I)
+BODY_SKIP = r"sel\d+\w*|af(-[spid])?|ef(-s|-m)?|rf|fe|xf|dx|fx|g|ed|vr|ii|iii|iv|if|l39|m39|m42|ltm|c/y|cy|rb67|rz67|sl66|6x[4-9]|645|67"  # 型番に数えない語（マウント・判・レンズの記号）
+LENS_MAKER_RE = re.compile(r"\s*(tamron|sigma|tokina|samyang|rokinon|vivitar|soligor|yongnuo|laowa|7artisans|ttartisan|voigtl\w*|zeiss|carl\s+zeiss|schneider|rodenstock|kenko)\b", re.I)
+SERIES_BODY_WORDS = {"trip", "electro", "pen", "mju", "xa", "gr", "hexar", "klasse", "natura", "tvs", "contax"}
+
+
+def body_before_mm(title: str) -> bool:
+    """カメラ（ボディ・レンズ付きのボディ・レンズ固定のカメラ）なら True. 2026-11-22 オーナー「フィルムカメラで何故レンズが出る？」.
+    1) body・w/・+・kit・付・セット → カメラ  2) レンズ固定・ボディの名前（T2・GR1v・X100V・Rolleiflex・Leica M6 など。「for」「用」が無いとき）→ カメラ
+    3) レンズの系統の名前・レンズメーカー（Sekor・Elmar・Nikkor・Tamron など）か「for」「用」→ レンズ  4) 焦点距離より前に英字＋数字の型番 → カメラ."""
+    t0 = unicodedata.normalize("NFKC", title)
+    if KIT_WORDS_RE.search(t0):
+        return True
+    has_for = re.search(r"\bfor\b|用", t0, re.I)
+    if FIXED_BODY_RE.search(t0) and not has_for:
+        return True
+    toks = ba.title_to_query(title, 20).split()
+    if not has_for and not LENS_MAKER_RE.match(t0):
+        for t in toks[1:]:
+            tl = t.lower()
+            if re.fullmatch(r"\d+(-\d+)?mm", tl) or LENS_FAMILY_RE.search(tl):
+                break
+            if tl in LENS_LINE_WORDS or re.fullmatch(BODY_SKIP, tl):
+                continue
+            if re.search(r"[a-zα]", tl) and re.search(r"\d", tl):
+                return True   # FM2・OM-2N・D750 などがレンズの系統の語より前にある
+    if LENS_FAMILY_RE.search(t0) or has_for:
+        return False
+    for t in toks[1:]:
+        tl = t.lower()
+        if re.fullmatch(r"\d+(-\d+)?mm", tl):
+            return False
+        if tl in LENS_LINE_WORDS or re.fullmatch(BODY_SKIP, tl):
+            continue
+        if re.search(r"[a-zα]", tl) and re.search(r"\d", tl):
+            return True   # FM2・AE-1・D750・F3・EOS 5D など
+        if tl in SERIES_BODY_WORDS:
+            return True
+    return False
+
+
 def rec_cat(kind: str, titles: list[str]) -> str:
     """おすすめの分類: mf / af（レンズ）、film / digital（カメラ）. 同じ機種の売れた商品名の多数決."""
+    if kind != "lens" and titles and all(LENS_LIKE_RE.search(t) and not body_before_mm(t) for t in titles):
+        kind = "lens"   # 「カメラ」に入ったレンズ（ボディの型番が無く、焦点距離と F値がある）はレンズとして分ける
     if kind == "lens":
-        af = sum(1 for t in titles if AF_STRONG_RE.search(t) and not re.search(r"\bMF\b|manual\s*focus", t, re.I))
+        af = sum(1 for t in titles if (AF_STRONG_RE.search(t) or re.search(r"\bSEL\s?\d", t, re.I)) and not re.search(r"\bMF\b|manual\s*focus", t, re.I))
         mf = sum(1 for t in titles if MF_RE.search(t) and not AF_STRONG_RE.search(t))
         return "af" if af > mf else "mf"
     dg = sum(1 for t in titles if DIGITAL_CAM_RE.search(t))
@@ -116,17 +174,22 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     if not toks or toks[0].lower() not in BRAND_NAMES:
         return None
     brand, rest = BRAND_NAMES[toks[0].lower()], [t for t in toks[1:] if t.lower() not in BRAND_SKIP]
+    if any(t.lower() in ("rolleiflex", "rolleicord") for t in toks):   # 「Zeiss Rolleiflex 2.8F Planar」→ メーカーは Rollei（2026-11-22）
+        brand, rest = "Rollei", [t for t in toks if t.lower() not in BRAND_SKIP | {"zeiss", "carl"}]
     def norm(t: str) -> list[str]:
         t = t.lower()
         return ["newfd"] if t in ("nfd", "fdn") else ["ai-s"] if t == "ais" else [t]
     low = [x for t in rest for x in norm(t)]
     has_mm = any(re.fullmatch(r"\d+(-\d+)?mm", t) for t in low)
-    has_f = any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?", t) for t in low)
-    kind = "lens" if has_mm and (has_f or "lens" in low) and not CAMERA_WORDS & set(low) else "camera"
+    zoom = any(re.fullmatch(r"\d{1,3}-\d{2,3}mm", t) for t in low)   # ズームの焦点距離は F値が無くてもレンズ（AF-S DX 18-140mm）
+    has_f = zoom or any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?[a-z]?", t) for t in low)  # F5.6E・F1.4G・F2.8L も F値（2026-11-22 200-500mm F5.6E がカメラに入っていた）
+    kind = "lens" if has_mm and (has_f or "lens" in low) and not CAMERA_WORDS & set(low) and not body_before_mm(title) else "camera"
 
     def wanted(t: str) -> bool:
         if kind == "lens":
-            return bool(t in LENS_LINE_WORDS or re.fullmatch(r"\d+(-\d+)?mm", t) or re.fullmatch(r"f\d.*", t))
+            # Nikon Z・Contax G のレンズは系統の語を残す（無いと MF のレンズと見分けられない。2026-11-22）
+            return bool(t in LENS_LINE_WORDS or re.fullmatch(r"\d+(-\d+)?mm", t) or re.fullmatch(r"f\d.*", t)
+                        or (t == "z" and brand == "Nikon") or (t == "g" and brand == "Contax"))
         return bool((re.search(r"\d", t) and t != "35mm") or t in CAMERA_LINE_WORDS)
 
     keep, shown = [], []
@@ -141,6 +204,12 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         if kind != "camera" or not names:
             return None
         keep, shown = [t.lower() for t in names[:2]], names[:2]
+    if kind == "camera":
+        # 表示名にシリーズの語を残す（「Canon 310」→「Canon IXY 310」、「Nikon fc」→「Nikon Z fc」。2026-11-22）。比べるキーは変えない
+        series = set(ba.LINE_WORDS) | SERIES_BODY_WORDS | {"z", "d-lux", "v-lux", "c-lux", "trip", "electro", "zoom", "system", "eos"}
+        shown = [t for t in rest if t.lower() in series or t in shown or FIXED_BODY_RE.fullmatch(t)]   # SQ-A・CLE・Df も名前に残す
+        seen = set()
+        shown = [t for t in shown if not (t.lower() in seen or seen.add(t.lower()))]
     label = " ".join([brand] + shown)
     return label, " ".join([brand.lower()] + keep), kind
 
@@ -164,7 +233,7 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
         if not k:
             continue
         label, key, kind = k
-        g = groups.setdefault(key, {"label": label, "brand": label.split()[0], "kind": kind,
+        g = groups.setdefault(key, {"label": label, "brand": "Carl Zeiss" if label.startswith("Carl Zeiss") else label.split()[0], "kind": kind,
                                     "sales": [], "lists": [], "titles": []})
         g["titles"].append(r.get("title") or title)
         tier = ba.source_tier(r)
@@ -188,7 +257,7 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
         n = len(g["sales"])
         out.append({
             "label": g["label"], "brand": g["brand"], "kind": g["kind"],
-            "cat": rec_cat(g["kind"], g["titles"] + [g["label"]]),
+            "cat": rec_cat(g["kind"], g["titles"] or [g["label"]]),   # 表示名は型の語を落とすので（IXY 310 → Canon 310）、元の商品名で決める
             "sales": n, "lists": len(g["lists"]), "usd": usd,
             "basis": (["販売実績", "Chatwork実績", "頒布会"][min(s["tier"] for s in good)] if good else "鑑定表（推定）"),
             "maxBuy": calc["max_bid_jpy"], "breakeven": calc["breakeven_bid_jpy"],
