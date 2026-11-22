@@ -1,0 +1,256 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+#main{max-width:860px;margin:0 auto;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f2a37;font-size:15px;line-height:1.65;background:#ffffff;border:1px solid #d5dde6;border-radius:14px;overflow:hidden;}
+#main img{max-width:100%;}
+.hero{background:#0b1f3a;padding:26px 28px 22px;border-bottom:5px solid #0f9d76;}
+.brand{color:#4fd1a5;font-size:12px;letter-spacing:.18em;text-transform:uppercase;font-weight:bold;margin:0 0 8px;}
+.h1c{color:#ffffff;font-size:1.45em;line-height:1.4;font-weight:bold;margin:0;padding:0;border:0;}
+.body{padding:6px 28px 28px;}
+.h2c{font-size:1.1em;letter-spacing:.06em;text-transform:uppercase;color:#ffffff;background:#0b1f3a;margin:30px 0 14px;padding:10px 16px;border-left:6px solid #0f9d76;border-radius:6px;}
+.h3c{font-size:.82em;letter-spacing:.12em;text-transform:uppercase;color:#0b7a5c;margin:22px 0 6px;padding:0 0 4px;border-bottom:1px solid #d9efe7;}
+.d2{margin-top:6px;}
+.d3{margin-top:4px;}
+.d{margin-top:14px;}
+.tp{margin-top:14px;}
+.desc{color:#1f2a37;}
+.sm{color:#0b7a5c;font-weight:bold;}
+.cond{display:inline-block;background:#0f9d76;color:#ffffff;font-size:1.25em;font-weight:bold;letter-spacing:.04em;padding:6px 18px;border-radius:999px;}
+.desc_a{color:#0b1f3a;font-weight:bold;background:#eef8f4;border-left:4px solid #0f9d76;padding:10px 14px;border-radius:6px;}
+.at{color:#0b7a5c;font-weight:bold;}
+.bd{color:#0b1f3a;font-weight:bold;text-decoration:underline;}
+.nt{margin-top:22px;background:#f4f6f9;border-radius:10px;padding:14px 18px;color:#334155;}
+.lens{margin-top:10px;}
+.optics-beautiful{display:none;color:#0b7a5c;font-weight:bold;}
+.optics-check[data-fog*="no fog"][data-fungus*="no fungus"][data-balsam*="no balsam"][data-scratch*="no scratch"] .optics-beautiful,
+.optics-check[data-fog*="no haze"][data-fungus*="no fungus"][data-balsam*="no balsam"][data-scratch*="no scratch"] .optics-beautiful,
+.optics-check[data-fog*="no fog"][data-fungus*="no fungus"][data-balsam*="no separation"][data-scratch*="no scratch"] .optics-beautiful,
+.optics-check[data-fog*="no haze"][data-fungus*="no fungus"][data-balsam*="no separation"][data-scratch*="no scratch"] .optics-beautiful{display:inline;}
+.placeholder-hide[data-placeholder*="※"]{display:none;}
+.foot{margin-top:26px;text-align:center;color:#64748b;font-size:12px;letter-spacing:.12em;text-transform:uppercase;}
+@media screen and (max-width:600px){
+.hero{padding:20px 18px 18px;}
+.body{padding:4px 18px 22px;}
+.h1c{font-size:1.2em;}
+}
+</style>
+
+<div id="main">
+<div class="hero">
+<p class="brand">Aurora Film Japan</p>
+<h1 class="h1c">%title% %sku%</h1>
+</div>
+<div class="body">
+
+<h2 class="h2c">Description</h2>
+<h3 class="h3c">Total Condition</h3>
+<div class="d2"><span class="cond">
+<!--TMPL_IF name=is_unused-->Unused<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_unused-->Almost Unused<!--/TMPL_IF-->
+<!--TMPL_IF name=is_top_mint-->Top MINT<!--/TMPL_IF-->
+<!--TMPL_IF name=is_mint-->MINT<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_mint-->Almost MINT<!--/TMPL_IF-->
+<!--TMPL_IF name=is_near_mint-->Near MINT<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc5-->Excellent+++++<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc4-->Excellent++++<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc3-->Excellent+++<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc-->Excellent<!--/TMPL_IF-->
+<!--TMPL_IF name=is_as_is-->As-Is<!--/TMPL_IF-->
+<!--TMPL_IF name=is_for_parts-->For Parts<!--/TMPL_IF-->
+<!--TMPL_IF name=is_brand_new-->Brand New<!--/TMPL_IF-->
+</span></div>
+
+<!--TMPL_IF name=ext_condition-->
+<div class="d2 sm placeholder-hide" data-placeholder="%ext_condition%">%ext_condition%</div>
+<!--/TMPL_IF-->
+
+<!--TMPL_IF name=sn-->
+<h3 class="h3c">Serial Number</h3>
+<div class="d2 desc">%sn% </div>
+<!--/TMPL_IF-->
+
+<h3 class="h3c">Appearance</h3>
+<div class="d2 sm">
+<!--TMPL_IF name=is_unused-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_unused-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_top_mint-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_mint-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_mint-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_near_mint-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc5-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc4-->Appearance is beautiful.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc3-->Appearance is clean.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc-->Appearance is clean.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_as_is-->Appearance is clean.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_for_parts-->Appearance is clean.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_brand_new-->Appearance is beautiful.<!--/TMPL_IF-->
+</div>
+
+<div class="d3 desc">
+<!--TMPL_IF name=hyoka_ap-->%hyoka_ap%<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_unused--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_unused--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_top_mint--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_mint-->It shows minimal signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_mint-->tiny scuffs from normal use.<br>It shows minimal signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_near_mint-->tiny scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc5-->tiny scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc4-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc3-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_as_is-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_for_parts-->scuffs from normal use.<br>It shows signs of use.<br><!--/TMPL_IF-->
+<!--TMPL_IF name=is_brand_new--><!--/TMPL_IF-->
+*Please check photos.
+</div>
+
+<!--TMPL_IF name=view_optics-->
+<h3 class="h3c">Optics</h3>
+
+<!--TMPL_IF name=view_optics_finder-->
+<div class="d2 desc optics-check" data-fog="%hyoka_op_f_fog%" data-fungus="%hyoka_op_f_fungus%" data-balsam="%hyoka_op_f_balsam%" data-scratch="%hyoka_op_f_scratch%">
+<b>Finder:</b> <span class="placeholder-hide" data-placeholder="%finder1_name%">%finder1_name%</span><span class="optics-beautiful"> Beautiful condition.</span>
+</div>
+<div class="d3 desc">
+%hyoka_op_f_fog%
+<br>%hyoka_op_f_fungus%
+<br>%hyoka_op_f_balsam%
+<br>%hyoka_op_f_scratch%
+<br>%hyoka_op_f_dust%
+<!--TMPL_IF name=hyoka_op_f_yellow--><br>%hyoka_op_f_yellow%<!--/TMPL_IF-->
+<!--TMPL_IF name=hyoka_op_f_dirt--><br>%hyoka_op_f_dirt%<!--/TMPL_IF-->
+<!--TMPL_IF name=ext_finder_sort-->
+<br>%hyoka_op_f_affect_view%
+</div>
+<!--TMPL_IF name=ext_finder-->
+<span class="placeholder-hide" data-placeholder="%ext_finder%">%ext_finder%</span>
+<!--/TMPL_IF-->
+<!--TMPL_ELSE-->
+<!--TMPL_IF name=ext_finder-->
+<br><span class="placeholder-hide" data-placeholder="%ext_finder%">%ext_finder%</span>
+<!--/TMPL_IF-->
+<br>%hyoka_op_f_affect_view%
+</div>
+<!--/TMPL_IF-->
+<!--/TMPL_IF-->
+
+<!--TMPL_IF name=view_optics_lens-->
+<div class="d2 desc optics-check lens" data-fog="%hyoka_op_fog%" data-fungus="%hyoka_op_fungus%" data-balsam="%hyoka_op_balsam%" data-scratch="%hyoka_op_scratch%">
+<b>Lens:</b> <span class="placeholder-hide" data-placeholder="%lens1_name%">%lens1_name%</span><span class="optics-beautiful"> Beautiful condition.</span>
+</div>
+<div class="d3 desc">
+%hyoka_op_fog%
+<br>%hyoka_op_fungus%
+<br>%hyoka_op_balsam%
+<br>%hyoka_op_scratch%
+<br>%hyoka_op_dust%
+<!--TMPL_IF name=hyoka_op_yellow--><br>%hyoka_op_yellow%<!--/TMPL_IF-->
+<!--TMPL_IF name=hyoka_op_dirt--><br>%hyoka_op_dirt%<!--/TMPL_IF-->
+<!--TMPL_IF name=ext_lens_sort-->
+<br>%hyoka_op_affect_shoot%
+</div>
+<!--TMPL_IF name=ext_lens-->
+<span class="placeholder-hide" data-placeholder="%ext_lens%">%ext_lens%</span>
+<!--/TMPL_IF-->
+<!--TMPL_ELSE-->
+<!--TMPL_IF name=ext_lens-->
+<br><span class="placeholder-hide" data-placeholder="%ext_lens%">%ext_lens%</span>
+<!--/TMPL_IF-->
+<br>%hyoka_op_affect_shoot%
+</div>
+<!--/TMPL_IF-->
+<!--/TMPL_IF-->
+<!--/TMPL_IF-->
+
+<h3 class="h3c">Functional</h3>
+<div class="d2 sm">
+<!--TMPL_IF name=is_unused-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_unused-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_top_mint-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_mint-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_almost_mint-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_near_mint-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc5-->It works properly.<!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc4--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc3--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_exc--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_as_is--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_for_parts--><!--/TMPL_IF-->
+<!--TMPL_IF name=is_brand_new-->It works properly.<!--/TMPL_IF-->
+</div>
+
+<!--TMPL_IF name=hyoka_func-->
+<div class="d3 desc">%hyoka_func%</div>
+<!--/TMPL_IF-->
+
+<h3 class="h3c">Bundled Items</h3>
+<!--TMPL_IF name=bundle-->
+<div class="d2 sm">%bundle%</div>
+<!--/TMPL_IF-->
+
+<div class="d3 desc">All you can see on the picture will be included in a set of a package.</div>
+
+<div class="nt">
+Above condition is based on my own opinion.<br>
+Please check the photo carefully.<br>
+Please feel free to contact me for any questions!<br>
+Thank you.
+</div>
+
+<h2 class="h2c">Shipping</h2>
+<div class="d2 desc">
+<!--TMPL_IF name=my_send_notice-->
+%my_send_notice%
+<!--TMPL_ELSE-->
+I send a product by <span class="at">FedEx or DHL</span>.
+<!--/TMPL_IF-->
+<br>I attach the tracking number.<br>
+Please bid it without worrying.
+</div>
+
+<div class="d desc_a tp">
+Shipping is available from Monday to Friday.<br>
+Weekends are not available because office is closed.
+</div>
+
+<h2 class="h2c">Returns</h2>
+<div class="d2 desc_a">Unconditional Return Policy</div>
+
+<div class="d desc tp">
+Customer service and satisfaction are very important to us.<br>
+I have an unconditional return policy if notified within 30 days of the receipt of the item.
+</div>
+
+<div class="d desc tp">
+All returned items must be the original condition.<br>
+All return requests must be made within 30 days of the receipt of the item.
+</div>
+
+<div class="d desc_a tp">
+Please contact me first for return before you ship it back to me.<br>
+The postage of the returned goods is a %cost_paid% burden.
+</div>
+
+<h2 class="h2c">International Buyers</h2>
+<div class="d2 desc">
+Please Note:<br>
+To Our International Customers<br>
+Important Notice:<br><br>
+
+- For the United States (for items priced under $2,500)<br>
+Import duties, taxes, and charges are included in the item price or shipping cost. (DDP)<br><br>
+
+- For the United States (for items priced at $2,500 or more)<br>
+Import duties, taxes, and charges are <strong class="bd">not included</strong> in the item price or shipping cost.<br>
+These charges are the buyer's responsibility (DDU).<br><br>
+
+- For All Other Countries<br>
+Import duties, taxes, and charges are not included in the item price or shipping cost.<br>
+These charges are the buyer's responsibility.<br>
+Please check with your country's customs office to determine what these additional costs will be prior to bidding or buying.<br>
+We will absolutely refuse any requests for false customs declarations.
+</div>
+
+<p class="foot">Aurora Film Japan &middot; Shipped from Japan</p>
+</div>
+</div>
