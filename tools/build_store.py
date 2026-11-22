@@ -96,7 +96,7 @@ MF_RE = re.compile(r"\bMF\b|manual\s*focus|マニュアル|\bnon[-\s]?Ai\b|\bAi[
 DIGITAL_CAM_RE = re.compile(r"digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megapixel|万画素|デジタル|デジカメ|ミラーレス|コンデジ|"
                             r"coolpix|powershot|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|"
                             r"\bD\d{2,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|"
-                            r"X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV|DIGITAL)\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|"
+                            r"X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV)x?\b|\bGR\s?DIGITAL\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|"
                             r"ILCE|\bNEX|\bK-(?:1|3|5|7|30|50|70|S\d|r|x)\b|\bKP\b|(?<!Minolta\s)α\s?\d|Sony\s*A7|\bA7[RSC]?\s?(?:I{1,3}|IV|M\d)?\b|RX100|\bGH\d|\bGX\d|(?:powershot|lumix|Canon)\s*G\d{1,2}\b|\bG\d{1,2}\s?X\b|"
                             r"\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b", re.I)
 
@@ -109,12 +109,15 @@ KIT_WORDS_RE = re.compile(r"\bbody\b|ボディ|\bw/|\bwith\b|\+|\bkit\b|付き?|
 FIXED_BODY_RE = re.compile(r"rolleiflex|rolleicord|\bhexar\b|\bT[234]\b|\bTVS\b|\bGR1\w*|\bX100\w*|\bTC-1\b|\b\d\dTi\b|klasse|natura|"
                            r"\btrip\s*35|\bmju|\bXA\d?\b|\bGA645|\bGW690|\bGSW690|\bGF670|\bbessa|Mamiya\s*[67]\b|minox|"
                            r"Contax\s*(?:G[12]|RTS|aria|139|167|RX|ST|AX|S2)\b|Leica\s*M\d{1,2}\b|Leica\s*(?:III?\w*|II)\b|"
-                           r"Hasselblad\s*\d{3}\s?[A-Z]{1,3}\b|\bQL17\b|Electro\s*35", re.I)
+                           r"Hasselblad\s*\d{3}\s?[A-Z]{1,3}\b|\bQL17\b|Electro\s*35|\bSQ-?A\w*\b|\bETR\w*\b|\bC[23]\d0\b|\bM645\b|\b1000S\b|\bCLE\b|\bDf\b|"
+                           r"Makina|Pentax\s*67\s*II|Pentax\s*6x7\b|\bRB67\s*Pro|\bRZ67\s*Pro", re.I)
 # レンズの系統の名前とレンズメーカー（マウント名の FD・Ai などは含めない）
 LENS_FAMILY_RE = re.compile(r"nikkor|zuiko|takumar|rokkor|sekor|elmar|elmarit|summicron|summilux|summaron|noctilux|planar|sonnar|"
                             r"distagon|tessar|biogon|hexanon|zenzanon|xenar|xenotar|symmar|angulon|serenar|nokton|ultron|heliar|skopar|"
                             r"jupiter|helios|industar|biotar|flektogon|pancolar|tamron|sigma|tokina|samyang|rokinon|vivitar|soligor|"
                             r"yongnuo|laowa|7artisans|ttartisan|canon\s+lens", re.I)
+BODY_SKIP = r"sel\d+\w*|af(-[spid])?|ef(-s|-m)?|rf|fe|xf|dx|fx|g|ed|vr|ii|iii|iv|if|l39|m39|m42|ltm|c/y|cy|rb67|rz67|sl66|6x[4-9]|645|67"  # 型番に数えない語（マウント・判・レンズの記号）
+LENS_MAKER_RE = re.compile(r"\s*(tamron|sigma|tokina|samyang|rokinon|vivitar|soligor|yongnuo|laowa|7artisans|ttartisan|voigtl\w*|zeiss|carl\s+zeiss|schneider|rodenstock|kenko)\b", re.I)
 SERIES_BODY_WORDS = {"trip", "electro", "pen", "mju", "xa", "gr", "hexar", "klasse", "natura", "tvs", "contax"}
 
 
@@ -128,14 +131,23 @@ def body_before_mm(title: str) -> bool:
     has_for = re.search(r"\bfor\b|用", t0, re.I)
     if FIXED_BODY_RE.search(t0) and not has_for:
         return True
+    toks = ba.title_to_query(title, 20).split()
+    if not has_for and not LENS_MAKER_RE.match(t0):
+        for t in toks[1:]:
+            tl = t.lower()
+            if re.fullmatch(r"\d+(-\d+)?mm", tl) or LENS_FAMILY_RE.search(tl):
+                break
+            if tl in LENS_LINE_WORDS or re.fullmatch(BODY_SKIP, tl):
+                continue
+            if re.search(r"[a-zα]", tl) and re.search(r"\d", tl):
+                return True   # FM2・OM-2N・D750 などがレンズの系統の語より前にある
     if LENS_FAMILY_RE.search(t0) or has_for:
         return False
-    toks = ba.title_to_query(title, 20).split()
     for t in toks[1:]:
         tl = t.lower()
         if re.fullmatch(r"\d+(-\d+)?mm", tl):
             return False
-        if tl in LENS_LINE_WORDS or re.fullmatch(r"sel\d+\w*|af(-[spid])?|ef(-s|-m)?|rf|fe|xf|dx|fx|g|ed|vr|ii|iii|iv|if|l39|m39|m42|ltm|c/y|cy|rb67|rz67|sl66|6x[4-9]|645|67", tl):
+        if tl in LENS_LINE_WORDS or re.fullmatch(BODY_SKIP, tl):
             continue
         if re.search(r"[a-zα]", tl) and re.search(r"\d", tl):
             return True   # FM2・AE-1・D750・F3・EOS 5D など
@@ -195,7 +207,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     if kind == "camera":
         # 表示名にシリーズの語を残す（「Canon 310」→「Canon IXY 310」、「Nikon fc」→「Nikon Z fc」。2026-11-22）。比べるキーは変えない
         series = set(ba.LINE_WORDS) | SERIES_BODY_WORDS | {"z", "d-lux", "v-lux", "c-lux", "trip", "electro", "zoom", "system", "eos"}
-        shown = [t for t in rest if t.lower() in series or t in shown]
+        shown = [t for t in rest if t.lower() in series or t in shown or FIXED_BODY_RE.fullmatch(t)]   # SQ-A・CLE・Df も名前に残す
         seen = set()
         shown = [t for t in shown if not (t.lower() in seen or seen.add(t.lower()))]
     label = " ".join([brand] + shown)
