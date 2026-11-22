@@ -102,6 +102,8 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .bidbar .mini{white-space:nowrap}
 .bidbar[hidden]{display:none}body.hasbar{padding-bottom:90px}.bid .links{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
 .bid .links .mini{white-space:nowrap;display:flex;align-items:center;justify-content:center;font-size:13px}
+.yn{display:inline-block;font-size:.5em;font-weight:900;letter-spacing:.04em;border-radius:6px;padding:.15em .45em;margin-right:.35em;vertical-align:.35em;color:#fff;line-height:1.2}.yn.solo{font-size:.8em;vertical-align:0}.yn.ok{background:var(--good)}.yn.no{background:var(--bad)}
+.bid .max .yn{font-size:13px;vertical-align:4px;margin-right:6px}#capText .yn{font-size:15px;vertical-align:1px}
 .tag.done{background:#e6f4ea;color:var(--good)}.tag.same{background:#eef2f7;color:var(--sub)}.bid .max{flex-wrap:wrap}.bid .max strong{white-space:nowrap}.bid .max .s{flex:1 1 12em;min-width:0}.bid .max.no strong{color:var(--bad)}.bid.flash{background:#fff7d6;transition:background .3s}
 .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin:2px 4px 0 0;background:#fdecea;color:var(--bad)}
 .tag.trust{background:#e6f4ee;color:var(--good)}.tag.tent{background:var(--warnbg);color:var(--warn)}.tag.ok{background:#e6f4ee;color:var(--good)}
@@ -450,6 +452,8 @@ function conds(refs) {
 // 出せる額が1,000円未満は「購入しない」と出す（40円まで出せる、のような使えない数字を出さない。2026-11-21 ユーザー指摘。言葉は同日ユーザー指定。表示だけで判定は同じ）
 // ただし値札が入っていて基準を満たす（緑）ときは、1,000円未満でもその額を出す（ジャンクかごの数百円の値札で色と言葉が食い違わないように）
 const TINY_MAX = 1000;
+// 判断は一目で: OK（緑）／NO（赤）。文で書かない（2026-11-22 オーナー「購入しない、じゃなくて、OKとかNOとか」）
+const yn = (ok) => `<span class="yn ${ok ? "ok" : "no"}">${ok ? "OK" : "NO"}</span>`;
 const canPay = (c, ok) => !!c && c.maxBid > 0 && (c.maxBid >= TINY_MAX || !!ok);
 // 利益の基準は計算した側（core.calculate の minProfit。売値・送料込み$99以下は4,000円）をそのまま出す
 const lowNote = (c) => (c.minProfit > (DATA.cfg.minProfit || 0) ? `（売値$${DATA.cfg.lowPriceUsd}以下・送料込みの安い物）` : "");
@@ -495,17 +499,17 @@ function renderResult(name, price, r) {
     : !canPay(c, ok) ? `この相場${lowNote(c)}では利益${c.minProfit.toLocaleString()}円の基準に届かない`
     : price == null ? "値札を入れると利益を出します"
     : `値札 ${yen(price)} では基準（利益${DATA.cfg.minMarginPct}%・${c.minProfit.toLocaleString()}円）に届かない`;
-  const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない";
+  const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "";
   const tv = triviaOf(name);
   { const bar = lsGet(LS_BIDBAR, null), cm = ctxMax(name, c);
     if (bar && bidCtx && bar.id === bidCtx.id && cm > 0 && bar.maxBid !== cm) { lsSet(LS_BIDBAR, Object.assign({}, bar, { maxBid: cm, redo: true })); setTimeout(renderBidBar, 0); } }
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
-    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
+    <div class="hero ${cls}${c ? "" : " small"}">${!c ? "" : !head ? yn(false).replace('class="yn ', 'class="yn solo ') : price != null ? yn(ok) : ""}${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
   // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
     : (canPay(c, ok) ? (price != null ? `<b>${yen(c.maxBid)}</b> まで出せる` : "") + (m ? `<span class="s">この額で利益 ${yen(m.profit)}</span>` : "")
-      : `<b>購入しない</b>`)
+      : "")   // NO は上の大きい表示に出す（2つ出さない）
       + (sold ? `<span class="s">Sold $${pick.sold.usd}${pick.sold.cond ? "（" + esc(pick.sold.cond) + "）" : ""}${r.usd != null && Math.abs(r.usd - (DATA.cfg.deductionUsd || 0) - pick.sold.usd) >= 1 ? ` → 実物の状態で $${Math.round(r.usd - (DATA.cfg.deductionUsd || 0))}` : ""} で計算</span>` : "");
   $("resTop").innerHTML = h;
   h = "";
@@ -1037,9 +1041,9 @@ function renderShelf(note) {
   el.innerHTML = `<div class="row" style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">読み取り ${rows.length}件 ― 基準を満たす ${buy}件</h2><button class="mini" data-clear="1" type="button">新しい棚</button></div>${note ? `<div class="s">${esc(note)}</div>` : ""}${rows.some((x) => !x.r.calc && x.price != null) ? `<div class="s">$〜 ＝ eBay でこの値段以上で売れれば利益</div>` : ""}` + rows.map((x, i) => {
     const r = x.r, c = r.calc, ok = r.mark === "◎" || r.mark === "○", cls = !c ? "w" : ok ? "g" : r.mark === "要確認" ? "w" : "x";
     const nd = !c && x.price != null ? needUsd(x.price, x.name) : null;
-    const big = !c ? (nd ? `$${nd.toLocaleString()}〜` : "相場なし") : x.price == null ? (canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない")
+    const big = !c ? (nd ? `$${nd.toLocaleString()}〜` : "相場なし") : x.price == null ? (canPay(c, ok) ? yen(c.maxBid) + "まで" : "NO")
       : (c.profit > 0 ? "+" : c.profit < 0 ? "−" : "") + Math.abs(Math.round(c.profit)).toLocaleString("ja-JP") + "円";
-    const sub = x.price == null ? "値札が読めない" : !c ? `値札 ${yen(x.price)}${nd ? "" : "・相場なし"}` : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;   // 相場なしの行にも値札を出す（仮想店舗で見つけた）
+    const sub = x.price == null ? "値札が読めない" : !c ? `値札 ${yen(x.price)}${nd ? "" : "・相場なし"}` : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "NO"}`;   // 相場なしの行にも値札を出す（仮想店舗で見つけた）
     return `<div class="shelf"><div class="tt"><b>${core.sweetSpot && core.sweetSpot(x.name) ? "★ " : ""}${esc(x.name)}</b><span class="s">${esc(sub)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
       <div class="pf ${cls}">${esc(big)}</div>
       <button data-shelf="${i}" data-act="${!c ? "sold" : ok ? "buy" : "look"}">${!c ? "Sold" : ok ? "購入へ" : "見る"}</button></div>`;
@@ -1397,8 +1401,8 @@ function bidCard(i, B, done, now, tag) {
     i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
   const mx = r ? r.maxBid : i.maxBid, pf = r ? r.profit : i.profit, no = r && (!(mx > 0) || (i.price && i.price > mx));
   const maxHtml = r
-    ? `<div class="max${no ? " no" : ""}"><strong>${no ? "購入しない" : yen(mx)}</strong><span class="s">${no ? (mx > 0 ? `上限 ${yen(mx)}${storeNote(i, mx)}・` : "基準を満たす入札額なし・") : `まで入札${storeNote(i, mx)}・`}Sold で出し直し${pf != null ? `・現在価格 ${yen(i.price)} で買ったときの利益 ${signYen(pf)}${no && pf > 0 && r.minProfit ? `（基準 ${yen(r.minProfit)} に届かない）` : ""}` : ""}</span></div>`
-    : `<div class="max"><strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・この価格なら利益 ${yen(i.profit)}` : ""}</span></div>`;
+    ? `<div class="max${no ? " no" : ""}">${yn(!no)}${mx > 0 ? `<strong>${yen(mx)}</strong><span class="s">まで入札${storeNote(i, mx)}・` : `<span class="s">基準を満たす入札額なし・`}Sold で出し直し${pf != null ? `・現在価格 ${yen(i.price)} で買ったときの利益 ${signYen(pf)}${no && pf > 0 && r.minProfit ? `（基準 ${yen(r.minProfit)} に届かない）` : ""}` : ""}</span></div>`
+    : `<div class="max${i.price > i.maxBid ? " no" : ""}">${yn(!(i.price > i.maxBid))}<strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・この価格なら利益 ${yen(i.profit)}` : ""}</span></div>`;
   return `<div class="bid${i.check && !(ck && ck.own) ? " tent" : ""}${did ? " did" : ""}" data-card="${esc(i.id)}">
     <div class="tt"><a href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
     <div class="s">${e ? `${esc(dayLabel(e))} ${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${esc(leftText(e - now))}</span>・` : ""}${esc(at)}時点 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
