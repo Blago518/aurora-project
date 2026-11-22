@@ -88,7 +88,7 @@ CAMERA_LINE_WORDS = ba.GENERATIONS | {"program", "pro", "super", "classic", "dx"
 AF_STRONG_RE = re.compile(r"\bAF[-\s]?[SPID]?\b|オートフォーカス|autofocus|\bUSM\b|\bSTM\b|\bHSM\b|\bSDM\b|\bSSM\b|\bSAM\b|"
                           r"\bEF-?S?\s?\d|\bRF\s?\d|\bFE\s?\d|\bXF\s?\d|\bXC\s?\d|M\.?\s?ZUIKO|ZUIKO\s+DIGITAL|NIKKOR\s*Z\b|"
                           r"\bD\s?FA\b|\bDA\s?\*?\s?\d|\bFA\s?\*?\s?\d|Maxxum|Dynax|\bDC\b|\bDG\b|\bVR\b|\bVC\b|\bDi\b|\bLUMIX\s*G\b|"
-                          r"Contax\s*(?:G\d?|645)\b|(?:Planar|Biogon|Sonnar|Hologon)\b.*\b(?:for\s+)?G\s*$|\bHCD?\s?\d|\bSony\b|\bSEL\s?\d", re.I)
+                          r"Contax\s*(?:G\d?|645)\b|Nikon\s+Z\s?\d|Nikon\s*1\s+Nikkor|AT-X|(?:Planar|Biogon|Sonnar|Hologon)\b.*\b(?:for\s+)?G\s*$|\bHCD?\s?\d|\bSony\b|\bSEL\s?\d", re.I)
 MF_RE = re.compile(r"\bMF\b|manual\s*focus|マニュアル|\bnon[-\s]?Ai\b|\bAi[-\s]?S?\b|\bNew\s?FD\b|\bnFD\b|\bFD\b|\bFL\b|Takumar|\bM42\b|"
                    r"\bMD\b|\bMC\b|Rokkor|\bOM\b|G\.?\s?Zuiko|\bL39\b|\bLTM\b|Leica\s*M\b|\bC/?Y\b|\bAE[JG]\b|\bMM[JG]\b|"
                    r"Hasselblad|Mamiya|Bronica|Pentax\s*67|\b6x7\b|\bZ[FE]\.?2?\b|Loxia|Milvus|Voigtl|Helios|Jupiter|Industar", re.I)
@@ -100,13 +100,35 @@ DIGITAL_CAM_RE = re.compile(r"digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megap
                             r"\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b", re.I)
 
 
-LENS_LIKE_RE = re.compile(r"(?<![\d.])\d{2,4}(?:-\d{2,4})?\s?mm\b.*\bF\s?/?\d|\bSEL\s?\d{3,4}", re.I)
+LENS_LIKE_RE = re.compile(r"(?<![\d.])\d{2,4}(?:-\d{2,4})?\s?mm\b.*\bF\s?/?\d|(?<![\d.])\d{1,3}-\d{2,3}\s?mm\b|\bSEL\s?\d{3,4}", re.I)
+
+
+SERIES_BODY_WORDS = {"trip", "electro", "pen", "mju", "xa", "gr", "hexar", "klasse", "natura", "tvs", "contax"}
+
+
+def body_before_mm(title: str) -> bool:
+    """焦点距離より前にボディの型番がある（「Nikon FM2 + Ai 50mm F1.4」「Contax T2 Sonnar 38mm F2.8」「Fujifilm X100V 23mm F2」）.
+    レンズ付きで売れたボディ・レンズ固定のカメラをレンズと読まないため（2026-11-22）."""
+    toks = ba.title_to_query(title, 20).split()
+    series = False
+    lens_family = any(t.lower() in LENS_LINE_WORDS for t in toks[1:])   # Zuiko・Nikkor・Sonnar などがあれば、シリーズの語（Pen など）だけではボディとみない
+    for t in toks[1:]:
+        tl = t.lower()
+        if re.fullmatch(r"\d+(-\d+)?mm", tl):
+            return series and not lens_family
+        if tl in LENS_LINE_WORDS or re.fullmatch(r"sel\d+\w*|af(-[spid])?|ef(-s|-m)?|rf|fe|xf|dx|fx|g|ed|vr|ii|iii|iv|if", tl):
+            continue
+        if re.search(r"[a-zα]", tl) and re.search(r"\d", tl):
+            return True   # FM2・AE-1・T2・GR1v・X100V・D750・F3・EOS 5D など
+        if tl in SERIES_BODY_WORDS:
+            series = True
+    return False
 
 
 def rec_cat(kind: str, titles: list[str]) -> str:
     """おすすめの分類: mf / af（レンズ）、film / digital（カメラ）. 同じ機種の売れた商品名の多数決."""
-    if kind != "lens" and LENS_LIKE_RE.search(" ".join(titles)):
-        kind = "lens"   # 「カメラ」に入ったレンズ（焦点距離と F値がある）はレンズとして分ける。フィルムカメラ・デジタルの枠に出さない
+    if kind != "lens" and titles and all(LENS_LIKE_RE.search(t) and not body_before_mm(t) for t in titles):
+        kind = "lens"   # 「カメラ」に入ったレンズ（ボディの型番が無く、焦点距離と F値がある）はレンズとして分ける
     if kind == "lens":
         af = sum(1 for t in titles if (AF_STRONG_RE.search(t) or re.search(r"\bSEL\s?\d", t, re.I)) and not re.search(r"\bMF\b|manual\s*focus", t, re.I))
         mf = sum(1 for t in titles if MF_RE.search(t) and not AF_STRONG_RE.search(t))
@@ -126,12 +148,15 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         return ["newfd"] if t in ("nfd", "fdn") else ["ai-s"] if t == "ais" else [t]
     low = [x for t in rest for x in norm(t)]
     has_mm = any(re.fullmatch(r"\d+(-\d+)?mm", t) for t in low)
-    has_f = any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?[a-z]?", t) for t in low)  # F5.6E・F1.4G・F2.8L も F値（2026-11-22 200-500mm F5.6E がカメラに入っていた）
-    kind = "lens" if has_mm and (has_f or "lens" in low) and not CAMERA_WORDS & set(low) else "camera"
+    zoom = any(re.fullmatch(r"\d{1,3}-\d{2,3}mm", t) for t in low)   # ズームの焦点距離は F値が無くてもレンズ（AF-S DX 18-140mm）
+    has_f = zoom or any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?[a-z]?", t) for t in low)  # F5.6E・F1.4G・F2.8L も F値（2026-11-22 200-500mm F5.6E がカメラに入っていた）
+    kind = "lens" if has_mm and (has_f or "lens" in low) and not CAMERA_WORDS & set(low) and not body_before_mm(title) else "camera"
 
     def wanted(t: str) -> bool:
         if kind == "lens":
-            return bool(t in LENS_LINE_WORDS or re.fullmatch(r"\d+(-\d+)?mm", t) or re.fullmatch(r"f\d.*", t))
+            # Nikon Z・Contax G のレンズは系統の語を残す（無いと MF のレンズと見分けられない。2026-11-22）
+            return bool(t in LENS_LINE_WORDS or re.fullmatch(r"\d+(-\d+)?mm", t) or re.fullmatch(r"f\d.*", t)
+                        or (t == "z" and brand == "Nikon") or (t == "g" and brand == "Contax"))
         return bool((re.search(r"\d", t) and t != "35mm") or t in CAMERA_LINE_WORDS)
 
     keep, shown = [], []
@@ -148,7 +173,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         keep, shown = [t.lower() for t in names[:2]], names[:2]
     if kind == "camera":
         # 表示名にシリーズの語を残す（「Canon 310」→「Canon IXY 310」、「Nikon fc」→「Nikon Z fc」。2026-11-22）。比べるキーは変えない
-        series = set(ba.LINE_WORDS) | {"z", "d-lux", "v-lux", "c-lux", "trip", "electro", "zoom", "system", "eos"}
+        series = set(ba.LINE_WORDS) | SERIES_BODY_WORDS | {"z", "d-lux", "v-lux", "c-lux", "trip", "electro", "zoom", "system", "eos"}
         shown = [t for t in rest if t.lower() in series or t in shown]
         seen = set()
         shown = [t for t in shown if not (t.lower() in seen or seen.add(t.lower()))]

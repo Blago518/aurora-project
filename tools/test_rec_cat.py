@@ -69,5 +69,65 @@ console.log(JSON.stringify(cases.map(([k, t]) => {
         self.assertEqual(bs.rec_cat("camera", ["Nikon R10 SUPER 8mm"]), "film")
 
 
+    # 必ずその枠に出るはずの機種（eBay の商品名のような、レンズの仕様つきの長い形も）。2026-11-22 オーナー指摘「フィルムカメラで何故レンズが出る？」
+    MUST = {
+        "film": ["Contax T2 Sonnar 38mm F2.8 Titanium", "Contax G2 Body", "Nikon F3 HP Body", "Nikon FM2 + Ai 50mm F1.4",
+                 "Canon AE-1 Program w/ New FD 50mm F1.8", "Ricoh GR1v 28mm F2.8", "Leica M6 TTL 0.72", "Minolta α-7 + 50mm F1.4",
+                 "Olympus Trip 35", "Pentax 67II Body", "Hasselblad 500CM 80mm F2.8", "Polaroid SX70", "Nikon R10 SUPER 8mm",
+                 "Olympus mju Zoom 35-70mm", "Contax TVS 28-56mm"],
+        "digital": ["Fujifilm X100V 23mm F2", "Nikon D750 24.3MP Body", "Sony α7 III Body", "Ricoh GR III 18.3mm F2.8",
+                    "Canon EOS 5D Mark II 24-105mm F4", "Canon PowerShot G7 X Mark II", "Leica M10 Body", "Nikon Z 6II Body",
+                    "Canon IXY 310", "Olympus OM-D E-M5 Mark II"],
+        "mf": ["Nikon Ai-S 50mm F1.2", "Canon New FD 50mm F1.4", "Pentax 67 105mm F2.4", "Contax Planar 85mm F1.4 AEG",
+               "Leica Summilux-M 35mm F1.4", "Pentax SMC Takumar 55mm F1.8", "Olympus Pen Zuiko 38mm f/2.8"],
+        "af": ["Nikon AF-S 200-500mm F5.6E ED VR", "Nikon AF-S DX 18-140mm", "Canon EF 70-200mm F2.8L IS II",
+               "Sony FE 24-70mm F2.8 GM", "Contax Planar 45mm F2 G", "Nikon Z 24-70mm F4 S", "Sony SEL1635Z"],
+    }
+
+    def test_must_python(self):
+        """Mac の通り道（rec_key で種類 → rec_cat）で、必ずその枠に出る."""
+        for cat, ts in self.MUST.items():
+            for t in ts:
+                k = bs.rec_key(t)
+                self.assertIsNotNone(k, t)
+                self.assertEqual(bs.rec_cat(k[2], [t]), cat, (t, k))
+
+    def test_must_app_old_data(self):
+        """スマホの古いデータ（Mac の分類が無い・カメラ/レンズの種類が間違っていることもある）でも、アプリが同じ枠に出す."""
+        import json
+        import re
+        import shutil
+        import subprocess
+        from pathlib import Path
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        html = (Path(__file__).resolve().parent.parent / "store" / "index.html").read_text(encoding="utf-8")
+        a = html.index("const AF_STRONG_RE")
+        b = html.index("const recCat")
+        b = html.index("\n};", b) + 3
+        src = re.sub(r"^const (MF_RE|brandName) .*$", "", html[a:b], flags=re.M)
+        cases = []
+        for cat, ts in self.MUST.items():
+            label = None
+            for t in ts:
+                label, _, kind = bs.rec_key(t)
+                for k in (("camera", "lens") if re.search(r"\\d+(-\\d+)?mm", label) else ("camera",)):   # 焦点距離のある物は、種類が間違ったデータでも
+                    cases.append([cat, {"label": label, "kind": k}])
+        js = src + "\nconst DIGITAL_RE = /$^/;\nconst cases = %s;\nconsole.log(JSON.stringify(cases.map(([c, r]) => recCat(r))));" % json.dumps(cases, ensure_ascii=False)
+        out = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+        for (cat, r), got in zip(cases, out):
+            self.assertEqual(got, cat, r)
+
+
+    def test_js_patterns_synced(self):
+        """アプリの正規表現は Mac（build_store）と同じ文字列."""
+        import re
+        from pathlib import Path
+        html = (Path(__file__).resolve().parent.parent / "store" / "index.html").read_text(encoding="utf-8")
+        for name in ("AF_STRONG_RE", "DIGITAL_CAM_RE", "LENS_LIKE_RE"):
+            js = re.search(r"^const %s = /(.*)/i;$" % name, html, re.M).group(1).replace("\\/", "/")
+            self.assertEqual(js, getattr(bs, name).pattern, name)
+
+
 if __name__ == "__main__":
     unittest.main()
