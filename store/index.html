@@ -96,7 +96,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .bid .tt{flex:1;min-width:0}.bid .tt a{color:var(--ink);font-weight:700;text-decoration:none;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bid .max{display:flex;align-items:baseline;gap:8px;margin:8px 0 2px}.bid .max strong{cursor:pointer}.bid .max strong{font-size:22px;color:var(--good)}
 .bid .tent .max strong,.bid.tent .max strong{color:var(--warn)}
-.bid.did{opacity:.55}.bid .links.five{grid-template-columns:repeat(5,1fr)}.linkbtn{background:none;border:0;color:var(--blue);font-size:12px;padding:0;text-decoration:underline}
+.bid.did{opacity:.55}.bid .links.five{grid-template-columns:repeat(5,1fr)}.bid .links.six{grid-template-columns:repeat(6,1fr);gap:4px}.bid .links.six .mini{padding-left:2px;padding-right:2px}.linkbtn{background:none;border:0;color:var(--blue);font-size:12px;padding:0;text-decoration:underline}
 .bidbar{position:fixed;left:0;right:0;bottom:0;z-index:8;display:flex;gap:8px;align-items:center;background:var(--navy);color:#fff;padding:10px max(12px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 10px) max(12px,env(safe-area-inset-left))}
 .bidbar .bbt{flex:1;min-width:0;display:flex;flex-direction:column}.bidbar b{font-size:22px}.bidbar span{font-size:11px;color:#a9c3d6}.bidbar small{font-size:11px;color:#a9c3d6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bidbar .mini{white-space:nowrap}
@@ -311,7 +311,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.9";
+  var APP_VERSION = "2026.11.22.10";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -1320,7 +1320,7 @@ function bidCard(i, B, done, now, tag) {
     <div class="tt"><a href="${esc(toSafari(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
     <div class="s">${e ? `${esc(dayLabel(e))} ${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${esc(leftText(e - now))}</span>・` : ""}${esc(at)}時点 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
     <div class="max"><strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・この価格なら利益 ${yen(i.profit)}` : ""}</span></div>
-    <div class="links five"><a class="mini" href="${esc(toSafari(i.url))}" target="_blank" rel="noopener">ヤフオク</a>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
+    <div class="links six"><a class="mini" href="${esc(toSafari(i.url))}" target="_blank" rel="noopener">ヤフオク</a><button class="mini" type="button" data-copy="${esc(i.url)}">URL</button>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
       <button class="mini" type="button" data-blook="${esc(i.id)}">調べる</button>
       <a class="mini main" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
   </div>`;
@@ -1356,7 +1356,7 @@ function renderBidBar() {
   if (!x) { bar.hidden = true; return; }
   bar.hidden = false;
   bar.innerHTML = `<div class="bbt"><b>${yen(x.maxBid)}</b><span>${x.redo ? "Sold で出し直した額" : "入札欄に入れる額"}・URL はコピー済み</span><small>${esc(x.title)}</small></div>
-    <button class="mini main" type="button" data-bbar="done">予約した</button><button class="mini" type="button" data-bbar="close">やめる</button>`;
+    <button class="mini" type="button" data-copy="${esc(x.url || "")}">URL</button><button class="mini main" type="button" data-bbar="done">予約した</button><button class="mini" type="button" data-bbar="close">やめる</button>`;
 }
 function startSnipe(i, maxBid) {
   try { navigator.clipboard.writeText(i.url).catch(() => {}); } catch (err) {}
@@ -1369,6 +1369,13 @@ function bidRecord(x, kind) {
   out.push([nowJst(), kind, x.title, x.price || "", x.mark || "", x.maxBid || "", x.usd || "", "ヤフオク", `ID ${x.id}／終了 ${x.end || ""}${x.tent ? "／仮" : ""}`, APP_VERSION]);
   lsSet(LS_OUT, out); flushOutbox();
 }
+// ヤフオクの URL をコピー（2026-11-22 オーナー「ヤフオクの url を簡単にコピペできるように」）
+document.addEventListener("click", (e) => {
+  const c = e.target.closest && e.target.closest("[data-copy]"); if (!c) return;
+  const u = c.dataset.copy; if (!u) return;
+  const done = () => toast("ヤフオクの URL をコピーしました");
+  try { navigator.clipboard.writeText(u).then(done, () => { prompt("コピーしてください", u); }); } catch (err) { prompt("コピーしてください", u); }
+});
 $("bidBar").onclick = (e) => {
   const k = e.target.dataset.bbar; if (!k) return;
   const x = lsGet(LS_BIDBAR, null); if (!x) return;
