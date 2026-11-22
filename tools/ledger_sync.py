@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import secrets
 import shutil
 import sys
@@ -935,6 +936,34 @@ def returns_csv(rows: list[dict]) -> str:
     for r in rows:
         w.writerow([r.get(c, "") for c in RETURNS_COLS])
     return buf.getvalue()
+
+
+RECS_SHEET = "Mac_おすすめ"  # 店舗アプリのおすすめ全部（枠・表示名・元の商品名）。クラウドのサトシが毎朝全部を見て、枠の誤りを直す（2026-11-22）
+REC_CAT_JA = {"mf": "MF", "af": "AF", "film": "Film", "digital": "Digital"}
+
+
+def recs_csv(recs: list[dict]) -> str:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["枠", "メーカー", "表示名", "種類", "販売回数", "想定$（送料込み）", "元の商品名（例）"])
+    for r in sorted(recs, key=lambda x: (x.get("cat", ""), x.get("brand", ""), x.get("label", ""))):
+        w.writerow([REC_CAT_JA.get(r.get("cat", ""), r.get("cat", "")), r.get("brand", ""), r.get("label", ""),
+                    "レンズ" if r.get("kind") == "lens" else "カメラ", r.get("sales", ""), r.get("usd", ""),
+                    " ／ ".join(r.get("examples") or [])[:300]])
+    return buf.getvalue()
+
+
+def upload_recs(path: Path | None = None, post=None) -> int | None:
+    """data/store_data.json のおすすめ全部 → 古物台帳「Mac_おすすめ」（まるごと置き換え）. 送った行数."""
+    path = path or DATA / "store_data.json"
+    if not path.exists():
+        return None
+    recs = json.loads(path.read_text(encoding="utf-8")).get("recs") or []
+    if not post_sheet(RECS_SHEET, recs_csv(recs), post=post):
+        print(f"おすすめ: 台帳「{RECS_SHEET}」に送れませんでした", file=sys.stderr)
+        return None
+    print(f"おすすめ: 台帳「{RECS_SHEET}」に {len(recs)}行（クラウドで枠の誤りを見る）", file=sys.stderr)
+    return len(recs)
 
 
 def upload_returns(reports: Path | None = None, post=None) -> int | None:

@@ -74,15 +74,25 @@ console.log(JSON.stringify(cases.map(([k, t]) => {
         "film": ["Contax T2 Sonnar 38mm F2.8 Titanium", "Contax G2 Body", "Nikon F3 HP Body", "Nikon FM2 + Ai 50mm F1.4",
                  "Canon AE-1 Program w/ New FD 50mm F1.8", "Ricoh GR1v 28mm F2.8", "Leica M6 TTL 0.72", "Minolta α-7 + 50mm F1.4",
                  "Olympus Trip 35", "Pentax 67II Body", "Hasselblad 500CM 80mm F2.8", "Polaroid SX70", "Nikon R10 SUPER 8mm",
-                 "Olympus mju Zoom 35-70mm", "Contax TVS 28-56mm"],
+                 "Olympus mju Zoom 35-70mm", "Contax TVS 28-56mm", "Konica Hexar AF 35mm F2", "Rolleiflex 2.8F Planar 80mm F2.8",
+                 "Mamiya 7 II 80mm F4",   # ボディ＋レンズで売れることが多い名前はカメラ（レンズだけは「N 80mm for Mamiya 7」の形）
+                 "Hasselblad 500CM 80mm F2.8", "Leica M6 TTL Summicron 50mm F2", "Nikon F3 HP w/ Ai-S 50mm F1.4", "Contax G2 Planar 45mm F2 kit"],
         "digital": ["Fujifilm X100V 23mm F2", "Nikon D750 24.3MP Body", "Sony α7 III Body", "Ricoh GR III 18.3mm F2.8",
                     "Canon EOS 5D Mark II 24-105mm F4", "Canon PowerShot G7 X Mark II", "Leica M10 Body", "Nikon Z 6II Body",
                     "Canon IXY 310", "Olympus OM-D E-M5 Mark II"],
         "mf": ["Nikon Ai-S 50mm F1.2", "Canon New FD 50mm F1.4", "Pentax 67 105mm F2.4", "Contax Planar 85mm F1.4 AEG",
-               "Leica Summilux-M 35mm F1.4", "Pentax SMC Takumar 55mm F1.8", "Olympus Pen Zuiko 38mm f/2.8"],
+               "Leica Summilux-M 35mm F1.4", "Pentax SMC Takumar 55mm F1.8", "Olympus Pen Zuiko 38mm f/2.8",
+               "Mamiya RB67 Sekor C 90mm F3.8", "Mamiya RZ67 Sekor Z 110mm F2.8 W", "Leica L39 Elmar 50mm F3.5",
+               "Tamron SP 52B 90mm F2.5 Macro", "Olympus OM Zuiko 50mm F1.2", "Mamiya N 80mm F4 for Mamiya 7",
+               "Hasselblad Planar 80mm F2.8 CF"],
         "af": ["Nikon AF-S 200-500mm F5.6E ED VR", "Nikon AF-S DX 18-140mm", "Canon EF 70-200mm F2.8L IS II",
-               "Sony FE 24-70mm F2.8 GM", "Contax Planar 45mm F2 G", "Nikon Z 24-70mm F4 S", "Sony SEL1635Z"],
+               "Sony FE 24-70mm F2.8 GM", "Contax Planar 45mm F2 G", "Nikon Z 24-70mm F4 S", "Sony SEL1635Z",
+               "Tamron A09 28-75mm F2.8 Di", "Olympus M.Zuiko Digital ED 12-40mm F2.8"],
     }
+
+    def test_rollei_brand(self):
+        """「Zeiss Rolleiflex 2.8F Planar」のメーカーは Rollei（Carl Zeiss にしない。2026-11-22）."""
+        self.assertTrue(bs.rec_key("Rolleiflex 2.8F Planar 80mm F2.8")[0].startswith("Rollei 2.8F"))
 
     def test_must_python(self):
         """Mac の通り道（rec_key で種類 → rec_cat）で、必ずその枠に出る."""
@@ -124,9 +134,26 @@ console.log(JSON.stringify(cases.map(([k, t]) => {
         import re
         from pathlib import Path
         html = (Path(__file__).resolve().parent.parent / "store" / "index.html").read_text(encoding="utf-8")
-        for name in ("AF_STRONG_RE", "DIGITAL_CAM_RE", "LENS_LIKE_RE"):
+        for name in ("AF_STRONG_RE", "DIGITAL_CAM_RE", "LENS_LIKE_RE", "KIT_WORDS_RE", "FIXED_BODY_RE", "LENS_FAMILY_RE"):
             js = re.search(r"^const %s = /(.*)/i;$" % name, html, re.M).group(1).replace("\\/", "/")
             self.assertEqual(js, getattr(bs, name).pattern, name)
+
+
+    def test_upload_recs(self):
+        """おすすめ全部を古物台帳「Mac_おすすめ」に送る形（枠・表示名・元の商品名）."""
+        import json
+        import tempfile
+        from pathlib import Path
+        import ledger_sync as ls
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "store_data.json"
+            p.write_text(json.dumps({"recs": [{"cat": "film", "brand": "Contax", "label": "Contax T2", "kind": "camera", "sales": 3,
+                                                "usd": 400, "examples": ["Contax T2 Sonnar 38mm F2.8"]}]}), encoding="utf-8")
+            sent = []
+            from unittest import mock
+            with mock.patch.object(ls.keychain, "get", return_value="x"):
+                self.assertEqual(ls.upload_recs(p, post=lambda text: sent.append(text) or "OK"), 1)
+        self.assertIn("Film,Contax,Contax T2,カメラ,3,400,Contax T2 Sonnar 38mm F2.8", sent[0])
 
 
 if __name__ == "__main__":

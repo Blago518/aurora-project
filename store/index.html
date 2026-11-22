@@ -311,7 +311,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.6";
+  var APP_VERSION = "2026.11.22.7";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -1099,7 +1099,7 @@ const recSel = Object.assign({ brand: "", kind: "mf", high: true }, lsGet(LS_REC
 const REC_KINDS = { mf: "MFレンズ", af: "AFレンズ", film: "フィルムカメラ", digital: "デジタルカメラ" };
 if (!REC_KINDS[recSel.kind]) recSel.kind = "mf";
 // 下の3つは tools/build_store.py の AF_STRONG_RE・MF_RE・DIGITAL_CAM_RE と同じ（Mac の分類が無い古いデータ用。test_rec_cat が一致を確かめる）
-const AF_STRONG_RE = /\bAF[-\s]?[SPID]?\b|オートフォーカス|autofocus|\bUSM\b|\bSTM\b|\bHSM\b|\bSDM\b|\bSSM\b|\bSAM\b|\bEF-?S?\s?\d|\bRF\s?\d|\bFE\s?\d|\bXF\s?\d|\bXC\s?\d|M\.?\s?ZUIKO|ZUIKO\s+DIGITAL|NIKKOR\s*Z\b|\bD\s?FA\b|\bDA\s?\*?\s?\d|\bFA\s?\*?\s?\d|Maxxum|Dynax|\bDC\b|\bDG\b|\bVR\b|\bVC\b|\bDi\b|\bLUMIX\s*G\b|Contax\s*(?:G\d?|645)\b|Nikon\s+Z\s?\d|Nikon\s*1\s+Nikkor|AT-X|(?:Planar|Biogon|Sonnar|Hologon)\b.*\b(?:for\s+)?G\s*$|\bHCD?\s?\d|\bSony\b|\bSEL\s?\d/i;
+const AF_STRONG_RE = /\bAF[-\s]?[SPID]?\b|オートフォーカス|autofocus|\bUSM\b|\bSTM\b|\bHSM\b|\bSDM\b|\bSSM\b|\bSAM\b|\bEF-?S?\s?\d|\bRF\s?\d|\bFE\s?\d|\bXF\s?\d|\bXC\s?\d|(?<![A-Za-z])M\.\s?ZUIKO|ZUIKO\s+DIGITAL|NIKKOR\s*Z\b|\bD\s?FA\b|\bDA\s?\*?\s?\d|\bFA\s?\*?\s?\d|Maxxum|Dynax|\bDC\b|\bDG\b|\bVR\b|\bVC\b|\bDi\b|\bLUMIX\s*G\b|Contax\s*(?:G\d?|645)\b|Nikon\s+Z\s?\d|Nikon\s*1\s+Nikkor|AT-X|(?:Planar|Biogon|Sonnar|Hologon)\b.*\b(?:for\s+)?G\s*$|\bHCD?\s?\d|\bSony\b|\bSEL\s?\d/i;
 const MF_RE = /\bMF\b|manual\s*focus|マニュアル|\bnon[-\s]?Ai\b|\bAi[-\s]?S?\b|\bNew\s?FD\b|\bnFD\b|\bFD\b|\bFL\b|Takumar|\bM42\b|\bMD\b|\bMC\b|Rokkor|\bOM\b|G\.?\s?Zuiko|\bL39\b|\bLTM\b|Leica\s*M\b|\bC\/?Y\b|\bAE[JG]\b|\bMM[JG]\b|Hasselblad|Mamiya|Bronica|Pentax\s*67|\b6x7\b|\bZ[FE]\.?2?\b|Loxia|Milvus|Voigtl|Helios|Jupiter|Industar/i;
 const DIGITAL_CAM_RE = /digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megapixel|万画素|デジタル|デジカメ|ミラーレス|コンデジ|coolpix|powershot|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|\bD\d{2,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|X-?(?:T|E|H|S|Pro)\d|X100|\bGFX|\bGR\s?(?:II|III|IV|DIGITAL)\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|ILCE|\bNEX|\bK-(?:1|3|5|7|30|50|70|S\d|r|x)\b|\bKP\b|(?<!Minolta\s)α\s?\d|Sony\s*A7|\bA7[RSC]?\s?(?:I{1,3}|IV|M\d)?\b|RX100|\bGH\d|\bGX\d|(?:powershot|lumix|Canon)\s*G\d{1,2}\b|\bG\d{1,2}\s?X\b|\bP\d{3,4}\b|\bSX\d{2,3}\s?(?:HS|IS)\b|\bSEL\s?\d|\bTG-\d|\bXZ-\d|\bQ\d?\b|Leica\s*(?:M(?:8|9|10|11|-E|-P|240)|M\s?Typ|Q\d?|SL\d?|D-?LUX|V-?LUX|X\d|C-?LUX)\b/i;
 // 「カメラ」に入ったレンズ（焦点距離と F値がある。例: 200-500mm F5.6E）はレンズの枠へ。フィルム・デジタルの枠に出さない（2026-11-22 オーナー指摘）
@@ -1107,16 +1107,21 @@ const LENS_LIKE_RE = /(?<![\d.])\d{2,4}(?:-\d{2,4})?\s?mm\b.*\bF\s?\/?\d|(?<![\d
 // tools/build_store.py の body_before_mm と同じ: 焦点距離より前にボディの型番（FM2・T2・GR1v・X100V・α-7 など）があればカメラ（レンズ付きで売れたボディ）
 const LENS_LINE_WORDS = new Set(["af", "af-d", "af-s", "ai", "ai-s", "batis", "biogon", "biotar", "distagon", "ef", "ef-s", "elmarit", "fd", "fe", "flektogon", "hexanon", "jena", "l", "loxia", "m42", "macro", "makro-planar", "mc", "md", "milvus", "new", "newfd", "noctilux", "nonai", "otus", "pancolar", "planar", "rf", "rokkor", "smc", "sonnar", "summicron", "summilux", "symmar", "takumar", "tessar", "vario-sonnar", "xenar", "xf", "ze", "zf", "zf.2", "zm", "zuiko"]);
 const SERIES_BODY_WORDS = new Set(["contax", "electro", "gr", "hexar", "klasse", "mju", "natura", "pen", "trip", "tvs", "xa"]);
+const KIT_WORDS_RE = /\bbody\b|ボディ|\bw\/|\bwith\b|\+|\bkit\b|付き?|セット|レンズキット/i;
+const FIXED_BODY_RE = /rolleiflex|rolleicord|\bhexar\b|\bT[234]\b|\bTVS\b|\bGR1\w*|\bX100\w*|\bTC-1\b|\b\d\dTi\b|klasse|natura|\btrip\s*35|\bmju|\bXA\d?\b|\bGA645|\bGW690|\bGSW690|\bGF670|\bbessa|Mamiya\s*[67]\b|minox|Contax\s*(?:G[12]|RTS|aria|139|167|RX|ST|AX|S2)\b|Leica\s*M\d{1,2}\b|Leica\s*(?:III?\w*|II)\b|Hasselblad\s*\d{3}\s?[A-Z]{1,3}\b|\bQL17\b|Electro\s*35/i;
+const LENS_FAMILY_RE = /nikkor|zuiko|takumar|rokkor|sekor|elmar|elmarit|summicron|summilux|summaron|noctilux|planar|sonnar|distagon|tessar|biogon|hexanon|zenzanon|xenar|xenotar|symmar|angulon|serenar|nokton|ultron|heliar|skopar|jupiter|helios|industar|biotar|flektogon|pancolar|tamron|sigma|tokina|samyang|rokinon|vivitar|soligor|yongnuo|laowa|7artisans|ttartisan|canon\s+lens/i;
 function bodyBeforeMm(label) {
-  const toks = String(label || "").split(/\s+/).slice(1);
-  const lensFamily = toks.some((t) => LENS_LINE_WORDS.has(t.toLowerCase()));
-  let series = false;
-  for (const t of toks) {
+  const t0 = String(label || "").normalize("NFKC");
+  if (KIT_WORDS_RE.test(t0)) return true;
+  const hasFor = /\bfor\b|用/i.test(t0);
+  if (FIXED_BODY_RE.test(t0) && !hasFor) return true;
+  if (LENS_FAMILY_RE.test(t0) || hasFor) return false;
+  for (const t of t0.split(/\s+/).slice(1)) {
     const tl = t.toLowerCase();
-    if (/^\d+(-\d+)?mm$/.test(tl)) return series && !lensFamily;
-    if (LENS_LINE_WORDS.has(tl) || /^(sel\d+\w*|af(-[spid])?|ef(-s|-m)?|rf|fe|xf|dx|fx|g|ed|vr|ii|iii|iv|if)$/.test(tl)) continue;
+    if (/^\d+(-\d+)?mm$/.test(tl)) return false;
+    if (LENS_LINE_WORDS.has(tl) || /^(sel\d+\w*|af(-[spid])?|ef(-s|-m)?|rf|fe|xf|dx|fx|g|ed|vr|ii|iii|iv|if|l39|m39|m42|ltm|c\/y|cy|rb67|rz67|sl66|6x[4-9]|645|67)$/.test(tl)) continue;
     if (/[a-zα]/.test(tl) && /\d/.test(tl)) return true;
-    if (SERIES_BODY_WORDS.has(tl)) series = true;
+    if (SERIES_BODY_WORDS.has(tl)) return true;
   }
   return false;
 }
@@ -1124,7 +1129,9 @@ const recIsLens = (r) => (r.kind === "lens" || LENS_LIKE_RE.test(r.label)) && !b
 const recCat = (r) => {
   if (r.cat && !(r.cat === "film" || r.cat === "digital") === recIsLens(r)) return r.cat;
   const t = r.label;
-  if (recIsLens(r)) return AF_STRONG_RE.test(t) && !/\bMF\b|manual\s*focus/i.test(t) ? "af" : "mf";
+  // 古いデータの表示名は Di・M.Zuiko などを落としているので、社外メーカーのズームと 14mm 以下から始まる Olympus・Panasonic のズームは AF とみる（Mac の分類が届けば不要）
+  const oldAf = /^(Tamron|Sigma|Tokina)\b.*\d+-\d+\s?mm/i.test(t) || /^(Olympus|Panasonic|OM)\b.*\b(?:[1-9]|1[0-4])-\d+\s?mm/i.test(t);
+  if (recIsLens(r)) return (AF_STRONG_RE.test(t) || (!r.cat && oldAf)) && !/\bMF\b|manual\s*focus/i.test(t) ? "af" : "mf";
   return DIGITAL_CAM_RE.test(t) ? "digital" : "film";
 };
 const brandName = (b) => (b === "Carl" ? "Carl Zeiss" : b);
