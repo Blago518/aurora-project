@@ -76,7 +76,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .rec .buy{font-size:14px;margin:4px 0 6px 30px}.rec .buy strong{font-size:17px;color:var(--good)}
 .rec .links{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:6px;margin-left:30px}
 .grp{margin:14px 0 2px;padding:6px 10px;border-radius:8px;background:var(--line);font-size:14px;color:var(--ink,inherit)}.grp:first-child{margin-top:0}
-.mini{font-size:12px;font-weight:700;border-radius:8px;padding:8px 4px;text-align:center;text-decoration:none;background:var(--soft);color:#14415a;border:0}
+.mini.off{opacity:.4;pointer-events:none}.mini{font-size:12px;font-weight:700;border-radius:8px;padding:8px 4px;text-align:center;text-decoration:none;background:var(--soft);color:#14415a;border:0}
 .mini.main{background:var(--blue);color:#fff}
 .sugg{border:1px solid var(--line);border-radius:10px;margin-top:4px;overflow:hidden;background:var(--card)}
 .sugg button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;font-size:15px;padding:11px 12px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink)}
@@ -102,6 +102,9 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .bidbar .mini{white-space:nowrap}
 .bidbar[hidden]{display:none}body.hasbar{padding-bottom:90px}.bid .links{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:8px}
 .bid .links .mini{white-space:nowrap;display:flex;align-items:center;justify-content:center;font-size:13px}
+.yn{display:inline-block;font-size:.5em;font-weight:900;letter-spacing:.04em;border-radius:6px;padding:.15em .45em;margin-right:.35em;vertical-align:.35em;color:#fff;line-height:1.2}.yn.solo{font-size:.8em;vertical-align:0}.yn.ok{background:var(--good)}.yn.no{background:var(--bad)}
+.bid .max .yn{font-size:13px;vertical-align:4px;margin-right:6px}#capText .yn{font-size:15px;vertical-align:1px}
+.tag.done{background:#e6f4ea;color:var(--good)}.tag.same{background:#eef2f7;color:var(--sub)}.bid .max{flex-wrap:wrap}.bid .max strong{white-space:nowrap}.bid .max .s{flex:1 1 12em;min-width:0}.bid .max.no strong{color:var(--bad)}.bid.flash{background:#fff7d6;transition:background .3s}
 .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin:2px 4px 0 0;background:#fdecea;color:var(--bad)}
 .tag.trust{background:#e6f4ee;color:var(--good)}.tag.tent{background:var(--warnbg);color:var(--warn)}.tag.ok{background:#e6f4ee;color:var(--good)}
 .hot,.bid .mk small.hot{color:var(--bad);font-weight:800}
@@ -311,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.15";
+  var APP_VERSION = "2026.11.22.16";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -410,7 +413,7 @@ function lookup(name, price, opt = {}) {  // ジャンク表記の欄は外し�
   // Sold を入れたときは、その額をそのまま使う（2026-11-21 オーナー「計算あってる？」: 値札の「中古品」から状態を下に見て、Sold $520 を約 $400 に下げていた）。
   // ［実物］の状態を押したときだけ、Sold の状態との差で直す
   const soldIn = opt.sold && opt.sold.usd > 0;
-  const adj = !core.conditionAdjusted || (soldIn && opt.rank == null) ? refs.map((r) => r.price) : core.conditionAdjusted(refs, jt, flags, opt.rank);
+  const adj = !core.conditionAdjusted || (soldIn && opt.rank == null && !opt.titleCond) ? refs.map((r) => r.price) : core.conditionAdjusted(refs, jt, flags, opt.rank);
   let u = refs.length ? Math.round(core.median(adj) * 100) / 100 : null;
   if (u != null && flags.includes("ジャンク") && DATA.cfg.junkFactor < 1) u = Math.round(u * DATA.cfg.junkFactor * 100) / 100;
   // まとめ売り・レンズキットは中身ごとに相場を当てて合計（拡張機能・appraise.py と同じ。2点以上当たったときだけ）
@@ -449,6 +452,8 @@ function conds(refs) {
 // 出せる額が1,000円未満は「購入しない」と出す（40円まで出せる、のような使えない数字を出さない。2026-11-21 ユーザー指摘。言葉は同日ユーザー指定。表示だけで判定は同じ）
 // ただし値札が入っていて基準を満たす（緑）ときは、1,000円未満でもその額を出す（ジャンクかごの数百円の値札で色と言葉が食い違わないように）
 const TINY_MAX = 1000;
+// 判断は一目で: OK（緑）／NO（赤）。文で書かない（2026-11-22 オーナー「購入しない、じゃなくて、OKとかNOとか」）
+const yn = (ok) => `<span class="yn ${ok ? "ok" : "no"}">${ok ? "OK" : "NO"}</span>`;
 const canPay = (c, ok) => !!c && c.maxBid > 0 && (c.maxBid >= TINY_MAX || !!ok);
 // 利益の基準は計算した側（core.calculate の minProfit。売値・送料込み$99以下は4,000円）をそのまま出す
 const lowNote = (c) => (c.minProfit > (DATA.cfg.minProfit || 0) ? `（売値$${DATA.cfg.lowPriceUsd}以下・送料込みの安い物）` : "");
@@ -490,21 +495,21 @@ function renderResult(name, price, r) {
     : price == null && canPay(c, ok) ? "値札を入れると利益を出します"
     : r.mark === "要確認" ? storeReason(r.reason).replace(/^ジャンク・/, "")
     : /光学難/.test(r.reason) ? storeReason(r.reason).replace(/^ジャンク・/, "")
-    : ok && price != null ? `${bidCtx && name === bidCtx.title ? "現在価格" : "値札"} ${yen(price)} で買ったときの利益`
+    : ok && price != null ? `${bidCtx && name === bidCtx.title ? `${String((DATA.bids && DATA.bids.built) || "").slice(11, 16)}時点の価格` : "値札"} ${yen(price)} で買ったときの利益`
     : !canPay(c, ok) ? `この相場${lowNote(c)}では利益${c.minProfit.toLocaleString()}円の基準に届かない`
     : price == null ? "値札を入れると利益を出します"
     : `値札 ${yen(price)} では基準（利益${DATA.cfg.minMarginPct}%・${c.minProfit.toLocaleString()}円）に届かない`;
-  const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない";
+  const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "";
   const tv = triviaOf(name);
   { const bar = lsGet(LS_BIDBAR, null), cm = ctxMax(name, c);
     if (bar && bidCtx && bar.id === bidCtx.id && cm > 0 && bar.maxBid !== cm) { lsSet(LS_BIDBAR, Object.assign({}, bar, { maxBid: cm, redo: true })); setTimeout(renderBidBar, 0); } }
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
-    <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
+    <div class="hero ${cls}${c ? "" : " small"}">${!c ? "" : !head ? yn(false).replace('class="yn ', 'class="yn solo ') : price != null ? yn(ok) : ""}${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
   // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`
     : (canPay(c, ok) ? (price != null ? `<b>${yen(c.maxBid)}</b> まで出せる` : "") + (m ? `<span class="s">この額で利益 ${yen(m.profit)}</span>` : "")
-      : `<b>購入しない</b>`)
+      : "")   // NO は上の大きい表示に出す（2つ出さない）
       + (sold ? `<span class="s">Sold $${pick.sold.usd}${pick.sold.cond ? "（" + esc(pick.sold.cond) + "）" : ""}${r.usd != null && Math.abs(r.usd - (DATA.cfg.deductionUsd || 0) - pick.sold.usd) >= 1 ? ` → 実物の状態で $${Math.round(r.usd - (DATA.cfg.deductionUsd || 0))}` : ""} で計算</span>` : "");
   $("resTop").innerHTML = h;
   h = "";
@@ -546,6 +551,18 @@ const LS_MEMO = "storeMemo";
 // 機種をそろえる部品（modelKey）は「Monochrome」などの違いを落とすので使わない。大文字・小文字・全角・区切りの違いだけそろえる
 const memoKey = (n) => String(n || "").normalize("NFKC").trim().toLowerCase().replace(/[\s\-_.\/()・]+/g, "");
 const localMemo = (n) => lsGet(LS_MEMO, {})[memoKey(n)] || null;
+// 確認済み（2026-11-22 オーナー「相場調べて、利益みて、登録して戻ると、何も変わってないし、確認済みのチェックもない」）:
+// 登録した Sold を機種の検索語（queryFor）ごとにも持ち、入札タブの同じ機種の出品をその額で出し直す
+const LS_CHECKED = "storeChecked";
+const checkKey = (n) => memoKey(queryFor(n) || n);
+const isSetTitle = (n) => { try { return core.detectFlags(n).includes("セット品") || core.KIT_RE.test(n); } catch (e) { return false; } };
+function checkedFor(n) {
+  const all = lsGet(LS_CHECKED, {}), own = all[memoKey(n)];
+  if (own && own.n && memoKey(own.n) === memoKey(n)) return Object.assign({ own: true }, own);
+  if (isSetTitle(n)) return null;   // セット・キットは同じ商品名だけ（ボディだけの出品と混ぜない）
+  const v = all["q:" + checkKey(n)];
+  return v && !v.set ? Object.assign({ own: false }, v) : null;
+}
 let memoFilled = "";   // 登録済みの額を Sold 欄に入れるのは、商品名が変わって調べ直したときの1回だけ（消して打ち直せるように）
 function regState() {
   const b = $("soldReg"); if (!b) return;
@@ -571,11 +588,21 @@ $("soldReg").addEventListener("click", () => {
     out.push([nowJst(), "相場登録", name, parsePrice($("price").value) || "", "", "", pick.sold.usd, $("shopName").value.trim(), pick.sold.cond || "", APP_VERSION]);
     lsSet(LS_OUT, out); flushOutbox();
   }
+  { const ck = lsGet(LS_CHECKED, {}), v = { usd: pick.sold.usd, cond: pick.sold.cond || "", rank: pick.rank, t: nowJst(), n: name };
+    v.set = isSetTitle(name); ck[memoKey(name)] = v; ck["q:" + checkKey(name)] = v; lsSet(LS_CHECKED, ck); }
   regState();
+  const fromBid = bidCtx && name === bidCtx.title ? bidCtx.id : null;
   const msg = `${name} は $${pick.sold.usd}${pick.sold.cond ? "（" + pick.sold.cond + "）" : ""} で${same ? "登録済みです" : "登録しました"}。次の商品をどうぞ`;
   // 次へ: 入力を空にして商品名の欄へ（登録した相場は、次に同じ機種を調べると Sold 欄に入る）
   $("name").value = ""; $("price").value = ""; pick = { rank: null, note: "", sold: null }; clearSold(); look(); saveDraft();
   $("ocrSt").className = "status"; $("ocrSt").textContent = msg;
+  if (fromBid) {   // 入札タブから来たときは入札タブに戻り、その出品を出す（出し直した上限額と ✓確認済み）
+    bidCtx = null; showTab("bid");
+    const card = document.querySelector(`#bidList [data-card="${CSS.escape(fromBid)}"]`);
+    if (card) { card.scrollIntoView({ block: "center" }); card.classList.add("flash"); setTimeout(() => card.classList.toggle("flash", false), 1600); } else window.scrollTo({ top: 0 });
+    toast("Sold を登録して上限額を出し直しました");
+    return;
+  }
   window.scrollTo({ top: 0 }); $("name").focus();
 });
 const RANK_CHIPS = [[10, "TOP MINT"], [9, "MINT"], [7, "Near MINT"]];
@@ -602,6 +629,7 @@ const ebayLinks = (q) => ({
 function ebayQuery(name) {
   let t = String(name).normalize("NFKC");
   if (DATA) for (const [ja, en] of DATA.consts.brandsJa.concat(DATA.consts.wordsJa)) t = t.split(ja).join(` ${en} `);
+  t = t.replace(/(\d)\s*[・･]\s*(\d)/g, "$1.$2").replace(/(\d)\s*mm\s*\/\s*(f)/gi, "$1mm $2");   // 「f5・6」→ f5.6、「250mm/f5.6」→ 250mm f5.6（2026-11-22 実際の予約リスト）
   t = t.replace(/[^\x21-\x7Eαµ]+/g, " ").replace(/[\[\](){}<>!?#*"'`,;~^|\\]+/g, " ");
   const seen = new Set(), out = [];
   for (const w of t.split(/\s+/)) {
@@ -710,10 +738,12 @@ function queryFor(name) {
   if (ref) {
     const theirs = new Set(ebayQuery(ref.title).toLowerCase().split(/\s+/));
     const common = mine.filter((w) => theirs.has(w.toLowerCase()));
-    if (common.length >= 2) return common.join(" ");
+    if (common.length >= 2) return withBronica(common).join(" ");
   }
-  return modelWords(mine).join(" ");
+  return withBronica(modelWords(mine)).join(" ");
 }
+// 「Zenza」だけでは Bronica の出品に当たりにくい（2026-11-22 実際の予約リスト「ZENZA BRONICA MC 250mm」→「ZENZA MC …」）
+const withBronica = (ws) => (ws.some((w) => /^zenza$/i.test(w)) && !ws.some((w) => /^bronica$/i.test(w)) ? ws.flatMap((w) => (/^zenza$/i.test(w) ? [w, "Bronica"] : [w])) : ws);
 // メーカー＋機種だけを残す（「OLYMPUS XA1 A9M D.ZUIKO 35mm F4 Point」→「OLYMPUS XA1」、「Bronica ZENZANON-PG 65mm f4」はそのまま）
 const SERIES_WORDS = /^(coolpix|powershot|ixy|eos|kiss|lumix|finepix|cyber-?shot|pen|om-d|stylus|mju|trip|rolleiflex|rolleicord|leica|hexar|electro|program|z)$/i;
 const GEN_WORDS = /^(ii|iii|iv|v|x|mark|mk\d?|n|hp|ttl|program|s|sp|qd|af|md|pro|sd|photomic|as|ftn|ti|hs|\d+(\.\d+)?)$/i;   // 型の後ろに付いて値段が変わる語（New F-1・RB67 Pro SD・F2 Photomic AS・M6 TTL 0.85）
@@ -1014,9 +1044,9 @@ function renderShelf(note) {
   el.innerHTML = `<div class="row" style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">読み取り ${rows.length}件 ― 基準を満たす ${buy}件</h2><button class="mini" data-clear="1" type="button">新しい棚</button></div>${note ? `<div class="s">${esc(note)}</div>` : ""}${rows.some((x) => !x.r.calc && x.price != null) ? `<div class="s">$〜 ＝ eBay でこの値段以上で売れれば利益</div>` : ""}` + rows.map((x, i) => {
     const r = x.r, c = r.calc, ok = r.mark === "◎" || r.mark === "○", cls = !c ? "w" : ok ? "g" : r.mark === "要確認" ? "w" : "x";
     const nd = !c && x.price != null ? needUsd(x.price, x.name) : null;
-    const big = !c ? (nd ? `$${nd.toLocaleString()}〜` : "相場なし") : x.price == null ? (canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない")
+    const big = !c ? (nd ? `$${nd.toLocaleString()}〜` : "相場なし") : x.price == null ? (canPay(c, ok) ? yen(c.maxBid) + "まで" : "NO")
       : (c.profit > 0 ? "+" : c.profit < 0 ? "−" : "") + Math.abs(Math.round(c.profit)).toLocaleString("ja-JP") + "円";
-    const sub = x.price == null ? "値札が読めない" : !c ? `値札 ${yen(x.price)}${nd ? "" : "・相場なし"}` : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "購入しない"}`;   // 相場なしの行にも値札を出す（仮想店舗で見つけた）
+    const sub = x.price == null ? "値札が読めない" : !c ? `値札 ${yen(x.price)}${nd ? "" : "・相場なし"}` : `値札 ${yen(x.price)}／${canPay(c, ok) ? yen(c.maxBid) + "まで出せる" : "NO"}`;   // 相場なしの行にも値札を出す（仮想店舗で見つけた）
     return `<div class="shelf"><div class="tt"><b>${core.sweetSpot && core.sweetSpot(x.name) ? "★ " : ""}${esc(x.name)}</b><span class="s">${esc(sub)}${x.notes ? "／" + esc(x.notes) : ""}</span></div>
       <div class="pf ${cls}">${esc(big)}</div>
       <button data-shelf="${i}" data-act="${!c ? "sold" : ok ? "buy" : "look"}">${!c ? "Sold" : ok ? "購入へ" : "見る"}</button></div>`;
@@ -1367,17 +1397,42 @@ function bidCard(i, B, done, now, tag) {
   const e = endAt(i.end), hm = e ? new Date(e).toTimeString().slice(0, 5) : "", soon = e && e - now < 3 * 3600e3;
   const did = done[i.id], at = String(B.built || "").slice(11, 16);
   const L = (() => { const q = queryFor(i.title); return q ? linksWithCat(q, ebayCatOf(q)) : { sold: toChrome(i.sold || ""), now: toChrome(i.now || "") }; })();
-  const marks = [tag ? `<span class="tag ok">${esc(tag)}</span>` : "", i.check ? `<span class="tag tent">Sold で確かめて</span>` : "",
+  const r = bidRedo(i), ck = r && r.ck;
+  const marks = [tag ? `<span class="tag ok">${esc(tag)}</span>` : "",
+    ck ? (ck.own ? `<span class="tag done">✓ Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} 確認済み</span>`
+      : `<span class="tag same">同じ機種の Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} で計算</span>`) : i.check ? `<span class="tag tent">Sold で確かめて</span>` : "",
     i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
-  return `<div class="bid${i.check ? " tent" : ""}${did ? " did" : ""}">
+  // 印と言葉を同じ向きに（2026-11-22 オーキド: NO の横に「まで入札」を書かない）。Mac の候補も出し直した額も同じ形
+  const mx = r ? r.maxBid : i.maxBid, pf = r ? r.profit : i.profit, no = !(mx > 0) || (i.price && i.price > mx);
+  const tax = r ? storeNote(i, mx) : i.taxNote ? "（" + esc(i.taxNote) + "）" : "";
+  const nowTx = i.price && pf != null ? `この価格なら利益 ${signYen(pf)}${no && pf > 0 && r && r.minProfit ? `（基準 ${yen(r.minProfit)}）` : ""}` : "";
+  const sure = r ? r.ck.own : !i.check;   // OK の緑は、根拠が確認不要の物と ✓確認済みの物だけ（確かめる前は NO だけ出す。2026-11-22 オーキド）
+  const maxHtml = `<div class="max${no ? " no" : ""}">${no ? yn(false) : sure ? yn(true) : ""}${!(mx > 0) ? `<strong>上限なし</strong>`
+    : no ? `<strong>上限 ${yen(mx)}</strong><span class="s">${[tax, nowTx].filter(Boolean).join("・")}</span>`
+    : `<strong>${yen(mx)}</strong><span class="s">まで入札${tax}${nowTx ? "・" + nowTx : ""}</span>`}</div>`;
+  return `<div class="bid${i.check && !(ck && ck.own) ? " tent" : ""}${did ? " did" : ""}" data-card="${esc(i.id)}">
     <div class="tt"><a href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
     <div class="s">${e ? `${esc(dayLabel(e))} ${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${esc(leftText(e - now))}</span>・` : ""}${esc(at)}時点 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
-    <div class="max"><strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・この価格なら利益 ${yen(i.profit)}` : ""}</span></div>
+    ${maxHtml}
     <div class="links six"><a class="mini" href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">ヤフオク</a><button class="mini" type="button" data-copy="${esc(i.url)}">URL</button>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
       <button class="mini" type="button" data-blook="${esc(i.id)}">調べる</button>
-      <a class="mini main" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
+      ${no && !did ? `<span class="mini off" title="価格が上限を超えています">予約</span>` : `<a class="mini main" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a>`}</div>
   </div>`;
 }
+// 確認済みの Sold で、その出品の上限額と今の価格での利益を出し直す（［調べる］と同じ lookup。国内送料・ストアの税抜も同じ）
+// ストアは入札欄の額が税抜（appraise.py と同じ言い方）。出し直した額で支払い額を出す
+const storeNote = (i, mx) => (/^ストア/.test(i.taxNote || "") && mx > 0 ? `（ストア: このまま入札。支払いは税込${Math.round(mx * (1 + (DATA.cfg.storeTaxPct || 10) / 100)).toLocaleString("ja-JP")}円）` : "");
+const signYen = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)).toLocaleString("ja-JP") + "円";
+function bidRedo(i) {
+  const ck = checkedFor(i.title); if (!ck || !DATA) return null;
+  let r = null;
+  // 登録した出品は、そのとき選んだ状態のまま。ほかの出品は Sold の状態から、その出品の商品名の状態へ補正する
+  const o = ck.own ? { rank: ck.rank ?? null } : { rank: null, titleCond: true };
+  try { r = lookup(i.title, i.price || null, Object.assign({ sold: { usd: ck.usd, cond: ck.cond }, note: "", ship: i.ship, tax: /^ストア/.test(i.taxNote || "") }, o)); } catch (e) { return null; }
+  const c = r && r.calc;
+  return { ck, maxBid: c ? c.maxBid : 0, profit: c && i.price ? c.profit : null, minProfit: c ? c.minProfit : null };
+}
+const bidMax = (i) => { const r = bidRedo(i); return r ? r.maxBid : i.maxBid; };
 function renderBids() {
   const B = DATA && DATA.bids, now = Date.now();
   renderBidBar();
@@ -1392,7 +1447,7 @@ function renderBids() {
   const reserve = (B.reserve || []).map((r) => byId[r.id] && Object.assign({}, byId[r.id], { _tag: r.kind === "即決" ? "即決で買える" : "今日の予約" })).filter(Boolean);
   const sure = live.filter((i) => !i.check), check = live.filter((i) => i.check);
   if (bidFilter === "reserve" && !reserve.length) bidFilter = "sure";
-  $("bidChips").innerHTML = [["reserve", `今日の予約 ${reserve.filter((x) => x._tag === "今日の予約").length}`], ["sure", `確認不要 ${sure.length}`], ["check", `Sold で確かめる ${check.length}`]]
+  $("bidChips").innerHTML = [["reserve", `今日の予約 ${reserve.length}`], ["sure", `確認不要 ${sure.length}`], ["check", `Sold で確かめる ${check.length}`]]
     .map(([k, t]) => `<button class="chip" data-f="${k}" aria-pressed="${k === bidFilter}">${t}</button>`).join("");
   $("bidInfo").innerHTML = `${esc(B.built)} 作成（価格はその時点）・<button class="linkbtn" type="button" data-sort="1">${bidSort === "end" ? "Mac の一覧の順に戻す" : "終わる順に並べる"}</button>`;
   let list = bidFilter === "reserve" ? reserve : bidFilter === "check" ? check : sure;
@@ -1441,7 +1496,7 @@ $("bidInfo").onclick = (e) => { if (!e.target.dataset.sort) return; bidSort = bi
 function ctxMax(name, c) {
   if (!bidCtx || name !== bidCtx.title) return 0;
   if (!pick.sold && pick.rank == null) return bidCtx.maxBid || 0;
-  return c && c.maxBid > 0 ? c.maxBid : 0;
+  return c && c.maxBid > 0 && !(bidCtx.price > c.maxBid) ? c.maxBid : 0;   // 現在価格が上限を超えたら予約の額を出さない（勝てない予約をさせない）
 }
 $("result").addEventListener("click", (e) => { if (e.target.closest("[data-ctxsnipe]") && bidCtx) startSnipe(bidCtx, ctxMax($("name").value, lastLook && lastLook.calc)); });
 $("bidList").onclick = (e) => {
@@ -1454,7 +1509,7 @@ $("bidList").onclick = (e) => {
     e.preventDefault(); delete done[i.id]; lsSet(LS_BIDDONE, done);
     bidRecord({ id: i.id, title: i.title, end: i.end }, "入札予約取消"); renderBids(); toast("予約済みを外しました"); return;
   }
-  startSnipe(i, i.maxBid);
+  startSnipe(i, bidMax(i));
 };
 
 function showTab(t) {
