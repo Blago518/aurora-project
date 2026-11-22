@@ -45,7 +45,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `build_dashboard.py`・`dashboard_template.html` | eBay API の注文・取引明細・出品中一覧＋古物台帳・管理シート・発送明細 → 数字のグラフ `reports/dashboard.html`（月別売上・利益率・状態の割合など。update_all.py が毎回作り、中身を古物台帳の「Mac_グラフ」シートに送る → Artifacts の「aurora 数字のグラフ」が開くたびに読む）。2026/8/17 以前の注文は SKU が No. と合っていないので `data/sku_fix.csv` の対応表で直す（候補は `--sku-candidates`） |
 | `yahoo_results.py` | **落札相場**: 毎朝の入札リスト・拡張機能（ダウンロード/aurora_seen.csv）で ◎○・仮◎○・確認してから に出た出品を見張り、終了後にヤフオクの出品ページで最終価格・入札数を `data/yahoo_results.csv` に記録（流れた出品も。1回 300件・1.5秒間隔）→ 拡張機能に機種ごとの落札額の中央値を表示・古物台帳「Mac_落札相場」へ。判定・上限額には使わない |
 | `bid_results.py` | 入札の結果: ［入札した］の記録の落札率・負けた差。落札かどうかは古物台帳にそのオークションIDがあるかで決める（無ければ終了から10日は「確認待ち」→「負け」） |
-| `ebay_listing_template.html` | eBayStock の説明文テンプレートのデザイン案（濃いネイビー×ゴールド。2026-11-22）。**まだ使っていない**（オーナー「まだ実装しないが、いつか変更するかもしれないので覚えておいて」）。今 eBayStock で使っているのは `ebay_listing_template_current.html`。差し込み・分岐・英語の文は同じで、見た目だけが違う |
+| `ebay_listing_template.html` | eBayStock の説明文テンプレートのデザイン案（濃いネイビー×ゴールド。2026-11-22）。**まだ使っていない**（オーナー「まだ実装しないが、いつか変更するかもしれないので覚えておいて」）。今 eBayStock で使っているのは `ebay_listing_template_current.html`。差し込み・分岐は同じ。英語の文は、上の店名の行と下の「Shipped from Japan」を足した以外は同じ |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
 | `test_*.py` | テスト（Python と拡張機能・店舗アプリの判定一致も確認） |
