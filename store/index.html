@@ -311,7 +311,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.7";
+  var APP_VERSION = "2026.11.22.8";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -695,14 +695,7 @@ $("catChips").onclick = (e) => { const b = e.target.closest("[data-cat]"); if (!
 // core.js の ebay() のリンクにカテゴリを付ける（販売済み・出品中は _sacat、Product Research は categoryId）
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const toSafari = (u) => (IOS && /^https:\/\//.test(u) ? "x-safari-" + u : u);
-// 逃げ道: Safari の開き方が効かない iPhone では、押して1.5秒たってもアプリが前に出たまま → 今までどおり https で開く（ボタンが止まらないように）
-document.addEventListener("click", (e) => {
-  const a = e.target.closest && e.target.closest('a[href^="x-safari-"]'); if (!a) return;
-  const https = a.getAttribute("href").replace(/^x-safari-/, "");
-  let left = false; const mark = () => { left = true; };
-  document.addEventListener("visibilitychange", mark, { once: true }); window.addEventListener("pagehide", mark, { once: true });
-  setTimeout(() => { if (!e.defaultPrevented && !left && document.visibilityState === "visible") location.href = https; }, 1500);
-}, true);
+// 2026-11-22: 1.5秒後に https で開き直す逃げ道はやめた（Safari を開く確認を待たずに eBay・ヤフオクのアプリへ飛ばしていた）。
 function linksWithCat(q, cat) {
   const L = core ? core.ebay(q) : ebayLinks(q);
   const M = cat === "0" ? L : { sold: L.sold + "&_sacat=" + cat, now: L.now + "&_sacat=" + cat, pr: L.pr + "&categoryId=" + cat };
@@ -1321,10 +1314,10 @@ function bidCard(i, B, done, now, tag) {
   const marks = [tag ? `<span class="tag ok">${esc(tag)}</span>` : "", i.check ? `<span class="tag tent">Sold で確かめて</span>` : "",
     i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
   return `<div class="bid${i.check ? " tent" : ""}${did ? " did" : ""}">
-    <div class="tt"><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
+    <div class="tt"><a href="${esc(toSafari(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a></div>${marks}
     <div class="s">${e ? `${esc(dayLabel(e))} ${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${esc(leftText(e - now))}</span>・` : ""}${esc(at)}時点 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
     <div class="max"><strong>${yen(i.maxBid)}</strong><span class="s">まで入札${i.taxNote ? "（" + esc(i.taxNote) + "）" : ""}${i.profit != null ? `・この価格なら利益 ${yen(i.profit)}` : ""}</span></div>
-    <div class="links five"><a class="mini" href="${esc(i.url)}" target="_blank" rel="noopener">ヤフオク</a>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
+    <div class="links five"><a class="mini" href="${esc(toSafari(i.url))}" target="_blank" rel="noopener">ヤフオク</a>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
       <button class="mini" type="button" data-blook="${esc(i.id)}">調べる</button>
       <a class="mini main" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-snipe="${esc(i.id)}">${did ? "予約済み" : "予約"}</a></div>
   </div>`;
