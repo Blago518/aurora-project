@@ -311,7 +311,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.22.8";
+  var APP_VERSION = "2026.11.22.9";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -490,12 +490,14 @@ function renderResult(name, price, r) {
     : price == null && canPay(c, ok) ? "値札を入れると利益を出します"
     : r.mark === "要確認" ? storeReason(r.reason).replace(/^ジャンク・/, "")
     : /光学難/.test(r.reason) ? storeReason(r.reason).replace(/^ジャンク・/, "")
-    : ok && price != null ? `値札 ${yen(price)} で買ったときの利益`
+    : ok && price != null ? `${bidCtx && name === bidCtx.title ? "現在価格" : "値札"} ${yen(price)} で買ったときの利益`
     : !canPay(c, ok) ? `この相場${lowNote(c)}では利益${c.minProfit.toLocaleString()}円の基準に届かない`
     : price == null ? "値札を入れると利益を出します"
     : `値札 ${yen(price)} では基準（利益${DATA.cfg.minMarginPct}%・${c.minProfit.toLocaleString()}円）に届かない`;
   const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "購入しない";
   const tv = triviaOf(name);
+  { const bar = lsGet(LS_BIDBAR, null), cm = ctxMax(name, c);
+    if (bar && bidCtx && bar.id === bidCtx.id && cm > 0 && bar.maxBid !== cm) { lsSet(LS_BIDBAR, Object.assign({}, bar, { maxBid: cm, redo: true })); setTimeout(renderBidBar, 0); } }
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
     <div class="hero ${cls}${c ? "" : " small"}">${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toSafari(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
@@ -528,6 +530,7 @@ function renderResult(name, price, r) {
 // ---- 状態（2026-11-21 ユーザー指定: TOP MINT・MINT・Near MINT の3つ。Exc+4 以下は買わない）
 // 手に取って見たランクを押すと上限を出し直す。もう一度押すと値札の表記どおりに戻る
 let pick = { rank: null, note: "", sold: null };
+const LS_BIDBAR = "storeBidBar";
 let bidCtx = null;   // ［調べる］から来た出品（Sold を入れて出し直した上限額で予約できるように）
 function readSold() {
   const v = Number(String($("soldUsd").value).normalize("NFKC").replace(/[^0-9.]/g, ""));
@@ -1299,7 +1302,7 @@ function renderSweet() {
 // 1件ごとに: 上限額（入札欄に入れる額）を大きく／ヤフオク・Sold・Now・調べる・予約
 // ［予約］: ヤフオクの URL をコピーして、拡張機能と同じオークファンの予約ページ（tools.aucfan.com/v2/snipe/item）を開く。
 //   上限額は画面の下の帯に出したまま（戻ってきても見える）。予約したら帯の［予約した］で記録する（押す前には記録しない）
-const LS_BIDF = "storeBidFilter", LS_BIDDONE = "storeBidDone", LS_BIDSORT = "storeBidSort", LS_BIDBAR = "storeBidBar";
+const LS_BIDF = "storeBidFilter", LS_BIDDONE = "storeBidDone", LS_BIDSORT = "storeBidSort";
 const SNIPE_URL = "https://tools.aucfan.com/v2/snipe/item?trflg=1";
 let bidFilter = lsGet(LS_BIDF, "reserve"), bidSort = lsGet(LS_BIDSORT, "rank");
 function toast(msg) { const t = $("toast"); if (!t) return; t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2600); }
@@ -1352,7 +1355,7 @@ function renderBidBar() {
   document.body.classList.toggle("hasbar", !!x);
   if (!x) { bar.hidden = true; return; }
   bar.hidden = false;
-  bar.innerHTML = `<div class="bbt"><b>${yen(x.maxBid)}</b><span>入札欄に入れる額・URL はコピー済み</span><small>${esc(x.title)}</small></div>
+  bar.innerHTML = `<div class="bbt"><b>${yen(x.maxBid)}</b><span>${x.redo ? "Sold で出し直した額" : "入札欄に入れる額"}・URL はコピー済み</span><small>${esc(x.title)}</small></div>
     <button class="mini main" type="button" data-bbar="done">予約した</button><button class="mini" type="button" data-bbar="close">やめる</button>`;
 }
 function startSnipe(i, maxBid) {
