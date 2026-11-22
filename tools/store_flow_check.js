@@ -119,6 +119,33 @@ function checkCards(cards, when) {
       const rb1 = await recBuy();
       if (rb1 === rb0 || !/Sold \$75/.test(rb1)) bad(`${lab}: おすすめの金額に登録した Sold が反映されない: ${rb0} → ${rb1}`);
     }
+    // おすすめ: 全部の種類×全部のメーカーで、枠と違う物を出さない（2026-11-22「フィルムカメラで何故レンズが出る？」、2026-11-23 D4s・F値なしのレンズ）。
+    // シリーズは一眼レフが先・8mm は最後、同じシリーズは型の名前順（F2 の下に F3。2026-11-23）
+    const recChk = await p.evaluate(() => {
+      const out = [];
+      for (const kind of Object.keys(REC_KINDS)) {
+        recSel.kind = kind; recSel.high = false; renderBrands();
+        for (const b of [...document.querySelectorAll("#brandChips [data-brand]")].map((x) => x.dataset.brand)) {
+          recSel.brand = b; renderBrands(); renderRecs();
+          const groups = [...document.querySelectorAll("#recList h3.grp")].map((h) => h.firstChild.textContent.trim());
+          const labels = [...document.querySelectorAll("#recList [data-rec]")].map((x) => x.dataset.rec);
+          out.push({ kind, b, groups, labels, wants: labels.map((l) => (DATA.recs.find((r) => r.label === l) || {})._want) });
+        }
+      }
+      return out;
+    });
+    for (const x of recChk) {
+      x.labels.forEach((l, i) => { if (x.wants[i] && x.wants[i] !== x.kind) bad(`${lab}: おすすめ ${x.kind}/${x.b} に別の枠の「${l}」（${x.wants[i]}）`); });
+      const gi = (g) => x.groups.indexOf(g);
+      if (gi("8mm・シネ") >= 0 && gi("8mm・シネ") !== x.groups.length - 1) bad(`${lab}: おすすめ ${x.kind}/${x.b} で 8mm・シネ が最後でない: ${x.groups}`);
+      for (const slr of ["フィルム一眼レフ", "デジタル一眼レフ"]) if (gi(slr) > 0) bad(`${lab}: おすすめ ${x.kind}/${x.b} で ${slr} が先頭でない: ${x.groups}`);
+      if (x.kind === "film" && x.b === "Nikon") {
+        const order = ["Nikon EyeLevel silver", "Nikon F2", "Nikon F3", "Nikon F4", "Nikon FM2", "Nikon New FM2"];
+        const pos = order.map((l) => x.labels.indexOf(l));
+        if (pos.some((v, i) => v < 0 || (i && v !== pos[i - 1] + 1))) bad(`${lab}: Nikon のフィルム一眼レフが型の順に並ばない: ${x.labels}`);
+      }
+    }
+    await p.evaluate(() => { recSel.kind = "film"; recSel.high = true; recSel.brand = "Canon"; renderBrands(); renderRecs(); });
     // 横にはみ出さない・使わない言葉が無い（全部のタブ）
     for (const t of ["look", "rec", "sweet", "calc", "bid", "shop", "set"]) {
       await p.click(`nav [data-tab="${t}"]`); await p.waitForTimeout(120);

@@ -26,6 +26,31 @@ def _has_playwright() -> bool:
     return r.returncode == 0
 
 
+# おすすめの Nikon（2026-11-23 オーナーの画面写真と同じ形。cat は Mac の古い分類のまま＝誤りを含む。_want が正しい枠）
+def _rec(label, kind, cat, want, profit):
+    return {"label": label, "brand": "Nikon", "kind": kind, "cat": cat, "usd": 400, "maxBuy": 40000, "sales": 2, "profit": profit,
+            "basis": "販売実績", "_want": want}
+
+
+NIKON_RECS = [
+    _rec("Nikon R10 SUPER 8mm", "camera", "film", "film", 43380),
+    _rec("Nikon EyeLevel silver", "camera", "film", "film", 1936),
+    _rec("Nikon F3", "camera", "film", "film", 873),
+    _rec("Nikon D4s", "camera", "film", "digital", 3039),         # 2026-11-23 Film に出ていた
+    _rec("Nikon FM2", "camera", "film", "film", 2500),
+    _rec("Nikon F2", "camera", "film", "film", 2000),
+    _rec("Nikon New FM2", "camera", "film", "film", 2400),
+    _rec("Nikon F4", "camera", "film", "film", 2600),
+    _rec("Nikon Ai-S 50mm 1.2", "camera", "film", "mf", 3000),     # F値を書かないレンズ（2026-11-23「レンズも全て表示される」）
+    _rec("Nikon Ai 28mm", "camera", "film", "mf", 2800),
+    _rec("Nikon Ai Nikkor 35mm 2", "camera", "film", "mf", 2700),
+    _rec("Nikon AF-S 70-200mm F2.8G", "lens", "af", "af", 9000),
+    _rec("Nikon D750", "camera", "digital", "digital", 8000),
+    _rec("Nikon Z 6II", "camera", "digital", "digital", 9500),
+    _rec("Nikon 35Ti", "camera", "film", "film", 12000),
+]
+
+
 def fixture() -> dict:
     """テスト用のデータ: 設定は config.toml から、相場と入札候補は作り物."""
     import appraise as ba
@@ -33,7 +58,8 @@ def fixture() -> dict:
     cfg = ba.load_config(None)
     d = bx.build_data(cfg, float(cfg["fx"]["usd_jpy"]))
     d.update(kind="aurora-store", built="test", sweet=[], trivia=[], trusted=[], kantei=[], memoHist={},
-             recs=[{"label": "Canon AE-1", "brand": "Canon", "kind": "camera", "cat": "film", "usd": 400, "maxBuy": 40000, "sales": 3, "profit": 5000, "basis": "販売実績"}])
+             recs=[{"label": "Canon AE-1", "brand": "Canon", "kind": "camera", "cat": "film", "usd": 400, "maxBuy": 40000, "sales": 3, "profit": 5000, "basis": "販売実績"}]
+             + NIKON_RECS)
     d.pop("inbox", None)
     ref = lambda t, usd: {"title": t, "price": usd, "tier": 1, "source": "販売実績", "acc": False, "tokens": sorted(ba._tokens(t))}  # 実際のデータと同じ形
     d["refs"] = [ref("Olympus XA1", 160), ref("Canon AE-1 Program", 180), ref("Nikon D750", 600),

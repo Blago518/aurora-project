@@ -83,12 +83,16 @@ console.log(JSON.stringify(cases.map(([k, t]) => {
                  "Minolta CLE M-Rokkor 40mm F2"],
         "digital": ["Fujifilm X100V 23mm F2", "Nikon D750 24.3MP Body", "Sony α7 III Body", "Ricoh GR III 18.3mm F2.8",
                     "Canon EOS 5D Mark II 24-105mm F4", "Canon PowerShot G7 X Mark II", "Leica M10 Body", "Nikon Z 6II Body",
-                    "Canon IXY 310", "Olympus OM-D E-M5 Mark II", "Nikon Df 50mm F1.8G", "Ricoh GR IIIx"],
+                    "Canon IXY 310", "Olympus OM-D E-M5 Mark II", "Nikon Df 50mm F1.8G", "Ricoh GR IIIx",
+                    "Nikon D4s Body", "Nikon D3", "Nikon D5", "Nikon D2X"],   # 1桁のフラッグシップ（2026-11-23 Film に出ていた）
         "mf": ["Nikon Ai-S 50mm F1.2", "Canon New FD 50mm F1.4", "Pentax 67 105mm F2.4", "Contax Planar 85mm F1.4 AEG",
                "Leica Summilux-M 35mm F1.4", "Pentax SMC Takumar 55mm F1.8", "Olympus Pen Zuiko 38mm f/2.8",
                "Mamiya RB67 Sekor C 90mm F3.8", "Mamiya RZ67 Sekor Z 110mm F2.8 W", "Leica L39 Elmar 50mm F3.5",
                "Tamron SP 52B 90mm F2.5 Macro", "Olympus OM Zuiko 50mm F1.2", "Mamiya N 80mm F4 for Mamiya 7", "Bronica Zenzanon PS 80mm F2.8", "Mamiya Sekor C 80mm F2.8 for M645",
-               "Hasselblad Planar 80mm F2.8 CF"],
+               "Hasselblad Planar 80mm F2.8 CF",
+               # F値を書かないレンズ（2026-11-23 オーナー「フィルムカメラの nikon を選んでもレンズも全て表示される」）
+               "Nikon Ai-S Nikkor 50mm 1.2", "Nikon Ai 28mm", "Nikon Nikkor-S Auto 50mm 1.4", "Nikon Ai Nikkor 35mm 2",
+               "Canon New FD 135mm 2.5"],
         "af": ["Nikon 6.7-13mm F3.5-5.6", "Nikon 1 NIKKOR VR 6.7-13mm f/3.5-5.6", "Nikon 1 NIKKOR 10-30mm F3.5-5.6",  # 2026-11-22 Film に出ていた
                "Nikon AF-S 200-500mm F5.6E ED VR", "Nikon AF-S DX 18-140mm", "Canon EF 70-200mm F2.8L IS II",
                "Sony FE 24-70mm F2.8 GM", "Contax Planar 45mm F2 G", "Nikon Z 24-70mm F4 S", "Sony SEL1635Z",
@@ -140,7 +144,7 @@ console.log(JSON.stringify(cases.map(([k, t]) => {
         import re
         from pathlib import Path
         html = (Path(__file__).resolve().parent.parent / "store" / "index.html").read_text(encoding="utf-8")
-        for name in ("AF_STRONG_RE", "DIGITAL_CAM_RE", "LENS_LIKE_RE", "KIT_WORDS_RE", "FIXED_BODY_RE", "LENS_FAMILY_RE"):
+        for name in ("AF_STRONG_RE", "DIGITAL_CAM_RE", "LENS_LIKE_RE", "LENS_MM_RE", "LENS_MOUNT_RE", "KIT_WORDS_RE", "FIXED_BODY_RE", "LENS_FAMILY_RE"):
             js = re.search(r"^const %s = /(.*)/i;$" % name, html, re.M).group(1).replace("\\/", "/")
             self.assertEqual(js, getattr(bs, name).pattern, name)
 
