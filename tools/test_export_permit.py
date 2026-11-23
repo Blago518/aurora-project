@@ -79,14 +79,36 @@ class FillTemplate(unittest.TestCase):
             self.assertEqual(ep.have_permits(Path(d)), {"870000000001", "870000000003", "5800000001"})   # FedEx・DHL の名前の形
 
     def test_collect_from_downloads(self):
+        """ダウンロードの PDF を FedEx／DHL のフォルダに分けて移す（2026-11-23 オーナー「fedex と dhl でフォルダ分けて、自動化でローカルに置いて」）."""
+        from unittest import mock
         with tempfile.TemporaryDirectory() as d:
-            src, dst = Path(d) / "dl", Path(d) / "have"
-            src.mkdir()
-            for name in ("870000000001_RELS_20260916.pdf", "5800000001.pdf", "請求書.pdf"):
+            src, dst, old = Path(d) / "dl", Path(d) / "have", Path(d) / "old"
+            src.mkdir(), old.mkdir()
+            for name in ("870000000001_RELS_20260916.pdf", "5800000001.pdf", "請求書.pdf", "5800000001 (1).pdf"):
                 (src / name).write_text("x")
-            self.assertEqual(ep.collect_from_downloads(src, dst), 2)
-            self.assertEqual(ep.collect_from_downloads(src, dst), 0)   # 2回目は写さない
-            self.assertTrue((src / "5800000001.pdf").exists())          # 元は消さない
+            (old / "5800000002.pdf").write_text("x")          # 分ける前に1つのフォルダへ置いた物
+            with mock.patch.object(ep, "HAVE_DIR", old):
+                self.assertEqual(ep.collect_from_downloads(src, dst), 3)
+                self.assertEqual(sorted(x.name for x in (dst / "FedEx").iterdir()), ["870000000001_RELS_20260916.pdf"])
+                self.assertEqual(sorted(x.name for x in (dst / "DHL").iterdir()), ["5800000001.pdf", "5800000002.pdf"])
+                self.assertEqual(sorted(x.name for x in src.iterdir()), ["5800000001 (1).pdf", "請求書.pdf"])   # 許可書でない物・写しは触らない
+                (src / "5800000001.pdf").write_text("x")       # もう一度ダウンロードされた
+                self.assertEqual(ep.collect_from_downloads(src, dst), 0)
+                self.assertFalse((src / "5800000001.pdf").exists())                                             # もう移した物は消す
+                self.assertEqual(ep.have_permits(dst), {"870000000001", "5800000001", "5800000002"})          # フォルダの中も数える
+            self.assertEqual([ep.carrier_of(x) for x in ("870000000001_RELS_20260916.pdf", "5800000001.pdf", "請求書.pdf")], ["FedEx", "DHL", None])
+
+    def test_permit_base(self):
+        """税理のフォルダがあればその中の「輸出許可書」、無ければ data/export_permits."""
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            with mock.patch.object(ep, "TAX_DIR", "Desktop/税理"):
+                self.assertEqual(ep.permit_base(home), ep.HAVE_DIR)
+                (home / "Desktop" / "税理").mkdir(parents=True)
+                self.assertEqual(ep.permit_base(home), home / "Desktop" / "税理" / "輸出許可書")
+            with mock.patch.object(ep, "TAX_DIR", ""):
+                self.assertEqual(ep.permit_base(home), ep.HAVE_DIR)
 
     def test_speedpak_detail(self):
         """SpeedPAK の「輸出取引の詳細」（シート「オーダー」）から運送会社ごとの番号（2026-11-23 の形。番号は作り物）."""
@@ -124,8 +146,7 @@ class FillTemplate(unittest.TestCase):
             for name in ("8300000001.pdf", "8300000002.pdf", "8300000002 (1).pdf"):
                 (dl / name).write_text("x")
             sent = []
-            with mock.patch.object(ep, "HAVE_DIR", have), mock.patch.object(ep, "STATEMENTS", Path(d) / "none"), \
-                    mock.patch.object(ep.collect_from_downloads, "__defaults__", (dl, have)), mock.patch.object(ep.have_permits, "__defaults__", (have,)), \
+            with mock.patch.object(ep, "HAVE_DIR", have), mock.patch.object(ep, "STATEMENTS", Path(d) / "none"), mock.patch.object(ep, "TAX_DIR", ""), \
                     mock.patch("ledger_sync.post_sheet", lambda sheet, body, post=None: sent.append((sheet, body)) or True):
                 rows = ep.report_status(dl)
             self.assertEqual(ep.status_lines(rows), ["DHL: 3件中 2件 保存済み・まだ 1件（8300000003）", "FedEx: 1件中 0件 保存済み・まだ 1件（380000000001）"])
