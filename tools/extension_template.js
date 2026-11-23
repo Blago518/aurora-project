@@ -404,6 +404,9 @@
   const OPTICAL_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)/g;
   const OTHER_DEFECT_RE = /ヤケ|傷あり|キズあり|拭き傷/;
   const OPT_NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)/;
+  // 二重の打ち消し（2026-11-23 「クモリがないわけではない」）は、打ち消しではなく「ある」（appraise.py の is_negated と同じ）
+  const DOUBLE_NEG_RE = /(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)/;
+  function isNegated(seg) { return OPT_NEG_RE.test(seg) && !DOUBLE_NEG_RE.test(seg); }
   function opticalWords(text) {
     const out = [];
     for (const m of String(text || "").matchAll(OPTICAL_RE)) {
@@ -412,7 +415,7 @@
       if (kv) { if (/^(なし|無し|ナシ|無|ない|-|ー|×)/.test(kv[1])) continue; }
       else {
         const cut = rest.search(/[。\n】|｜]/);
-        if (OPT_NEG_RE.test(cut < 0 ? rest : rest.slice(0, cut))) continue;
+        if (isNegated(cut < 0 ? rest : rest.slice(0, cut))) continue;
       }
       if (!out.includes(w)) out.push(w);
     }
@@ -1094,7 +1097,10 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
 
   // ------------------------------------------------------------------ 説明文の状態チェック（◎○の出品だけ自動。出品ページを1件ずつ間隔を空けて読む）
   const LS_DESC = "yhkDescV3";  // 判定の語を変えたら番号を上げて、保存済みの結果を読み直させる
-  const DEFECT_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|剥離|ヤケ|黄変|拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響)/g;
+  // 動作の不良の語と、同じ文にあれば決まり文句（「動作しない場合は返品可」）とみなす語（appraise.py の MECH_PAT と同じ）
+  const MECH_PAT = String.raw`(?<!途)(?:回|動き|動か|切れ|降り|下り|作動し|動作し|通電し|戻|開き|開か|閉じ|閉ま)(?:りません|ません|らない|ない|らず|ず)|開きっぱなし|(?:電源|スイッチ)(?:が|は)?入(?:りません|らない|らず)|巻き?上げ(?:が|は)?(?:でき|出来)(?:ません|ない)|動作確認(?:が|は)?(?:でき|出来)て(?:いません|いない|おりません)|ピント(?:が|は|も)?(?:完全に)?(?:合いません|合わない|合わず|甘い)|合わない(?:時|とき)|不安定|(?:ヒビ|ひび)(?:割れ)?|クラック|割れ(?!物)|カタカタ|異音|(?:リング|ヘリコイド)(?:が|は|も)?(?:かなり|やや|少し|とても|非常に)?(?:固い|硬い|固く|硬く|重い|重く)`;
+  const MECH_RE = new RegExp("^(?:" + MECH_PAT + ")$"), MECH_COND_RE = /^(?:こと|事)?(?:が|は)?(?:場合(?![がも](?:あり|ござい))|際(?:は|に)|(?:とき|時)(?:は|には)|(?:など|等)[^。\n]{0,10}(?:初期不良|返品|保証))/, HAS_RE = /^(?:が|も|は)?(?:あり(?!ませ)|有り(?!ませ)|ござい(?!ませ))/;
+  const DEFECT_RE = new RegExp(String.raw`(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|剥離|ヤケ|黄変|拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響|` + MECH_PAT + ")", "g");
   // 光学の欄で状態を書かず「写真を確認して」とだけ書くのは、写真に難が写っている合図のことが多い
   const PHOTO_ONLY_RE = /光学[^\n]{0,15}\n?(?:[^\n]{0,60}\n?){0,3}?[^\n]{0,40}写真[^\n]{0,10}確認/;
   // 同じ文の中にあれば「〜なし」と打ち消しているとみなす語
@@ -1112,12 +1118,14 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const sentence = text.slice(sStart, sEnd < 0 ? m.index + 80 : m.index + sEnd);
       if (/返品|返金|対象外|保証|免責/.test(text.slice(Math.max(0, m.index - 200), m.index)) &&
           (sentence.match(/カビ|かび|くもり|クモリ|曇り|サビ|錆|キズ|傷|磨耗|摩耗|劣化|ゴミ|チリ|ホコリ/g) || []).length >= 3) continue;
+      if (MECH_RE.test(m[1]) && MECH_COND_RE.test(text.slice(m.index + m[1].length, m.index + m[1].length + 30))) continue;  // 「万が一動作しない場合は」などは規約の文
       const rest = text.slice(m.index, m.index + 60);
       const kv = rest.slice(m[1].length).match(/^\s*[：:]\s*([^\s　、。|｜]+)/);  // 「クモリ：ごくわずか」のような項目形式は値だけ見る
       if (kv) { if (/^(なし|無し|ナシ|無|ない|-|ー|×)/.test(kv[1])) continue; }
       else {
-        const cut = rest.search(/[。\n】|｜]/);
-        if (NEG_RE.test(cut < 0 ? rest : rest.slice(0, cut))) continue;
+        const after = rest.slice(m[1].length);  // 語そのもの（合わない・回りません）を打ち消しと読まないよう、語の後ろだけ見る
+        const cut = after.search(/[。\n】|｜]/);
+        if (!HAS_RE.test(after.replace(/^割れ/, "")) && isNegated(cut < 0 ? after : after.slice(0, cut))) continue;
       }
       if (hits.some((h) => h.word === m[1])) continue;
       hits.push({ word: m[1], snip: text.slice(Math.max(0, m.index - 18), m.index + 32).replace(/\s+/g, " ").trim() });

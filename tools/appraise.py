@@ -1678,6 +1678,15 @@ def calculate(item: Item, cfg: dict, fx: float, with_realized: bool = True) -> d
 # 「カビ・クモリなし」のような打ち消しは desc_hits の規則で除く。傷・ヤケなどその他の難は今までどおり要確認
 OPTICAL_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)")
 OTHER_DEFECT_RE = re.compile(r"ヤケ|傷あり|キズあり|拭き傷")
+# 二重の打ち消し（2026-11-23 「クモリがないわけではない」を「クモリなし」と読んで ◎ を出した）は、打ち消しではなく「ある」
+DOUBLE_NEG_RE = re.compile(r"(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)")
+
+
+def is_negated(seg: str) -> bool:
+    """その文の残りが難を打ち消しているか（extension_template.js の isNegated と同じ）."""
+    return bool(_OPT_NEG_RE.search(seg)) and not DOUBLE_NEG_RE.search(seg)
+
+
 _OPT_NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
 
 
@@ -1692,7 +1701,7 @@ def optical_title_words(text: str) -> list[str]:
                 continue
         else:
             cut = re.search(r"[。\n】|｜]", rest)
-            if _OPT_NEG_RE.search(rest[:cut.start()] if cut else rest):
+            if is_negated(rest[:cut.start()] if cut else rest):
                 continue
         if w not in out:
             out.append(w)
@@ -1907,8 +1916,14 @@ def merge_memo(new: dict, dest: Path | None = None, how: str = "拡張機能で�
 
 
 # ---- 説明文チェック（extension_template.js の descHits と同じ規則）
+# 動作の不良（回りません・ピントが合いません・不安定・ヒビ など）も拾い、要確認にする（2026-11-23 オーナー決定。× にはしない。ジャンク表記だけでは拾わない）
+# 動作の不良の語と、同じ文にあれば決まり文句（「動作しない場合は返品可」）とみなす語
+MECH_PAT = (r"(?<!途)(?:回|動き|動か|切れ|降り|下り|作動し|動作し|通電し|戻|開き|開か|閉じ|閉ま)(?:りません|ません|らない|ない|らず|ず)|開きっぱなし|(?:電源|スイッチ)(?:が|は)?入(?:りません|らない|らず)|巻き?上げ(?:が|は)?(?:でき|出来)(?:ません|ない)|動作確認(?:が|は)?(?:でき|出来)て(?:いません|いない|おりません)|ピント(?:が|は|も)?(?:完全に)?(?:合いません|合わない|合わず|甘い)|合わない(?:時|とき)|不安定|(?:ヒビ|ひび)(?:割れ)?|クラック|割れ(?!物)|カタカタ|異音|(?:リング|ヘリコイド)(?:が|は|も)?(?:かなり|やや|少し|とても|非常に)?(?:固い|硬い|固く|硬く|重い|重く)")
+MECH_RE = re.compile(MECH_PAT)
+MECH_COND_RE = re.compile(r"^(?:こと|事)?(?:が|は)?(?:場合(?![がも](?:あり|ござい))|際(?:は|に)|(?:とき|時)(?:は|には)|(?:など|等)[^。\n]{0,10}(?:初期不良|返品|保証))")  # 語のすぐ後ろに続くときだけ（文のどこかの 場合・返品 では外さない）
+HAS_RE = re.compile(r"^(?:が|も|は)?(?:あり(?!ませ)|有り(?!ませ)|ござい(?!ませ))")  # 「ひび割れあり、保証はありません」: すぐ後ろが「あり」なら、後ろの節の打ち消しは別の話
 DEFECT_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|剥離|ヤケ|黄変|"
-                       r"拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響)")
+                       r"拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響|" + MECH_PAT + r")")
 PHOTO_ONLY_RE = re.compile(r"光学[^\n]{0,15}\n?(?:[^\n]{0,60}\n?){0,3}?[^\n]{0,40}写真[^\n]{0,10}確認")
 NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
 
@@ -1925,6 +1940,8 @@ def desc_hits(text: str, cond: str = "") -> list[dict]:
         s_start = max(text.rfind("。", 0, i + 1), text.rfind("\n", 0, i + 1)) + 1
         s_end = re.search(r"[。\n]", text[i:])
         sentence = text[s_start:(i + s_end.start()) if s_end else i + 80]
+        if MECH_RE.fullmatch(w) and MECH_COND_RE.search(text[i + len(w):i + len(w) + 30]):
+            continue  # 「万が一動作しない場合は」「電源が入らないなどの初期不良は対応」は規約の文
         if re.search(r"返品|返金|対象外|保証|免責", text[max(0, i - 200):i]) and \
                 len(re.findall(r"カビ|かび|くもり|クモリ|曇り|サビ|錆|キズ|傷|磨耗|摩耗|劣化|ゴミ|チリ|ホコリ", sentence)) >= 3:
             continue
@@ -1934,8 +1951,9 @@ def desc_hits(text: str, cond: str = "") -> list[dict]:
             if re.match(r"^(なし|無し|ナシ|無|ない|-|ー|×)", kv.group(1)):
                 continue
         else:
-            cut = re.search(r"[。\n】|｜]", rest)
-            if NEG_RE.search(rest[:cut.start()] if cut else rest):
+            after = rest[len(w):]  # 語そのもの（合わない・回りません）を打ち消しと読まないよう、語の後ろだけ見る
+            cut = re.search(r"[。\n】|｜]", after)
+            if not HAS_RE.search(re.sub(r"^割れ", "", after)) and is_negated(after[:cut.start()] if cut else after):
                 continue
         if any(h["word"] == w for h in hits):
             continue
