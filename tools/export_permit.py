@@ -87,6 +87,18 @@ def collect_from_downloads(src: Path = Path.home() / "Downloads", dst: Path = HA
     return n
 
 
+def template_account(template: Path) -> str:
+    """シートの「フェデックスアカウント番号」の下の欄に入っている9桁（前回のシートに入っていれば、それを使う）."""
+    import openpyxl
+    ws = openpyxl.load_workbook(template).active
+    for row in ws.iter_rows(min_row=1, max_row=30):
+        for c in row:
+            if ACCOUNT_HEAD_RE.search(str(c.value or "")) and len(str(c.value)) <= 30:
+                v = re.sub(r"\D", "", str(ws.cell(c.row + 1, c.column).value or ""))
+                return v if len(v) == 9 else ""
+    return ""
+
+
 def fill(template: Path, shipments: list[dict], out: Path, account: str = "") -> tuple[int, list[str]]:
     """template に shipments（{"track", "date"}）を書いて out に保存. (書いた件数, 書けなかった番号と理由) を返す.
     欄（A列に番号が振られた行）が足りなければ out_2.xlsx・out_3.xlsx … に分ける."""
@@ -119,6 +131,10 @@ def fill(template: Path, shipments: list[dict], out: Path, account: str = "") ->
                     break
         last = ws.max_row   # 先に決める（セルを読むだけで max_row が伸びるため）
         numbered = any(isinstance(ws.cell(rr, 1).value, (int, float)) for rr in range(head_row + 1, last + 1))
+        if numbered:   # 前回の依頼で入れた番号が残ったシート（オーナーが送り返した物）でも、番号の欄を空にしてから入れる（2026-11-23 前回の8件が残った）
+            for rr in range(head_row + 1, last + 1):
+                if isinstance(ws.cell(rr, 1).value, (int, float)):
+                    ws.cell(rr, tcol).value = None
         r = head_row + 1
         while todo:
             a_ = ws.cell(r, 1).value
@@ -131,7 +147,7 @@ def fill(template: Path, shipments: list[dict], out: Path, account: str = "") ->
                     break   # 番号の振られた欄（FedEx の書式は 1〜200）を使い切った → 次のファイルへ
                 r += 1
                 continue
-            if v:   # 既に番号が入った行は残す
+            if v and not numbered:   # 番号の振られていないシート: 既に入った行は残す
                 vv = re.sub(r"[\s-]", "", v)
                 todo = [x for x in todo if x["track"] != vv]
                 r += 1
@@ -305,7 +321,7 @@ def main(argv=None) -> int:
     have = have_permits()
     before = len(ships)
     ships = [x for x in ships if re.sub(r"[\s-]", "", x["track"]) not in have]
-    account = a.account or ""
+    account = a.account or template_account(a.template)   # 前回のシートに入っていれば、それを使う（聞かない）
     if not account:   # 公開リポジトリには書かない。Mac のキーチェーンに1回だけ覚える
         try:
             import keychain
