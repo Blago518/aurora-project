@@ -184,6 +184,34 @@ def run(script: str, *args: str) -> bool:
     return ok
 
 
+def self_update(root: Path | None = None, run_git=None) -> bool:
+    """マージ済みの変更を Mac に取り込む（git pull --ff-only）. 新しくなったら True.
+    2026-11-23: 毎朝の更新は取り込みをしていなかったので、マージのたびにオーナーがコマンドを打っていた。
+    早送りできるときだけ取り込む（手元に変更がある・main でない・つながらないときは何もしないで今の版で続ける）."""
+    root = root or Path(__file__).resolve().parent.parent
+
+    def git(*a):
+        return subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, timeout=90)
+
+    git = run_git or git
+    try:
+        if git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() != "main":
+            return False
+        before = git("rev-parse", "HEAD").stdout.strip()
+        res = git("pull", "--ff-only", "--quiet")
+        after = git("rev-parse", "HEAD").stdout.strip()
+    except Exception as e:  # noqa: BLE001
+        print(f"  プログラムの取り込みはしませんでした（{e}）")
+        return False
+    if res.returncode != 0:
+        print("  プログラムの取り込みはしませんでした（" + ((res.stderr or "").strip().splitlines() or ["git pull できません"])[-1][:80] + "）")
+        return False
+    if before and after and before != after:
+        print(f"  プログラムを新しくしました（{before[:7]} → {after[:7]}）")
+        return True
+    return False
+
+
 def main(argv=None) -> int:
     # 自動実行ではログがファイルなので、見出し（▶ …）がまとめて最後に書かれ、各プログラムのエラー文より後ろに並んでしまう。
     # 1行ずつ書き出して、ログの順番を実行の順番どおりにする
@@ -198,6 +226,10 @@ def main(argv=None) -> int:
     ap.add_argument("--notify", action="store_true", help="終わったら Mac の通知を出す（自動実行用）")
     ap.add_argument("--no-bids", action="store_true", help="入札リスト（data/search_urls.txt の鑑定）を作らない")
     args = ap.parse_args(argv)
+    import os
+    if argv is None and not args.dry_run and not os.environ.get("AURORA_PULLED") and self_update():
+        os.environ["AURORA_PULLED"] = "1"   # 新しいプログラムで最初からやり直す（1回だけ）
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
     started = datetime.now()
     if not isinstance(sys.stdout, _Tee):
         sys.stdout, sys.stderr = _Tee(sys.stdout), _Tee(sys.stderr)

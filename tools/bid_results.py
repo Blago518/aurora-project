@@ -164,6 +164,13 @@ def load_won_ids(paths: list[Path] | None = None) -> set[str] | None:
     return words if has_ids else None
 
 
+def _aware(text) -> datetime:
+    """日時の文字 → 時差付きの日時. 時差が書いていなければ日本時間とみなす（2026-11-23 朝の更新が
+    「can't compare offset-naive and offset-aware datetimes」で入札の結果を集計できなかった）."""
+    d = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    return d if d.tzinfo else d.replace(tzinfo=timezone(timedelta(hours=9)))
+
+
 def _ended_days(row: dict, state: dict) -> float | None:
     try:
         end = datetime.fromisoformat(str(state.get("end") or row.get("end")).replace("Z", "+00:00"))
@@ -253,7 +260,7 @@ def check_results(cfg: dict, fx: float, delay: float = 1.5, rows: list[dict] | N
         if res0:
             continue
         try:
-            if datetime.fromisoformat(str(r.get("end"))) > now:
+            if _aware(r.get("end")) > now:
                 continue
         except ValueError:
             pass
@@ -280,7 +287,7 @@ def summarize(rows: list[dict], days: int | None = 30) -> dict:
 
     def recent(r):
         try:
-            return not since or datetime.fromisoformat(str(r.get("bid_at")).replace("Z", "+00:00")) >= since
+            return not since or _aware(r.get("bid_at")) >= since
         except ValueError:
             return True
     rs = [r for r in rows if recent(r)]

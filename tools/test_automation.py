@@ -314,6 +314,30 @@ class Schedule(unittest.TestCase):
         self.assertIn("--notify", p["ProgramArguments"])
 
 
+class SelfUpdate(unittest.TestCase):
+    """毎朝の更新がマージ済みの変更を取り込む（早送りできるときだけ）."""
+
+    def _git(self, branch, heads, rc=0):
+        import types
+        heads = list(heads)
+
+        def git(*a):
+            if a[:2] == ("rev-parse", "--abbrev-ref"):
+                return types.SimpleNamespace(stdout=branch, stderr="", returncode=0)
+            if a[0] == "rev-parse":
+                return types.SimpleNamespace(stdout=heads.pop(0), stderr="", returncode=0)
+            return types.SimpleNamespace(stdout="", stderr="fatal: Not possible to fast-forward", returncode=rc)
+        return git
+
+    def test_cases(self):
+        import update_all as ua
+        self.assertTrue(ua.self_update(Path("."), self._git("main", ["aaa", "bbb"])))
+        self.assertFalse(ua.self_update(Path("."), self._git("main", ["aaa", "aaa"])))
+        self.assertFalse(ua.self_update(Path("."), self._git("main", ["aaa", "aaa"], rc=1)))
+        self.assertFalse(ua.self_update(Path("."), self._git("work", ["aaa", "bbb"])))
+
+
+
 if __name__ == "__main__":
     unittest.main()
 
