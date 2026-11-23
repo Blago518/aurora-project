@@ -189,7 +189,7 @@ class MemoAutoSave(unittest.TestCase):
             m = json.loads((Path(d) / "manifest.json").read_text(encoding="utf-8"))
             bg = (Path(d) / "background.js").read_text(encoding="utf-8")
         self.assertIn("downloads", m["permissions"])
-        self.assertNotIn("host_permissions", m)  # キーが無ければ eBay への通信権限は付けない
+        self.assertNotIn("https://api.ebay.com/*", m.get("host_permissions", []))  # キーが無ければ eBay への通信権限は付けない
         self.assertIn("const APP_ID = null;", bg)
         self.assertIn("aurora_price_memo.csv", bg)
 

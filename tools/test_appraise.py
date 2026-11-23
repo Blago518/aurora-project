@@ -479,13 +479,13 @@ class ExtensionBrowse(unittest.TestCase):
 
     def test_with_keys(self):
         man, bg = self._build(("APP-X", "CERT-Y"))
-        self.assertEqual(man["host_permissions"], ["https://api.ebay.com/*"])
+        self.assertEqual(man["host_permissions"], ["<all_urls>", "https://api.ebay.com/*"])  # <all_urls> は仕入れ証跡の画面の写し
         self.assertIn('const APP_ID = "APP-X";', bg)
         self.assertNotIn("__CERT_ID__", bg)
 
     def test_without_keys(self):
         man, bg = self._build(None)
-        self.assertNotIn("host_permissions", man)  # キーが無ければ eBay への通信権限は付けない
+        self.assertNotIn("https://api.ebay.com/*", man.get("host_permissions", []))  # キーが無ければ eBay への通信権限は付けない
         # background.js は相場メモの自動保存（ダウンロード/aurora_price_memo.csv）のため常に入る。キーは入らない
         self.assertIn("const APP_ID = null;", bg)
         self.assertEqual(man["permissions"], ["downloads", "downloads.ui", "storage"])

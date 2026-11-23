@@ -161,6 +161,25 @@ def import_downloads(downloads: Path, days: int, dry_run: bool) -> int:
     return n
 
 
+def move_evidence(downloads: Path, dest_glob: str = "Desktop/税理/8*/ヤフオク", home: Path | None = None) -> int:
+    """拡張機能が ダウンロード/ヤフオク仕入証跡/ に保存したヤフオクの仕入れ証跡（取引ナビの PNG）を、税理のヤフオクのフォルダに移す.
+    2026-11-23 オーナー依頼（税理士から仕入れ証跡を残すように）。移し先が見つからなければ、ダウンロードに置いたまま。移した数を返す."""
+    home = home or Path.home()
+    dests = sorted(home.glob(dest_glob))
+    if not dests:
+        return 0
+    n = 0
+    for sub in ("ヤフオク仕入証跡", "yahoo_evidence"):
+        for p in sorted((downloads / sub).glob("*.png")) if (downloads / sub).is_dir() else []:
+            to = dests[0] / p.name
+            if to.exists():
+                p.unlink()   # 同じ名前が移し先にある＝もう移した物
+                continue
+            shutil.move(str(p), to)
+            n += 1
+    return n
+
+
 def run(script: str, *args: str) -> bool:
     p = HERE / script
     if not p.exists():
@@ -202,6 +221,19 @@ def main(argv=None) -> int:
     ledger_sync.sync(dry_run=args.dry_run)
     print("\n▶ ダウンロードフォルダから取り込み")
     import_downloads(args.downloads, args.days, args.dry_run)
+    if not args.dry_run:
+        moved = move_evidence(args.downloads)
+        if moved:
+            print(f"  ヤフオクの仕入れ証跡 {moved}件を 税理 › ヤフオク のフォルダに移しました")
+        # 輸出許可書: DHL の PDF を数え、FedEx の依頼用 Excel を作り直す（材料が無ければ何もしない。2026-11-23 オーナー「自動化してほしい」）
+        try:
+            import export_permit
+            if export_permit.TEMPLATE.exists() and export_permit.speedpak_files([args.downloads]):
+                export_permit.main([])
+        except SystemExit:
+            pass
+        except Exception as e:
+            print(f"  輸出許可書の Excel を作れませんでした: {e}")
     print("\n▶ Chatwork の販売報告")
     import chatwork_sync
     chatwork_sync.sync(dry_run=args.dry_run)
