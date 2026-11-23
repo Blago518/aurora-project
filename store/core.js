@@ -373,10 +373,13 @@ function makeCore(DATA) {
   // 「カビ・クモリなし」「クモリ：無」のような打ち消しは除く（appraise.py の optical_title_words と同じ）。傷・ヤケは要確認のまま
   const OPTICAL_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)/g;
   const OTHER_DEFECT_RE = /ヤケ|傷あり|キズあり|拭き傷/;
-  const OPT_NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)/;
+  const OPT_NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い|(?<!少)なく|無く)/;
   // 二重の打ち消し（2026-11-23 「クモリがないわけではない」）は、打ち消しではなく「ある」（appraise.py の is_negated と同じ）
   const DOUBLE_NEG_RE = /(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)/;
-  function isNegated(seg) { return OPT_NEG_RE.test(seg) && !DOUBLE_NEG_RE.test(seg); }
+  function isNegated(seg) {
+    seg = String(seg).replace(/(?:影響|問題|支障)(?:は|が|の|も)?(?:ない|なし|無い|無し|ありません|ございません|なく)/g, "");  // 「薄くもりのみで撮影には影響ない」は くもり あり
+    return OPT_NEG_RE.test(seg) && !DOUBLE_NEG_RE.test(seg);
+  }
   function opticalWords(text) {
     const out = [];
     for (const m of String(text || "").matchAll(OPTICAL_RE)) {
