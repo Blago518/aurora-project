@@ -42,8 +42,8 @@ class FillTemplate(unittest.TestCase):
             ws = openpyxl.load_workbook(out).active
             self.assertEqual(ws["B13"].value, 123456789)          # アカウント番号は黄色の欄（見出しの下）
             self.assertEqual(ws["B16"].value, 123456789012)       # 見本は消さない
-            self.assertEqual(ws["B17"].value, 877270329193)       # 1番の行から、ハイフン・空白を外した数字で
-            self.assertEqual(ws["B18"].value, 876802794910)
+            self.assertEqual(ws["B17"].value, "877270329193")       # 1番の行から、ハイフン・空白を外した数字で
+            self.assertEqual(ws["B18"].value, "876802794910")
             self.assertIsNone(ws["B19"].value)
 
     def test_fedex_split_when_full(self):
@@ -53,8 +53,8 @@ class FillTemplate(unittest.TestCase):
             ships = [{"track": f"8760000000{i:02d}", "date": ""} for i in range(5)]
             n, _ = ep.fill(self._fedex(d, rows=3), ships, out)
             self.assertEqual(n, 5)
-            self.assertEqual([openpyxl.load_workbook(out).active.cell(r, 2).value for r in (17, 18, 19, 20)], [876000000000, 876000000001, 876000000002, None])
-            self.assertEqual(openpyxl.load_workbook(Path(d) / "o_2.xlsx").active["B17"].value, 876000000003)
+            self.assertEqual([openpyxl.load_workbook(out).active.cell(r, 2).value for r in (17, 18, 19, 20)], ["876000000000", "876000000001", "876000000002", None])
+            self.assertEqual(openpyxl.load_workbook(Path(d) / "o_2.xlsx").active["B17"].value, "876000000003")
 
     def test_have_permits(self):
         with tempfile.TemporaryDirectory() as d:

@@ -115,7 +115,7 @@ def fill(template: Path, shipments: list[dict], out: Path, account: str = "") ->
             for row in ws.iter_rows(min_row=1, max_row=head_row):   # 見出し（AWB）より上の「アカウント番号」の下の欄
                 c = next((c for c in row if ACCOUNT_HEAD_RE.search(str(c.value or ""))), None)
                 if c:
-                    ws.cell(c.row + 1, c.column).value = int(account) if account.isdigit() else account
+                    ws.cell(c.row + 1, c.column).value = int(account) if account.isdigit() else account   # 前回のシートも数字
                     break
         last = ws.max_row   # 先に決める（セルを読むだけで max_row が伸びるため）
         numbered = any(isinstance(ws.cell(rr, 1).value, (int, float)) for rr in range(head_row + 1, last + 1))
@@ -137,7 +137,7 @@ def fill(template: Path, shipments: list[dict], out: Path, account: str = "") ->
                 r += 1
                 continue
             x = todo.pop(0)
-            ws.cell(r, tcol).value = int(x["track"])   # 見本と同じく数字で入れる
+            ws.cell(r, tcol).value = x["track"]   # 文字で入れる（2026-11 にオーナーが送って FedEx が受け付けたシートと同じ形）
             if dcol and x.get("date"):
                 ws.cell(r, dcol).value = x["date"]
             n += 1
@@ -226,12 +226,18 @@ def main(argv=None) -> int:
     before = len(ships)
     ships = [x for x in ships if re.sub(r"[\s-]", "", x["track"]) not in have]
     account = a.account or ""
-    if not account:
+    if not account:   # 公開リポジトリには書かない。Mac のキーチェーンに1回だけ覚える
         try:
             import keychain
             account = keychain.get("aurora", "fedex_account") or ""
+            if not account and sys.stdin.isatty():
+                account = input("出荷に使ったフェデックスアカウント番号（9桁。前回のシートの B13）: ").strip()
+                if re.fullmatch(r"\d{9}", account):
+                    keychain.set("aurora", "fedex_account", account)
+                else:
+                    account = ""
         except Exception:
-            account = ""
+            pass
     n, skipped = fill(a.template.expanduser(), ships, out, account)
     print(f"{n}件を書きました → {out}（もう持っている {before - len(ships)}件は入れていません）")
     if not account:
