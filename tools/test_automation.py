@@ -455,7 +455,39 @@ class SheetMemoAndKnowledge(unittest.TestCase):
         self.assertEqual([rows[2][a], rows[2][b], rows[2][k], rows[2][u], rows[2][ai]], ["d:16-Nov-26", "Order", "123.3", "S39", "139.99"])
         self.assertAlmostEqual(float(rows[3][ai]), 1070.32 * 599.63 / 915.00, places=1)   # 豪ドルの注文は入金のレートで USD に
         self.assertEqual([rows[4][b], rows[4][k], rows[4][ai]], ["Refund", "-21.88", "-21.88"])
+        self.assertEqual([rows[1][2], rows[2][2], rows[4][2]], ["Order number", "O1", "O1"])   # C 注文番号（管理の「返品」が返金を注文で結ぶ）
+        import build_dashboard as bd
+        self.assertEqual([bd.is_junk_no(x) for x in ("J1", "J11/B4 K1", "G4M", "S1", "")], [True, True, False, False, False])
         self.assertEqual([rows[5][a], rows[5][b], rows[5][k]], ["d:9-Nov-26", "Other fee", "-3.39"])
+
+    def test_sales_csv(self):
+        """管理番号ごとの販売 → 「Mac_販売」（2026-11-23。古物台帳_詳細の販売の欄がここを引く。番号は作り物）."""
+        fin = [{"date": "2026-11-16", "type": "SALE", "booking": "CREDIT", "order_id": "O1", "amount": "123.3", "amount_original": ""},
+               {"date": "2026-11-16", "type": "NON_SALE_CHARGE", "fee_type": "AD_FEE", "booking": "DEBIT", "order_id": "", "references": "ORDER_ID:O1", "amount": "3.39"},
+               {"date": "2026-11-14", "type": "SALE", "booking": "CREDIT", "order_id": "O2", "amount": "599.63", "amount_original": "915.00 AUD"},
+               {"date": "2026-11-10", "type": "SALE", "booking": "CREDIT", "order_id": "O3", "amount": "189.6"},      # 全額返金
+               {"date": "2026-11-12", "type": "REFUND", "booking": "DEBIT", "order_id": "O3", "amount": "189.6"},
+               {"date": "2026-11-20", "type": "SALE", "booking": "CREDIT", "order_id": "O4", "amount": "180.0"},      # 同じ番号で出し直して売れた
+               {"date": "2026-11-05", "type": "SALE", "booking": "CREDIT", "order_id": "O5", "amount": "100.0"},      # 一部返金
+               {"date": "2026-11-08", "type": "REFUND", "booking": "DEBIT", "order_id": "O5", "amount": "20.0"},
+               {"date": "2026-08-10", "type": "SALE", "booking": "CREDIT", "order_id": "O6", "amount": "50.0"},       # SKU が合っていない頃
+               {"date": "2026-11-01", "type": "PAYOUT", "booking": "DEBIT", "order_id": "", "amount": "500"}]
+        o = lambda oid, sku, day, price, cur="USD", **k: dict({"order_id": oid, "sku": sku, "date": day, "currency": cur, "item_price": price,  # noqa: E731
+                                                              "quantity": "1", "shipping": "0", "country": "US"}, **k)
+        orders = [o("O1", "S39", "2026-11-16", "139.99"), o("O2", "N2", "2026-11-14", "1070.32", "AUD", country="AU"),
+                  o("O3", "Z1", "2026-11-10", "214.99", payment_status="FULLY_REFUNDED"), o("O4", "Z1", "2026-11-20", "204.99"),
+                  o("O5", "E3", "2026-11-05", "119.99"), o("O6", "5", "2026-08-10", "55.99"), o("O7", "X9", "2026-11-22", "99.99")]
+        rows = {r[0]: r for r in csv.reader(io.StringIO(ls.sales_csv(fin, orders)))}
+        self.assertEqual(rows["管理番号"][1:4], ["販売日", "eBay注文番号", "購入者の国"])
+        self.assertEqual(rows["S39"][1:9], ["2026/11/16", "O1", "US", "139.99", "16.69", "3.39", "", "119.91"])   # 販売−手数料−広告費＝入金
+        self.assertAlmostEqual(float(rows["N2"][4]), 1070.32 * 599.63 / 915.00, places=1)                          # 豪ドルは入金のレートで USD に
+        self.assertEqual(rows["Z1"][1:3], ["2026/11/20", "O4"])                                                     # 返金の後に売れた方
+        self.assertEqual(rows["E3"][1:9], ["2026/11/5", "O5", "US", "119.99", "19.99", "", "20.0", "80.0"])         # 一部返金は販売日を残す
+        self.assertNotIn("5", rows)      # 8/18 より前の SKU は使わない
+        self.assertNotIn("X9", rows)     # まだ入金の明細が無い注文は入れない
+        only = {r[0]: r for r in csv.reader(io.StringIO(ls.sales_csv(fin[:5], orders[:3])))}
+        self.assertEqual(only["Z1"][1], "")                 # 全額返金だけなら販売日は空（在庫に戻る）
+        self.assertEqual(only["Z1"][7:9], ["189.6", "0.0"])
 
     def test_returns_csv(self):
         # 返品の一覧 → 「Mac_返品」: 決めた列だけを送る（ほかの列があっても送らない）
