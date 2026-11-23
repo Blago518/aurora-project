@@ -35,15 +35,15 @@ class FillTemplate(unittest.TestCase):
         import openpyxl
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "o.xlsx"
-            n, skipped = ep.fill(self._fedex(d), [{"track": "877-270329193", "date": ""}, {"track": "876 802794910", "date": ""},
-                                                  {"track": "877270329193", "date": ""}, {"track": "EX0001234", "date": ""}], out, "123456789")
+            n, skipped = ep.fill(self._fedex(d), [{"track": "870-000000001", "date": ""}, {"track": "870 000000002", "date": ""},
+                                                  {"track": "870000000001", "date": ""}, {"track": "EX0001234", "date": ""}], out, "123456789")
             self.assertEqual(n, 2)
             self.assertEqual(skipped, ["EX0001234（12桁の数字でない）"])
             ws = openpyxl.load_workbook(out).active
             self.assertEqual(ws["B13"].value, 123456789)          # アカウント番号は黄色の欄（見出しの下）
             self.assertEqual(ws["B16"].value, 123456789012)       # 見本は消さない
-            self.assertEqual(ws["B17"].value, "877270329193")       # 1番の行から、ハイフン・空白を外した数字で
-            self.assertEqual(ws["B18"].value, "876802794910")
+            self.assertEqual(ws["B17"].value, "870000000001")       # 1番の行から、ハイフン・空白を外した数字で
+            self.assertEqual(ws["B18"].value, "870000000002")
             self.assertIsNone(ws["B19"].value)
 
     def test_fedex_split_when_full(self):
@@ -58,19 +58,19 @@ class FillTemplate(unittest.TestCase):
 
     def test_have_permits(self):
         with tempfile.TemporaryDirectory() as d:
-            for name in ("877270329193_RELS_20260916.pdf", "876083438637_RELS_20260825.pdf", "5821307612.pdf", "memo.txt"):
+            for name in ("870000000001_RELS_20260916.pdf", "870000000003_RELS_20260825.pdf", "5800000001.pdf", "memo.txt"):
                 (Path(d) / name).write_text("x")
-            self.assertEqual(ep.have_permits(Path(d)), {"877270329193", "876083438637", "5821307612"})   # FedEx・DHL の名前の形
+            self.assertEqual(ep.have_permits(Path(d)), {"870000000001", "870000000003", "5800000001"})   # FedEx・DHL の名前の形
 
     def test_collect_from_downloads(self):
         with tempfile.TemporaryDirectory() as d:
             src, dst = Path(d) / "dl", Path(d) / "have"
             src.mkdir()
-            for name in ("877270329193_RELS_20260916.pdf", "5821307612.pdf", "請求書.pdf"):
+            for name in ("870000000001_RELS_20260916.pdf", "5800000001.pdf", "請求書.pdf"):
                 (src / name).write_text("x")
             self.assertEqual(ep.collect_from_downloads(src, dst), 2)
             self.assertEqual(ep.collect_from_downloads(src, dst), 0)   # 2回目は写さない
-            self.assertTrue((src / "5821307612.pdf").exists())          # 元は消さない
+            self.assertTrue((src / "5800000001.pdf").exists())          # 元は消さない
 
     def test_no_header_stops(self):
         import openpyxl

@@ -188,6 +188,11 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
             "js": ["content.js"],
             "run_at": "document_idle",
         }, {
+            # ヤフオクの取引ナビ: 開いたら仕入れ証跡（画面の PNG）を自動で保存（extension_evidence.js。2026-11-23 オーナー依頼）
+            "matches": ["https://contact.auctions.yahoo.co.jp/*"],
+            "js": ["evidence.js"],
+            "run_at": "document_idle",
+        }, {
             # オークファンの入札予約: 予約の手伝いと、予約一覧の読み取り（extension_aucfan.js）
             "matches": ["https://tools.aucfan.com/*"],
             "js": ["aucfan.js"],
@@ -198,9 +203,11 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
     # eBay のキーがあれば、出品中の相場を公式 Browse API で調べる（通信先は api.ebay.com だけ）
     manifest["background"] = {"service_worker": "background.js"}
     manifest["permissions"] = ["downloads", "downloads.ui", "storage"]  # downloads.ui: 自動保存の吹き出しを出さない  # storage: オークファンの予約の受け渡し・eBay 出品中の価格の保存
-    if keys:
-        manifest["host_permissions"] = ["https://api.ebay.com/*"]
+    # 仕入れ証跡: 取引ナビの画面を写す（tabs.captureVisibleTab）。Chrome はサイトだけの許可では写させず、<all_urls> か activeTab（毎回の操作）が要る
+    # （2026-11-23 Chromium で確かめた）。写すのは取引ナビの evidence.js が頼んだときだけで、ほかのサイトには何もしない
+    manifest["host_permissions"] = ["<all_urls>"] + (["https://api.ebay.com/*"] if keys else [])
     shutil.copy(HERE / "extension_aucfan.js", folder / "aucfan.js")
+    shutil.copy(HERE / "extension_evidence.js", folder / "evidence.js")
     tpl = (HERE / "extension_background.js").read_text(encoding="utf-8")
     cfg = cfg or ba.load_config(None)
     app, cert = keys or (None, None)

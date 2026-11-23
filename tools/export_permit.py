@@ -35,7 +35,7 @@ DATE_HEAD_RE = re.compile(r"発送日|出荷日|Ship(?:ment)?\s*Date", re.I)
 # CPaSS 注文一覧で、FedEx（DHL）の追跡番号が入っていそうな列。CPaSS 自身の番号（Trackcode = EX…）は除く
 CARRIER_TRACK_COL_RE = re.compile(r"AWB|carrier.*(?:track|no)|last\s*mile|tracking\s*(?:no|number)|運送状|追跡番号", re.I)
 CARRIER_COL_RE = re.compile(r"carrier|運送会社|配送業者|logistics|channel|service", re.I)
-DHL_TRACK_RE = re.compile(r"^\d{10}$")   # DHL の運送状番号（2026-11-23 の輸出許可通知書「5821307612」）
+DHL_TRACK_RE = re.compile(r"^\d{10}$")   # DHL の運送状番号（2026-11-23 の輸出許可通知書「5800000001」）
 FEDEX_TRACK_RE = re.compile(r"^\d{12}$")   # FedEx の書式「運送状番号は12桁の数字のみ（ハイフン及びスペース無し）」
 
 
@@ -66,7 +66,7 @@ def headers_preview(ws, max_rows: int = 10) -> list[str]:
 
 
 def have_permits(d: Path = HAVE_DIR) -> set[str]:
-    """もう持っている輸出許可通知書の運送状番号. FedEx は「877270329193_RELS_20260916.pdf」、DHL は「5821307612.pdf」."""
+    """もう持っている輸出許可通知書の運送状番号. FedEx は「870000000001_RELS_20260916.pdf」、DHL は「5800000001.pdf」."""
     out = set()
     for p in (d.glob("*") if d.is_dir() else []):
         m = re.match(r"(\d{12})_RELS|(\d{10})\.pdf$", p.name)

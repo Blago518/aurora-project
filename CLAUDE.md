@@ -37,6 +37,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `robots.py`・`yahoo_robots.txt` | ヤフオクの robots.txt で読む前に URL を検査し、Disallow の引数（n=・s1=・o1=・select= など）を外す（7日ごとに robots.txt を取り直して data/ に保存。読めなければ同梱の写し）。appraise.py・win_score.py・拡張機能の［続けて鑑定］が使う |
 | `win_score.py` | **勝ちやすさ**: 入札リストの ◎○・売れ筋・負けた機種について、ヤフオクの終わった出品（`/closedsearch/closedsearch?p=`、Allow の形）を読み、今の判定ロジックの上限入札額以下で終わった割合・月の件数を `data/win_score.csv` に（1回30機種・1機種2ページ・3秒間隔・同じ機種は7日ごと）。1割未満の機種は入札リスト・拡張機能の下に回す（判定・上限額は変えない） |
 | `extension_template.js` | Chrome拡張機能の中身（判定は appraise.py と同一） |
+| `extension_evidence.js` | **ヤフオクの仕入れ証跡**: Chrome で取引ナビを開くと、その画面を PNG で ダウンロード/ヤフオク仕入証跡/ に自動保存（名前は 終了日_出品者_金額_オークションID。同じIDは1回だけ）。`update_all.py` が毎朝 デスクトップ › 税理 › 8.〜 › ヤフオク に移す |
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv`。台帳に豪ドル・ポンドのまま記入された販売金額は、eBay の取引レポート（data/ebay_report.csv）の換算レートでドルに直す |
 | `update_all.py` | **全部まとめて最新にする**: ダウンロードフォルダの古物台帳CSV・頒布会xlsx・明細の取り込み → Chatwork 同期 → 相場データ・拡張機能・スマホ用データ・ナレッジを作り直す |

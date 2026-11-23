@@ -132,6 +132,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
       .then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
     return true;
   }
+  // ヤフオクの仕入れ証跡: 取引ナビの見えている画面を PNG で ダウンロード/ヤフオク仕入証跡/ に保存（同じオークションIDは1回だけ。extension_evidence.js）
+  if (msg && msg.type === "evidenceShot" && /^[a-z]?\d{8,12}$/i.test(msg.id || "") && _sender && _sender.tab) {
+    const key = "evidence_" + msg.id;
+    chrome.storage.local.get(key).then((r) => {
+      if (r[key]) return send({ already: true });
+      return chrome.tabs.captureVisibleTab(_sender.tab.windowId, { format: "png" })
+        .then((url) => quietDownload({ url, filename: "ヤフオク仕入証跡/" + String(msg.name).slice(0, 120) + ".png", conflictAction: "uniquify", saveAs: false })
+          // 日本語の名前を受け付けない環境だけ、英数字の名前（終了日_金額_オークションID）で保存する
+          .catch(() => quietDownload({ url, filename: "yahoo_evidence/" + String(msg.name).replace(/[^\w.-]+/g, "_").replace(/_+/g, "_") + ".png", conflictAction: "uniquify", saveAs: false })))
+        .then(() => chrome.storage.local.set({ [key]: Date.now() }))
+        .then(() => send({ saved: true }));
+    }).catch((e) => send({ error: String((e && e.message) || e) }));
+    return true;
+  }
   if (msg && msg.type === "saveMemo") {
     saveMemo(msg.csv).then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
     return true;
