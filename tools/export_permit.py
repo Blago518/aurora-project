@@ -26,7 +26,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STATEMENTS = ROOT / "data" / "statements"
-HAVE_DIR = ROOT / "data" / "export_permits"   # もらった輸出許可通知書の PDF を置く場所（名前の先頭が運送状番号）
+HAVE_DIR = ROOT / "data" / "export_permits"   # 輸出許可通知書の PDF の置き場所（税理のフォルダが無いとき。名前の先頭が運送状番号）
+TAX_DIR = ""   # 空＝data/export_permits に置く。"Desktop/税理" のように入れると、そのフォルダの中の「輸出許可書」に置く（オーナーが言ったら）
 ACCOUNT_HEAD_RE = re.compile(r"アカウント番号|Account\s*(?:No|Number)", re.I)
 REPORTS = ROOT / "reports"
 
@@ -65,25 +66,52 @@ def headers_preview(ws, max_rows: int = 10) -> list[str]:
     return out
 
 
-def have_permits(d: Path = HAVE_DIR) -> set[str]:
-    """もう持っている輸出許可通知書の運送状番号. FedEx は「870000000001_RELS_20260916.pdf」、DHL は「5800000001.pdf」."""
+PERMIT_NAME_RE = re.compile(r"(\d{12})_RELS|(\d{10})\.pdf$")   # FedEx「870000000001_RELS_20260916.pdf」・DHL「5800000001.pdf」
+
+
+def carrier_of(name: str) -> str | None:
+    """PDF の名前 → 置くフォルダの名前（FedEx／DHL）. 輸出許可通知書の名前でなければ None."""
+    m = PERMIT_NAME_RE.match(name)
+    return None if not m else ("FedEx" if m.group(1) else "DHL")
+
+
+def permit_base(home: Path | None = None) -> Path:
+    """輸出許可通知書を置く場所（この下に FedEx・DHL のフォルダ）. 2026-11-23 オーナー「fedex と dhl でフォルダ分けて、自動化でローカルに置いて」."""
+    tax = (home or Path.home()) / TAX_DIR
+    return tax / "輸出許可書" if TAX_DIR and tax.is_dir() else HAVE_DIR
+
+
+def have_permits(d: Path | None = None) -> set[str]:
+    """もう持っている輸出許可通知書の運送状番号（FedEx・DHL のフォルダの中も、前の置き場所も数える）."""
     out = set()
-    for p in (d.glob("*") if d.is_dir() else []):
-        m = re.match(r"(\d{12})_RELS|(\d{10})\.pdf$", p.name)
-        if m:
-            out.add(m.group(1) or m.group(2))
+    for base in ([d] if d else [permit_base(), HAVE_DIR]):
+        for p in (base.rglob("*.pdf") if base.is_dir() else []):
+            m = PERMIT_NAME_RE.match(p.name)
+            if m:
+                out.add(m.group(1) or m.group(2))
     return out
 
 
-def collect_from_downloads(src: Path = Path.home() / "Downloads", dst: Path = HAVE_DIR) -> int:
-    """ダウンロードフォルダの輸出許可通知書の PDF を data/export_permits/ に写す（元は消さない）. 写した数を返す."""
+def collect_from_downloads(src: Path | None = None, dst: Path | None = None) -> int:
+    """ダウンロードフォルダ（と前の置き場所）の輸出許可通知書の PDF を、運送会社ごとのフォルダ（FedEx／DHL）に移す. 移した数を返す.
+    同じ名前がもう移し先にあれば、ダウンロードの方を消す（もう移した物）."""
     import shutil
+    src = src or Path.home() / "Downloads"
+    dst = dst or permit_base()
     n = 0
-    for p in (src.glob("*.pdf") if src.is_dir() else []):
-        if re.match(r"\d{12}_RELS|\d{10}\.pdf$", p.name) and not (dst / p.name).exists():
-            dst.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(p, dst / p.name)
-            n += 1
+    olds = [x for x in (dst, HAVE_DIR) if x.is_dir()]   # 分ける前に1つのフォルダへ置いた物も分ける
+    for p in [x for d in [src] + olds for x in (sorted(d.glob("*.pdf")) if d.is_dir() else [])]:
+        car = carrier_of(p.name)
+        if not car:
+            continue
+        to = dst / car / p.name
+        if to.exists():
+            if to.stat().st_size == p.stat().st_size:   # 同じ物がもうある＝移し終わった物。大きさが違えば消さずに残す
+                p.unlink()
+            continue
+        to.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(p), str(to))
+        n += 1
     return n
 
 
@@ -306,7 +334,13 @@ def report_status(downloads: Path | None = None, post=None, upload: bool = True)
     import io
     from datetime import datetime
     downloads = downloads or Path.home() / "Downloads"
-    collect_from_downloads(downloads)
+    moved = collect_from_downloads(downloads)
+    base = permit_base()
+    count = {c: len(list((base / c).glob("*.pdf"))) if (base / c).is_dir() else 0 for c in ("FedEx", "DHL")}
+    print(f"  輸出許可書の置き場所: {base}（FedEx {count['FedEx']}件・DHL {count['DHL']}件。今回 {moved}件を移した）")
+    stray = [x.name for x in (sorted(base.glob("*.pdf")) if base.is_dir() else [])]
+    if stray:
+        print(f"  ⚠ 名前で FedEx・DHL を見分けられない PDF が {len(stray)}件、{base} に残っています: " + "、".join(stray[:5]))
     sp = speedpak_files([downloads, STATEMENTS])
     if not sp:
         return None
@@ -346,7 +380,7 @@ def main(argv=None) -> int:
         return 0
     got = collect_from_downloads()
     if got:
-        print(f"ダウンロードの輸出許可通知書 {got}件を data/export_permits/ に写しました（もらった物として数えます）")
+        print(f"輸出許可通知書 {got}件を {permit_base()} の FedEx・DHL のフォルダに移しました（もらった物として数えます）")
     if a.dhl:
         sp = speedpak_files([Path.home() / "Downloads", STATEMENTS])
         ships = from_list(a.list) if a.list else from_speedpak(sp[0], "dhl", since) if sp else from_cpass(STATEMENTS, since, "dhl")
