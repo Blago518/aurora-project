@@ -83,7 +83,15 @@ function cpassGroup(rows) {
       await chrome.storage.local.set({ cpassDone: done.slice(-2000) });
       await new Promise((res) => setTimeout(res, 2000));   // 1件ずつ、間を空けて
     }
-    note(todo.length ? `✓ 輸出許可書 ${n}件を保存しました（このページの分）` : "✓ このページの輸出許可書は保存済み");
+    // 次のページがあれば自動で進む（料金明細は何ページかに分かれる。2026-11-23 1ページ目の7件だけで止まった）
+    const next = [...document.querySelectorAll(".ant-pagination-next, [aria-label='next page'], [title='Next Page'], [title='次のページ'], .btn-next")]
+      .find((e) => !/disabled/.test(e.className) && !e.disabled && e.getAttribute("aria-disabled") !== "true");
+    if (next) {
+      note(`✓ このページの ${n}件を保存。次のページへ…`);
+      (next.querySelector("button") || next).click();
+      return;
+    }
+    note(todo.length ? `✓ 輸出許可書 ${n}件を保存しました（最後のページまで）` : "✓ 輸出許可書は全部保存済み");
     setTimeout(() => { const t = document.getElementById("aurora-cpass-note"); if (t) t.remove(); }, 5000);
   };
   // 一覧は後から描かれ、ページの中で画面が切り替わる（料金明細へ移る・ページ送り）ので、ずっと見張る（間を空けて）
