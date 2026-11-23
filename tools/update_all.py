@@ -184,10 +184,11 @@ def run(script: str, *args: str) -> bool:
     return ok
 
 
-def self_update(root: Path | None = None, run_git=None) -> bool:
-    """マージ済みの変更を Mac に取り込む（git pull --ff-only）. 新しくなったら True.
+def self_update(root: Path | None = None, run_git=None) -> tuple[bool, str]:
+    """マージ済みの変更を Mac に取り込む（git pull --ff-only）. 戻り値: (新しくなったか, 更新ログに残す1行).
     2026-11-23: 毎朝の更新は取り込みをしていなかったので、マージのたびにオーナーがコマンドを打っていた。
-    早送りできるときだけ取り込む（手元に変更がある・main でない・つながらないときは何もしないで今の版で続ける）."""
+    早送りできるときだけ取り込む（main でない・つながらない・手元に変更があるときは今の版で続け、「⚠ 取り込めませんでした」を
+    Mac_更新ログ に残す＝サトシが朝に読む）. store/core.js は毎朝 Mac が作り直す物なので、取り込みの前に元へ戻す."""
     root = root or Path(__file__).resolve().parent.parent
 
     def git(*a):
@@ -195,21 +196,21 @@ def self_update(root: Path | None = None, run_git=None) -> bool:
 
     git = run_git or git
     try:
-        if git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() != "main":
-            return False
+        branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        if branch != "main":
+            return False, f"⚠ プログラムを取り込めませんでした（今のブランチが main ではない: {branch}）"
+        git("checkout", "--", "store/core.js")
         before = git("rev-parse", "HEAD").stdout.strip()
         res = git("pull", "--ff-only", "--quiet")
         after = git("rev-parse", "HEAD").stdout.strip()
     except Exception as e:  # noqa: BLE001
-        print(f"  プログラムの取り込みはしませんでした（{e}）")
-        return False
+        return False, f"⚠ プログラムを取り込めませんでした（{e}）"
     if res.returncode != 0:
-        print("  プログラムの取り込みはしませんでした（" + ((res.stderr or "").strip().splitlines() or ["git pull できません"])[-1][:80] + "）")
-        return False
+        why = ((res.stderr or "").strip().splitlines() or ["git pull できません"])[-1][:100]
+        return False, f"⚠ プログラムを取り込めませんでした（{why}）"
     if before and after and before != after:
-        print(f"  プログラムを新しくしました（{before[:7]} → {after[:7]}）")
-        return True
-    return False
+        return True, f"プログラムを新しくしました（{before[:7]} → {after[:7]}）"
+    return False, f"プログラムは最新です（{after[:7]}）"
 
 
 def main(argv=None) -> int:
@@ -227,14 +228,19 @@ def main(argv=None) -> int:
     ap.add_argument("--no-bids", action="store_true", help="入札リスト（data/search_urls.txt の鑑定）を作らない")
     args = ap.parse_args(argv)
     import os
-    if argv is None and not args.dry_run and not os.environ.get("AURORA_PULLED") and self_update():
-        os.environ["AURORA_PULLED"] = "1"   # 新しいプログラムで最初からやり直す（1回だけ）
-        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
+    pull_note = os.environ.get("AURORA_PULLED", "")
+    if argv is None and not args.dry_run and not pull_note:
+        changed, pull_note = self_update()
+        if changed:
+            os.environ["AURORA_PULLED"] = pull_note   # 新しいプログラムで最初からやり直す（1回だけ。取り込みの結果は更新ログへ）
+            os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
     started = datetime.now()
     if not isinstance(sys.stdout, _Tee):
         sys.stdout, sys.stderr = _Tee(sys.stdout), _Tee(sys.stderr)
 
     print(f"===== {datetime.now():%Y-%m-%d %H:%M} 相場データの更新 =====")
+    if pull_note:
+        print(f"  {pull_note}")
     print("▶ 古物台帳（スプレッドシート）")
     import ledger_sync
     ledger_sync.sync(dry_run=args.dry_run)

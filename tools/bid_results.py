@@ -173,11 +173,9 @@ def _aware(text) -> datetime:
 
 def _ended_days(row: dict, state: dict) -> float | None:
     try:
-        end = datetime.fromisoformat(str(state.get("end") or row.get("end")).replace("Z", "+00:00"))
+        end = _aware(state.get("end") or row.get("end"))
     except ValueError:
         return None
-    if not end.tzinfo:
-        end = end.replace(tzinfo=timezone(timedelta(hours=9)))
     return (datetime.now(timezone.utc) - end).total_seconds() / 86400
 
 

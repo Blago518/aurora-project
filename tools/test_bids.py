@@ -78,6 +78,10 @@ class NaiveDates(unittest.TestCase):
         s = br.summarize(rows, 30)
         self.assertEqual(s["bids"], 2)
 
+    def test_ended_days_naive(self):
+        self.assertGreater(br._ended_days({"end": "2000-01-01 08:40"}, {}), 1000)
+        self.assertIsNone(br._ended_days({"end": "いつか"}, {}))
+
     def test_aware(self):
         self.assertIsNotNone(br._aware("2026-11-23T21:00:00").tzinfo)
         self.assertEqual(br._aware("2026-11-23T21:00:00"), br._aware("2026-11-23T12:00:00Z"))

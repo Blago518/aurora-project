@@ -331,10 +331,17 @@ class SelfUpdate(unittest.TestCase):
 
     def test_cases(self):
         import update_all as ua
-        self.assertTrue(ua.self_update(Path("."), self._git("main", ["aaa", "bbb"])))
-        self.assertFalse(ua.self_update(Path("."), self._git("main", ["aaa", "aaa"])))
-        self.assertFalse(ua.self_update(Path("."), self._git("main", ["aaa", "aaa"], rc=1)))
-        self.assertFalse(ua.self_update(Path("."), self._git("work", ["aaa", "bbb"])))
+        ok, note = ua.self_update(Path("."), self._git("main", ["aaa", "bbb"]))
+        self.assertTrue(ok)
+        self.assertIn("新しくしました", note)
+        self.assertEqual(ua.self_update(Path("."), self._git("main", ["aaa", "aaa"]))[0], False)
+        ok, note = ua.self_update(Path("."), self._git("main", ["aaa", "aaa"], rc=1))
+        self.assertFalse(ok)
+        self.assertTrue(ua.PROBLEM_RE.search(note), note)   # 取り込めなかったら「問題」として Mac_更新ログ に残る
+        ok, note = ua.self_update(Path("."), self._git("work", ["aaa", "bbb"]))
+        self.assertFalse(ok)
+        self.assertTrue(ua.PROBLEM_RE.search(note), note)
+
 
 
 
