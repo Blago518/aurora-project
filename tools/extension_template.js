@@ -404,6 +404,9 @@
   const OPTICAL_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)/g;
   const OTHER_DEFECT_RE = /ヤケ|傷あり|キズあり|拭き傷/;
   const OPT_NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)/;
+  // 二重の打ち消し（2026-11-23 「クモリがないわけではない」）は、打ち消しではなく「ある」（appraise.py の is_negated と同じ）
+  const DOUBLE_NEG_RE = /(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)/;
+  function isNegated(seg) { return OPT_NEG_RE.test(seg) && !DOUBLE_NEG_RE.test(seg); }
   function opticalWords(text) {
     const out = [];
     for (const m of String(text || "").matchAll(OPTICAL_RE)) {
@@ -412,7 +415,7 @@
       if (kv) { if (/^(なし|無し|ナシ|無|ない|-|ー|×)/.test(kv[1])) continue; }
       else {
         const cut = rest.search(/[。\n】|｜]/);
-        if (OPT_NEG_RE.test(cut < 0 ? rest : rest.slice(0, cut))) continue;
+        if (isNegated(cut < 0 ? rest : rest.slice(0, cut))) continue;
       }
       if (!out.includes(w)) out.push(w);
     }
@@ -1117,7 +1120,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       if (kv) { if (/^(なし|無し|ナシ|無|ない|-|ー|×)/.test(kv[1])) continue; }
       else {
         const cut = rest.search(/[。\n】|｜]/);
-        if (NEG_RE.test(cut < 0 ? rest : rest.slice(0, cut))) continue;
+        if (isNegated(cut < 0 ? rest : rest.slice(0, cut))) continue;
       }
       if (hits.some((h) => h.word === m[1])) continue;
       hits.push({ word: m[1], snip: text.slice(Math.max(0, m.index - 18), m.index + 32).replace(/\s+/g, " ").trim() });

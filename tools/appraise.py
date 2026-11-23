@@ -1678,6 +1678,15 @@ def calculate(item: Item, cfg: dict, fx: float, with_realized: bool = True) -> d
 # 「カビ・クモリなし」のような打ち消しは desc_hits の規則で除く。傷・ヤケなどその他の難は今までどおり要確認
 OPTICAL_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)")
 OTHER_DEFECT_RE = re.compile(r"ヤケ|傷あり|キズあり|拭き傷")
+# 二重の打ち消し（2026-11-23 「クモリがないわけではない」を「クモリなし」と読んで ◎ を出した）は、打ち消しではなく「ある」
+DOUBLE_NEG_RE = re.compile(r"(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)")
+
+
+def is_negated(seg: str) -> bool:
+    """その文の残りが難を打ち消しているか（extension_template.js の isNegated と同じ）."""
+    return bool(_OPT_NEG_RE.search(seg)) and not DOUBLE_NEG_RE.search(seg)
+
+
 _OPT_NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
 
 
@@ -1692,7 +1701,7 @@ def optical_title_words(text: str) -> list[str]:
                 continue
         else:
             cut = re.search(r"[。\n】|｜]", rest)
-            if _OPT_NEG_RE.search(rest[:cut.start()] if cut else rest):
+            if is_negated(rest[:cut.start()] if cut else rest):
                 continue
         if w not in out:
             out.append(w)
@@ -1935,7 +1944,7 @@ def desc_hits(text: str, cond: str = "") -> list[dict]:
                 continue
         else:
             cut = re.search(r"[。\n】|｜]", rest)
-            if NEG_RE.search(rest[:cut.start()] if cut else rest):
+            if is_negated(rest[:cut.start()] if cut else rest):
                 continue
         if any(h["word"] == w for h in hits):
             continue
