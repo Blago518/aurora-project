@@ -99,16 +99,17 @@ class FillTemplate(unittest.TestCase):
             self.assertEqual([ep.carrier_of(x) for x in ("870000000001_RELS_20260916.pdf", "5800000001.pdf", "請求書.pdf")], ["FedEx", "DHL", None])
 
     def test_permit_base(self):
-        """税理のフォルダがあればその中の「輸出許可書」、無ければ data/export_permits."""
-        from unittest import mock
+        """税理のフォルダの中に「輸出許可」を含むフォルダがちょうど1つあればそこ、決まらなければ data/export_permits."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            with mock.patch.object(ep, "TAX_DIR", "Desktop/税理"):
-                self.assertEqual(ep.permit_base(home), ep.HAVE_DIR)
-                (home / "Desktop" / "税理").mkdir(parents=True)
-                self.assertEqual(ep.permit_base(home), home / "Desktop" / "税理" / "輸出許可書")
-            with mock.patch.object(ep, "TAX_DIR", ""):
-                self.assertEqual(ep.permit_base(home), ep.HAVE_DIR)
+            self.assertEqual(ep.permit_base(home), ep.HAVE_DIR)
+            (home / "Desktop" / "税理士" / "1. 売上").mkdir(parents=True)
+            self.assertEqual(ep.permit_base(home), ep.HAVE_DIR)                       # 合うフォルダが無い → 作らない
+            one = home / "Desktop" / "税理士" / "5. 輸出許可通知書"
+            one.mkdir()
+            self.assertEqual(ep.permit_base(home), one)
+            (home / "Desktop" / "税理士" / "1. 売上" / "輸出許可（旧）").mkdir()
+            self.assertEqual(ep.permit_base(home), ep.HAVE_DIR)                       # 2つある → 当てずっぽうで選ばない
 
     def test_speedpak_detail(self):
         """SpeedPAK の「輸出取引の詳細」（シート「オーダー」）から運送会社ごとの番号（2026-11-23 の形。番号は作り物）."""
@@ -146,7 +147,8 @@ class FillTemplate(unittest.TestCase):
             for name in ("8300000001.pdf", "8300000002.pdf", "8300000002 (1).pdf"):
                 (dl / name).write_text("x")
             sent = []
-            with mock.patch.object(ep, "HAVE_DIR", have), mock.patch.object(ep, "STATEMENTS", Path(d) / "none"), mock.patch.object(ep, "TAX_DIR", ""), \
+            with mock.patch.object(ep, "HAVE_DIR", have), mock.patch.object(ep, "STATEMENTS", Path(d) / "none"), \
+                    mock.patch("tax_folder.tax_root", lambda home=None: None), \
                     mock.patch("ledger_sync.post_sheet", lambda sheet, body, post=None: sent.append((sheet, body)) or True):
                 rows = ep.report_status(dl)
             self.assertEqual(ep.status_lines(rows), ["DHL: 3件中 2件 保存済み・まだ 1件（8300000003）", "FedEx: 1件中 0件 保存済み・まだ 1件（380000000001）"])

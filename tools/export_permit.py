@@ -26,8 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STATEMENTS = ROOT / "data" / "statements"
-HAVE_DIR = ROOT / "data" / "export_permits"   # 輸出許可通知書の PDF の置き場所（税理のフォルダが無いとき。名前の先頭が運送状番号）
-TAX_DIR = ""   # 空＝data/export_permits に置く。"Desktop/税理" のように入れると、そのフォルダの中の「輸出許可書」に置く（オーナーが言ったら）
+HAVE_DIR = ROOT / "data" / "export_permits"   # 輸出許可通知書の PDF の置き場所（税理のフォルダの中に行き先が決まらないとき。名前の先頭が運送状番号）
 ACCOUNT_HEAD_RE = re.compile(r"アカウント番号|Account\s*(?:No|Number)", re.I)
 REPORTS = ROOT / "reports"
 
@@ -76,9 +75,10 @@ def carrier_of(name: str) -> str | None:
 
 
 def permit_base(home: Path | None = None) -> Path:
-    """輸出許可通知書を置く場所（この下に FedEx・DHL のフォルダ）. 2026-11-23 オーナー「fedex と dhl でフォルダ分けて、自動化でローカルに置いて」."""
-    tax = (home or Path.home()) / TAX_DIR
-    return tax / "輸出許可書" if TAX_DIR and tax.is_dir() else HAVE_DIR
+    """輸出許可通知書を置く場所（この下に FedEx・DHL のフォルダ）. 2026-11-23 オーナー「fedex と dhl でフォルダ分けて、自動化でローカルに置いて」
+    「デスクトップに税理士フォルダがある。その中に振り分けれる？」. 税理のフォルダの中に行き先が1つに決まればそこ、決まらなければ data/export_permits."""
+    import tax_folder
+    return tax_folder.permit_base(home, HAVE_DIR)[0]
 
 
 def have_permits(d: Path | None = None) -> set[str]:
