@@ -37,8 +37,8 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `robots.py`・`yahoo_robots.txt` | ヤフオクの robots.txt で読む前に URL を検査し、Disallow の引数（n=・s1=・o1=・select= など）を外す（7日ごとに robots.txt を取り直して data/ に保存。読めなければ同梱の写し）。appraise.py・win_score.py・拡張機能の［続けて鑑定］が使う |
 | `win_score.py` | **勝ちやすさ**: 入札リストの ◎○・売れ筋・負けた機種について、ヤフオクの終わった出品（`/closedsearch/closedsearch?p=`、Allow の形）を読み、今の判定ロジックの上限入札額以下で終わった割合・月の件数を `data/win_score.csv` に（1回30機種・1機種2ページ・3秒間隔・同じ機種は7日ごと）。1割未満の機種は入札リスト・拡張機能の下に回す（判定・上限額は変えない） |
 | `extension_template.js` | Chrome拡張機能の中身（判定は appraise.py と同一） |
-| `extension_evidence.js` | **ヤフオクの仕入れ証跡**: Chrome で取引ナビを開くと、その画面を PNG で ダウンロード/ヤフオク仕入証跡/ に自動保存（名前は 終了日_出品者_金額_オークションID。同じIDは1回だけ）。`update_all.py` が毎朝 デスクトップ › 税理 › 8.〜 › ヤフオク に移す |
-| `extension_cpass.js` | **輸出許可書**: Chrome で SpeedPAK セラーポータルの「各注文番号の料金明細」を開くと、まだ取っていない DHL の輸出許可書（証明書をダウンロードする）と「輸出取引の詳細」（xlsx）を自動で保存。`update_all.py` が毎朝、その xlsx から FedEx の依頼用 Excel を作る（`export_permit.py`）。保存した PDF は `data/export_permits/` の FedEx・DHL のフォルダに自動で分けて移し、保存できた数と足りない番号は古物台帳「Mac_輸出許可書」へ（`export_permit.py --check` でもすぐ数える） |
+| `extension_evidence.js` | **ヤフオクの仕入れ証跡**: Chrome で取引ナビを開くと、その画面を PNG で ダウンロード/ヤフオク仕入証跡/ に自動保存（名前は 終了日_出品者_金額_オークションID。同じIDは1回だけ）。`update_all.py` が毎朝、デスクトップの税理のフォルダへ振り分ける（`tax_folder.py`） |
+| `extension_cpass.js` | **輸出許可書**: Chrome で SpeedPAK セラーポータルの「各注文番号の料金明細」を開くと、まだ取っていない DHL の輸出許可書（証明書をダウンロードする）と「輸出取引の詳細」（xlsx）を自動で保存。`update_all.py` が毎朝、その xlsx から FedEx の依頼用 Excel を作る（`export_permit.py`）。保存した PDF は FedEx・DHL のフォルダに自動で分けて移し（税理のフォルダの中に行き先が決まればそこ、決まらなければ `data/export_permits/`）、保存できた数と足りない番号は古物台帳「Mac_輸出許可書」へ（`export_permit.py --check` でもすぐ数える） |
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv`。台帳に豪ドル・ポンドのまま記入された販売金額は、eBay の取引レポート（data/ebay_report.csv）の換算レートでドルに直す |
 | `update_all.py` | **全部まとめて最新にする**: ダウンロードフォルダの古物台帳CSV・頒布会xlsx・明細の取り込み → Chatwork 同期 → 相場データ・拡張機能・スマホ用データ・ナレッジを作り直す |
@@ -52,6 +52,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `build_knowledge_page.py`・`knowledge_page_template.html` | knowledge_share.md → Artifacts の読むだけのナレッジページ（ニューロン付き） |
 | `build_dashboard.py`・`dashboard_template.html` | eBay API の注文・取引明細・出品中一覧＋古物台帳・管理シート・発送明細 → 数字のグラフ `reports/dashboard.html`（月別売上・利益率・状態の割合など。update_all.py が毎回作り、中身を古物台帳の「Mac_グラフ」シートに送る → Artifacts の「aurora 数字のグラフ」が開くたびに読む）。2026/8/17 以前の注文は SKU が No. と合っていないので `data/sku_fix.csv` の対応表で直す（候補は `--sku-candidates`） |
 | `yahoo_results.py` | **落札相場**: 毎朝の入札リスト・拡張機能（ダウンロード/aurora_seen.csv）で ◎○・仮◎○・確認してから に出た出品を見張り、終了後にヤフオクの出品ページで最終価格・入札数を `data/yahoo_results.csv` に記録（流れた出品も。1回 300件・1.5秒間隔）→ 拡張機能に機種ごとの落札額の中央値を表示・古物台帳「Mac_落札相場」へ。判定・上限額には使わない |
+| `tax_folder.py` | **税理士に渡すフォルダへの振り分け**: ヤフオクの仕入れ証跡と輸出許可書（FedEx・DHL）を、デスクトップの「税理〜」フォルダの中の合う場所へ自動で移す（合う場所がちょうど1つのときだけ。新しいフォルダは作らない。行き先・件数・フォルダ名の並びを古物台帳「Mac_税理フォルダ」へ。毎朝の `update_all.py` でも動く） |
 | `export_permit.py` | 輸出許可通知書: FedEx の依頼用 Excel に、まだもらっていない運送状番号を自動で入れる → `reports/fedex_export_permit_*.xlsx`。`--dhl` で DHL のフォームに貼る番号の一覧（手順は `.claude/skills/export-permit`） |
 | `bid_results.py` | 入札の結果: ［入札した］の記録の落札率・負けた差。落札かどうかは古物台帳にそのオークションIDがあるかで決める（無ければ終了から10日は「確認待ち」→「負け」） |
 | `ebay_listing_template.html` | eBayStock の説明文テンプレートのデザイン案（濃いネイビー×ゴールド。2026-11-22）。**まだ使っていない**（オーナー「まだ実装しないが、いつか変更するかもしれないので覚えておいて」）。今 eBayStock で使っているのは `ebay_listing_template_current.html`。差し込み・分岐は同じ。英語の文は、上の店名の行と下の「Shipped from Japan」を足した以外は同じ |

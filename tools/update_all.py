@@ -161,23 +161,10 @@ def import_downloads(downloads: Path, days: int, dry_run: bool) -> int:
     return n
 
 
-def move_evidence(downloads: Path, dest_glob: str = "Desktop/税理/8*/ヤフオク", home: Path | None = None) -> int:
-    """拡張機能が ダウンロード/ヤフオク仕入証跡/ に保存したヤフオクの仕入れ証跡（取引ナビの PNG）を、税理のヤフオクのフォルダに移す.
-    2026-11-23 オーナー依頼（税理士から仕入れ証跡を残すように）。移し先が見つからなければ、ダウンロードに置いたまま。移した数を返す."""
-    home = home or Path.home()
-    dests = sorted(home.glob(dest_glob))
-    if not dests:
-        return 0
-    n = 0
-    for sub in ("ヤフオク仕入証跡", "yahoo_evidence"):
-        for p in sorted((downloads / sub).glob("*.png")) if (downloads / sub).is_dir() else []:
-            to = dests[0] / p.name
-            if to.exists():
-                p.unlink()   # 同じ名前が移し先にある＝もう移した物
-                continue
-            shutil.move(str(p), to)
-            n += 1
-    return n
+def move_evidence(downloads: Path, home: Path | None = None) -> int:
+    """ヤフオクの仕入れ証跡（取引ナビの PNG）を税理のフォルダに移す（tax_folder.py）. 移した数を返す."""
+    import tax_folder
+    return tax_folder.move_evidence(downloads, home)["moved"]
 
 
 def run(script: str, *args: str) -> bool:
@@ -222,9 +209,6 @@ def main(argv=None) -> int:
     print("\n▶ ダウンロードフォルダから取り込み")
     import_downloads(args.downloads, args.days, args.dry_run)
     if not args.dry_run:
-        moved = move_evidence(args.downloads)
-        if moved:
-            print(f"  ヤフオクの仕入れ証跡 {moved}件を 税理 › ヤフオク のフォルダに移しました")
         # 輸出許可書: DHL の PDF を数え、FedEx の依頼用 Excel を作り直す（材料が無ければ何もしない。2026-11-23 オーナー「自動化してほしい」）
         try:
             import export_permit
@@ -234,6 +218,11 @@ def main(argv=None) -> int:
             pass
         except Exception as e:
             print(f"  輸出許可書の Excel を作れませんでした: {e}")
+        try:   # 証跡と輸出許可書を税理のフォルダへ振り分け、行き先・件数を「Mac_税理フォルダ」に送る（2026-11-23 オーナー「その中に振り分けれる？」）
+            import tax_folder
+            tax_folder.run(args.downloads)
+        except Exception as e:
+            print(f"  証跡・輸出許可書を振り分けられませんでした: {e}")
         try:   # 保存できた数と足りない番号 → 画面・Mac_更新ログ・古物台帳「Mac_輸出許可書」（2026-11-23 オーナー「ダウンロード先で確認しろ」）
             import export_permit
             export_permit.report_status(args.downloads)
