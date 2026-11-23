@@ -29,6 +29,7 @@ import argparse
 import csv
 import io
 import json
+import re
 import secrets
 import shutil
 import sys
@@ -924,6 +925,84 @@ def transactions_csv(fin_rows: list[dict], order_rows: list[dict]) -> str:
     return buf.getvalue()
 
 
+SALES_SHEET = "Mac_販売"  # 管理番号ごとの販売（販売日・注文番号・国・金額・手数料・広告費・返金・入金）。古物台帳_詳細の K〜R の数式がここを引く
+SALES_HEAD = ["管理番号", "販売日", "eBay注文番号", "購入者の国", "販売金額（$・送料込）", "eBay手数料（$）", "広告費（$）", "返金（$）", "入金額（$）", "注文日", "メモ"]
+SKU_TRUSTED_FROM = "2026-08-18"  # これより前の注文は SKU が No. と合っていない（build_dashboard と同じ）
+
+
+def _ymd(iso: str) -> str:
+    """2026-11-03 → 2026/11/3（古物台帳の書き方）."""
+    try:
+        d = datetime.strptime(iso[:10], "%Y-%m-%d")
+    except ValueError:
+        return ""
+    return f"{d.year}/{d.month}/{d.day}"
+
+
+def sales_csv(fin_rows: list[dict], order_rows: list[dict]) -> str:
+    """eBay API の注文と取引明細 → 「Mac_販売」の CSV（2026-11-23 オーナー「古物台帳の eBay データは API で取得して入力できるよな？」）.
+    1つの管理番号に1行（全額返金でない新しい注文を優先）。金額は USD（豪ドル・ポンドの注文は、その入金の換算レートで直す）.
+    販売金額−手数料−広告費−返金＝入金額。全額返金・キャンセルは販売日を空にする（商品は在庫に戻る。今までの台帳の書き方と同じ）."""
+    per: dict[str, dict] = {}
+    for r in fin_rows:
+        typ = (r.get("type") or "").strip()
+        if typ in ("PAYOUT", "TRANSFER", "") or (r.get("status") or "") == "FAILED":
+            continue
+        oid = (r.get("order_id") or "").strip()
+        if not oid:
+            m = re.search(r"ORDER_ID:(\S+)", r.get("references") or "")
+            oid = m.group(1) if m else ""
+        if not oid:
+            continue
+        try:
+            amt = float(r.get("amount") or 0)
+        except ValueError:
+            continue
+        net = amt if r.get("booking") == "CREDIT" else -amt
+        p = per.setdefault(oid, {"sale": 0.0, "ad": 0.0, "refund": 0.0, "rate": 1.0, "has_sale": False})
+        if typ == "SALE":
+            p["sale"] += net
+            p["has_sale"] = True
+            orig = (r.get("amount_original") or "").split()
+            try:
+                if orig and float(orig[0]):
+                    p["rate"] = amt / float(orig[0])
+            except ValueError:
+                pass
+        elif "AD_FEE" in (r.get("fee_type") or "") or "AD_FEE" in typ:
+            p["ad"] -= net
+        elif typ in ("REFUND", "DISPUTE", "CREDIT"):
+            p["refund"] -= net
+        else:
+            p["ad"] -= net   # 注文に付いたその他の手数料も、入金から引かれた額として広告費の欄に寄せる
+    best: dict[str, dict] = {}
+    for o in order_rows:
+        sku, oid, day = (o.get("sku") or "").strip(), (o.get("order_id") or "").strip(), (o.get("date") or "")[:10]
+        p = per.get(oid)
+        if not sku or not oid or day < SKU_TRUSTED_FROM or not p or not p["has_sale"]:
+            continue
+        try:
+            gross = float(o.get("item_price") or 0) * float(o.get("quantity") or 1) + float(o.get("shipping") or 0)
+        except ValueError:
+            continue
+        gross *= 1.0 if (o.get("currency") or "USD") == "USD" else p["rate"]
+        refunded = (o.get("payment_status") == "FULLY_REFUNDED" or o.get("cancel_state") == "CANCELED"
+                    or (p["refund"] > 0 and p["refund"] >= p["sale"] - 1.0))
+        row = {"sku": sku, "day": day, "oid": oid, "country": o.get("country", ""), "gross": gross, "fee": gross - p["sale"],
+               "ad": p["ad"], "refund": p["refund"], "net": p["sale"] - p["ad"] - p["refund"], "refunded": refunded}
+        cur = best.get(sku)   # 全額返金でない注文を優先。同じなら新しい注文（返金の後に出し直して売れた物は、売れた方）
+        if cur is None or (not row["refunded"], row["day"]) > (not cur["refunded"], cur["day"]):
+            best[sku] = row
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(SALES_HEAD)
+    money = lambda v: "" if abs(v) < 0.005 else round(v, 2)  # noqa: E731
+    for r in sorted(best.values(), key=lambda x: x["day"], reverse=True):
+        w.writerow([r["sku"], "" if r["refunded"] else _ymd(r["day"]), r["oid"], r["country"], round(r["gross"], 2), round(r["fee"], 2),
+                    money(r["ad"]), money(r["refund"]), round(r["net"], 2), _ymd(r["day"]), "全額返金・キャンセル" if r["refunded"] else ""])
+    return buf.getvalue()
+
+
 RETURNS_SHEET = "Mac_返品"  # 返品・キャンセル・返金の一覧（eBay API。購入者の名前・住所・メッセージは入れない。2026-11-19 返品を減らす作業のため）
 RETURNS_COLS = ["kind", "sku", "title", "order_date", "date", "verdict", "refund", "refund_currency", "reason", "status"]
 
@@ -994,6 +1073,12 @@ def upload_transactions(reports: Path | None = None, post=None) -> int | None:
         return None
     n = body.count("\n") - 2
     print(f"eBay の取引: 台帳「{TXN_SHEET}」に {n}行 → 管理の月次サマリーが最新になります", file=sys.stderr)
+    if ords:   # 管理番号ごとの販売 → 古物台帳_詳細の販売日・注文番号・金額が自動で入る
+        sales = sales_csv(read(fins[-1]), read(ords[-1]))
+        if post_sheet(SALES_SHEET, sales, post=post):
+            print(f"eBay の販売: 台帳「{SALES_SHEET}」に {sales.count(chr(10)) - 1}件 → 古物台帳_詳細の販売の欄が最新になります", file=sys.stderr)
+        else:
+            print(f"eBay の販売: 台帳「{SALES_SHEET}」に送れませんでした", file=sys.stderr)
     return n
 
 

@@ -405,6 +405,14 @@ def cmd_messages(args) -> None:
     if args.upload:
         import ledger_sync
         ledger_sync.post_sheet(ledger_sync.MESSAGES_SHEET, out.read_text(encoding="utf-8-sig"))
+        # 1時間ごとの見回りのついでに、売上も台帳へ（2026-11-23 オーナー「売上がずっと同じ。更新する気はない？」。それまでは朝1回だけだった）
+        try:
+            import argparse as _ap
+            cmd_orders(_ap.Namespace(days=730))
+            cmd_fees(_ap.Namespace(days=730))
+            ledger_sync.upload_transactions()   # → Mac_取引（管理の月次サマリー）・Mac_販売（古物台帳_詳細の販売の欄）
+        except Exception as e:  # noqa: BLE001  売上を送れなくても、メッセージの見回りは止めない
+            print(f"売上を台帳に送れませんでした: {e}")
 
 
 def _refs(t: dict) -> str:
