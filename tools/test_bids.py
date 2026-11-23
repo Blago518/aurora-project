@@ -69,6 +69,24 @@ class Flow(unittest.TestCase):
         self.assertTrue(any("入札がまだ少ない" in t for t in tips))
 
 
+class NaiveDates(unittest.TestCase):
+    """時差の無い日時（2026-11-23 08:40 形）と時差付きが混ざっても集計が止まらない（朝の更新が止まっていた）."""
+
+    def test_summarize_mixed(self):
+        rows = [{"bid_at": "2099-01-01 08:40", "result": ""}, {"bid_at": "2099-01-01T08:40:00+09:00", "result": ""},
+                {"bid_at": "2000-01-01T00:00:00Z", "result": ""}]
+        s = br.summarize(rows, 30)
+        self.assertEqual(s["bids"], 2)
+
+    def test_ended_days_naive(self):
+        self.assertGreater(br._ended_days({"end": "2000-01-01 08:40"}, {}), 1000)
+        self.assertIsNone(br._ended_days({"end": "いつか"}, {}))
+
+    def test_aware(self):
+        self.assertIsNotNone(br._aware("2026-11-23T21:00:00").tzinfo)
+        self.assertEqual(br._aware("2026-11-23T21:00:00"), br._aware("2026-11-23T12:00:00Z"))
+
+
 class Aucfan(unittest.TestCase):
     def test_import_snipes(self):
         with tempfile.TemporaryDirectory() as d:

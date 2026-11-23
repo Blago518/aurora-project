@@ -314,6 +314,37 @@ class Schedule(unittest.TestCase):
         self.assertIn("--notify", p["ProgramArguments"])
 
 
+class SelfUpdate(unittest.TestCase):
+    """毎朝の更新がマージ済みの変更を取り込む（早送りできるときだけ）."""
+
+    def _git(self, branch, heads, rc=0):
+        import types
+        heads = list(heads)
+
+        def git(*a):
+            if a[:2] == ("rev-parse", "--abbrev-ref"):
+                return types.SimpleNamespace(stdout=branch, stderr="", returncode=0)
+            if a[0] == "rev-parse":
+                return types.SimpleNamespace(stdout=heads.pop(0), stderr="", returncode=0)
+            return types.SimpleNamespace(stdout="", stderr="fatal: Not possible to fast-forward", returncode=rc)
+        return git
+
+    def test_cases(self):
+        import update_all as ua
+        ok, note = ua.self_update(Path("."), self._git("main", ["aaa", "bbb"]))
+        self.assertTrue(ok)
+        self.assertIn("新しくしました", note)
+        self.assertEqual(ua.self_update(Path("."), self._git("main", ["aaa", "aaa"]))[0], False)
+        ok, note = ua.self_update(Path("."), self._git("main", ["aaa", "aaa"], rc=1))
+        self.assertFalse(ok)
+        self.assertTrue(ua.PROBLEM_RE.search(note), note)   # 取り込めなかったら「問題」として Mac_更新ログ に残る
+        ok, note = ua.self_update(Path("."), self._git("work", ["aaa", "bbb"]))
+        self.assertFalse(ok)
+        self.assertTrue(ua.PROBLEM_RE.search(note), note)
+
+
+
+
 if __name__ == "__main__":
     unittest.main()
 

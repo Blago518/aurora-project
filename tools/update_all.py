@@ -184,6 +184,35 @@ def run(script: str, *args: str) -> bool:
     return ok
 
 
+def self_update(root: Path | None = None, run_git=None) -> tuple[bool, str]:
+    """マージ済みの変更を Mac に取り込む（git pull --ff-only）. 戻り値: (新しくなったか, 更新ログに残す1行).
+    2026-11-23: 毎朝の更新は取り込みをしていなかったので、マージのたびにオーナーがコマンドを打っていた。
+    早送りできるときだけ取り込む（main でない・つながらない・手元に変更があるときは今の版で続け、「⚠ 取り込めませんでした」を
+    Mac_更新ログ に残す＝サトシが朝に読む）. store/core.js は毎朝 Mac が作り直す物なので、取り込みの前に元へ戻す."""
+    root = root or Path(__file__).resolve().parent.parent
+
+    def git(*a):
+        return subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, timeout=90)
+
+    git = run_git or git
+    try:
+        branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        if branch != "main":
+            return False, f"⚠ プログラムを取り込めませんでした（今のブランチが main ではない: {branch}）"
+        git("checkout", "--", "store/core.js")
+        before = git("rev-parse", "HEAD").stdout.strip()
+        res = git("pull", "--ff-only", "--quiet")
+        after = git("rev-parse", "HEAD").stdout.strip()
+    except Exception as e:  # noqa: BLE001
+        return False, f"⚠ プログラムを取り込めませんでした（{e}）"
+    if res.returncode != 0:
+        why = ((res.stderr or "").strip().splitlines() or ["git pull できません"])[-1][:100]
+        return False, f"⚠ プログラムを取り込めませんでした（{why}）"
+    if before and after and before != after:
+        return True, f"プログラムを新しくしました（{before[:7]} → {after[:7]}）"
+    return False, f"プログラムは最新です（{after[:7]}）"
+
+
 def main(argv=None) -> int:
     # 自動実行ではログがファイルなので、見出し（▶ …）がまとめて最後に書かれ、各プログラムのエラー文より後ろに並んでしまう。
     # 1行ずつ書き出して、ログの順番を実行の順番どおりにする
@@ -198,11 +227,20 @@ def main(argv=None) -> int:
     ap.add_argument("--notify", action="store_true", help="終わったら Mac の通知を出す（自動実行用）")
     ap.add_argument("--no-bids", action="store_true", help="入札リスト（data/search_urls.txt の鑑定）を作らない")
     args = ap.parse_args(argv)
+    import os
+    pull_note = os.environ.get("AURORA_PULLED", "")
+    if argv is None and not args.dry_run and not pull_note:
+        changed, pull_note = self_update()
+        if changed:
+            os.environ["AURORA_PULLED"] = pull_note   # 新しいプログラムで最初からやり直す（1回だけ。取り込みの結果は更新ログへ）
+            os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
     started = datetime.now()
     if not isinstance(sys.stdout, _Tee):
         sys.stdout, sys.stderr = _Tee(sys.stdout), _Tee(sys.stderr)
 
     print(f"===== {datetime.now():%Y-%m-%d %H:%M} 相場データの更新 =====")
+    if pull_note:
+        print(f"  {pull_note}")
     print("▶ 古物台帳（スプレッドシート）")
     import ledger_sync
     ledger_sync.sync(dry_run=args.dry_run)
