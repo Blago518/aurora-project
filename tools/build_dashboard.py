@@ -176,6 +176,11 @@ def read_ledger(path: Path) -> tuple[list[dict], dict[str, str | None]]:
     return rows, cols
 
 
+def is_junk_no(v) -> bool:
+    """古物台帳の No. が J1・J11/B4 のようなジャンク（国内で処分。J管理シートで別に数える）か. 2026-11-23 古物台帳にジャンクの行も並ぶようになった."""
+    return bool(re.match(r"\s*J\d", str(v or "")))
+
+
 def norm_sku(v: str) -> str:
     return re.sub(r"\s", "", unicodedata.normalize("NFKC", str(v or ""))).upper()
 
@@ -646,11 +651,11 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
     if api and api.get("sales"):  # eBay API の注文で販売を数える
         sold = api["sales"]
         sold_keys = {norm_sku(r["sku"]) for r in sold if r["sku"]}
-        stock = [r for r in ledger if not r["sold"] and norm_sku(r["sku"]) not in sold_keys]
+        stock = [r for r in ledger if not r["sold"] and norm_sku(r["sku"]) not in sold_keys and not is_junk_no(r["sku"])]
         source = "api"
     else:
         sold = [r for r in ledger if r["sold"]]
-        stock = [r for r in ledger if not r["sold"]]
+        stock = [r for r in ledger if not r["sold"] and not is_junk_no(r["sku"])]
         source = "ledger"
     for r in sold:
         key = norm_sku(r["sku"]) if r["sku"] else ""

@@ -854,8 +854,8 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
 
 
 TXN_SHEET = "Mac_取引"  # eBay API の取引明細を「ebay売上」と同じ列の位置で（管理の月次サマリーが毎朝これを読む。2026-11-19）
-# 「ebay売上」（Seller Hub の取引レポートを貼ったシート）と同じ列: A 日付・B 種類・K 入金額(USD)・U Custom label・AI 総額・AJ 通貨・AK 換算レート
-TXN_COLS = {"A": "Transaction creation date", "B": "Type", "K": "Net amount", "U": "Custom label",
+# 「ebay売上」（Seller Hub の取引レポートを貼ったシート）と同じ列: A 日付・B 種類・C 注文番号・K 入金額(USD)・U Custom label・AI 総額・AJ 通貨・AK 換算レート
+TXN_COLS = {"A": "Transaction creation date", "B": "Type", "C": "Order number", "K": "Net amount", "U": "Custom label",
             "AI": "Gross transaction amount", "AJ": "Transaction currency", "AK": "Exchange rate"}
 TXN_TYPES = {"SALE": "Order", "REFUND": "Refund", "DISPUTE": "Claim", "NON_SALE_CHARGE": "Other fee",
              "ADJUSTMENT": "Adjustment", "PAYOUT": "Payout", "SHIPPING_LABEL": "Shipping label", "TRANSFER": "Transfer",
@@ -908,7 +908,11 @@ def transactions_csv(fin_rows: list[dict], order_rows: list[dict]) -> str:
                 rate = amt / float(orig[0]) if float(orig[0]) else 1.0
             except ValueError:
                 pass
-        o = orders.get(r.get("order_id", ""), {})
+        oid = (r.get("order_id") or "").strip()   # 管理シートの「返品」が、注文番号で返金・クレームを結ぶ（2026-11-23）
+        if not oid:
+            m = re.search(r"ORDER_ID:(\S+)", r.get("references") or "")
+            oid = m.group(1) if m else ""
+        o = orders.get(oid, {})
         if t == "Order" and o.get("gross"):
             gross = o["gross"] * (1.0 if o.get("cur", "USD") == "USD" else rate)
         else:
@@ -916,6 +920,7 @@ def transactions_csv(fin_rows: list[dict], order_rows: list[dict]) -> str:
         row = [""] * width
         row[_col_index("A")] = _report_date(r.get("date", "")) if r.get("date") else ""
         row[_col_index("B")] = t
+        row[_col_index("C")] = oid
         row[_col_index("K")] = round(net, 2)
         row[_col_index("U")] = o.get("sku", "") or "--"
         row[_col_index("AI")] = round(gross, 2)

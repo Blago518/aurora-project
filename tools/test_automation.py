@@ -455,6 +455,9 @@ class SheetMemoAndKnowledge(unittest.TestCase):
         self.assertEqual([rows[2][a], rows[2][b], rows[2][k], rows[2][u], rows[2][ai]], ["d:16-Nov-26", "Order", "123.3", "S39", "139.99"])
         self.assertAlmostEqual(float(rows[3][ai]), 1070.32 * 599.63 / 915.00, places=1)   # 豪ドルの注文は入金のレートで USD に
         self.assertEqual([rows[4][b], rows[4][k], rows[4][ai]], ["Refund", "-21.88", "-21.88"])
+        self.assertEqual([rows[1][2], rows[2][2], rows[4][2]], ["Order number", "O1", "O1"])   # C 注文番号（管理の「返品」が返金を注文で結ぶ）
+        import build_dashboard as bd
+        self.assertEqual([bd.is_junk_no(x) for x in ("J1", "J11/B4 K1", "G4M", "S1", "")], [True, True, False, False, False])
         self.assertEqual([rows[5][a], rows[5][b], rows[5][k]], ["d:9-Nov-26", "Other fee", "-3.39"])
 
     def test_sales_csv(self):
