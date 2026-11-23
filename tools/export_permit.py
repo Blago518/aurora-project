@@ -275,16 +275,75 @@ def from_speedpak(path: Path, carrier: str = "fedex", since: date | None = None)
     return out
 
 
+STATUS_SHEET = "Mac_輸出許可書"  # 保存できたかを Mac が自分で数えて台帳へ（2026-11-23 オーナー「ダウンロード先で確認しろ」。クラウドのサトシが読む）
+
+
+def permit_status(sp: Path, have: set[str]) -> list[dict]:
+    """「輸出取引の詳細」の運送状番号ごとに、輸出許可書の PDF をもう持っているか. [{carrier, track, date, have}]"""
+    out = []
+    for carrier, label in (("dhl", "DHL"), ("fedex", "FedEx")):
+        for x in from_speedpak(sp, carrier):
+            out.append({"carrier": label, "track": x["track"], "date": x["date"], "have": x["track"] in have})
+    return out
+
+
+def status_lines(rows: list[dict]) -> list[str]:
+    """運送会社ごとの1行: 「DHL: 3件中 2件 保存済み・まだ 1件（8300000003）」."""
+    out = []
+    for label in ("DHL", "FedEx"):
+        mine = [r for r in rows if r["carrier"] == label]
+        if not mine:
+            continue
+        rest = [r["track"] for r in mine if not r["have"]]
+        tail = "・まだ {}件（{}{}）".format(len(rest), "、".join(rest[:10]), " ほか" if len(rest) > 10 else "") if rest else "・全部そろっています"
+        out.append("{}: {}件中 {}件 保存済み{}".format(label, len(mine), len(mine) - len(rest), tail))
+    return out
+
+
+def report_status(downloads: Path | None = None, post=None, upload: bool = True) -> list[dict] | None:
+    """ダウンロードの PDF を数え直し、足りない番号を画面と古物台帳「Mac_輸出許可書」に出す. 材料（輸出取引の詳細）が無ければ None."""
+    import csv
+    import io
+    from datetime import datetime
+    downloads = downloads or Path.home() / "Downloads"
+    collect_from_downloads(downloads)
+    sp = speedpak_files([downloads, STATEMENTS])
+    if not sp:
+        return None
+    rows = permit_status(sp[0], have_permits())
+    for line in status_lines(rows):
+        print("  輸出許可書 " + line)
+    if upload:
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["運送会社", "運送状番号", "発送日", "輸出許可書", "確かめた日時"])
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        for r in sorted(rows, key=lambda r: (r["have"], r["carrier"], r["date"])):   # まだの物を上に
+            w.writerow([r["carrier"], "'" + r["track"], r["date"], "保存済み" if r["have"] else "まだ", now])
+        try:
+            import ledger_sync
+            if ledger_sync.post_sheet(STATUS_SHEET, buf.getvalue(), post=post):
+                print(f"  → 古物台帳「{STATUS_SHEET}」に送りました")
+        except Exception as e:  # noqa: BLE001  送れなくても数えた結果は画面に出ている
+            print(f"  ⚠ 輸出許可書の数を台帳に送れませんでした（{e}）")
+    return rows
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="FedEx の輸出許可通知書の依頼用 Excel を自動で埋める")
     ap.add_argument("template", type=Path, nargs="?", help="FedEx から届いた依頼用 Excel（xlsx）。1回渡せば data/fedex_template.xlsx に覚える")
     ap.add_argument("--dhl", action="store_true", help="DHL: まだ輸出許可通知書をもらっていない運送状番号の一覧を出す（DHL は公式フォームに貼る）")
+    ap.add_argument("--check", action="store_true", help="保存できた輸出許可書を数え、足りない番号を出す（古物台帳「Mac_輸出許可書」にも送る）")
     ap.add_argument("--list", type=Path, help="追跡番号を1行に1つ書いたファイル（無ければ CPaSS 注文一覧から）")
     ap.add_argument("--since", help="この日以降の発送だけ（例 2026-11-01）")
     ap.add_argument("--out", type=Path)
     ap.add_argument("--account", help="出荷に使ったフェデックスアカウント番号（9桁）。無ければキーチェーンの fedex_account")
     a = ap.parse_args(argv)
     since = date.fromisoformat(a.since) if a.since else None
+    if a.check:
+        if report_status() is None:
+            print("ダウンロードに SpeedPAK の「輸出取引の詳細」（xlsx）がありません。")
+        return 0
     got = collect_from_downloads()
     if got:
         print(f"ダウンロードの輸出許可通知書 {got}件を data/export_permits/ に写しました（もらった物として数えます）")

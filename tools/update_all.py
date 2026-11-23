@@ -234,6 +234,11 @@ def main(argv=None) -> int:
             pass
         except Exception as e:
             print(f"  輸出許可書の Excel を作れませんでした: {e}")
+        try:   # 保存できた数と足りない番号 → 画面・Mac_更新ログ・古物台帳「Mac_輸出許可書」（2026-11-23 オーナー「ダウンロード先で確認しろ」）
+            import export_permit
+            export_permit.report_status(args.downloads)
+        except Exception as e:
+            print(f"  輸出許可書を数えられませんでした: {e}")
     print("\n▶ Chatwork の販売報告")
     import chatwork_sync
     chatwork_sync.sync(dry_run=args.dry_run)

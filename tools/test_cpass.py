@@ -38,6 +38,20 @@ class CpassRows(unittest.TestCase):
         out = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
         self.assertEqual(out, ["EX1000000000002DL06020002B0N"])
 
+    def test_last_note_stays_and_counts(self):
+        """終わりの知らせ: 今回の数とダウンロード済みの合計を出し、閉じるまで消さない（2026-11-23 オーナー「見逃した」）."""
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        src = (HERE / "extension_cpass.js").read_text(encoding="utf-8")
+        body = src[src.index("// @cpass-start"):src.index("// @cpass-end")]
+        out = json.loads(subprocess.run(["node", "-e", body + "\nconsole.log(JSON.stringify([cpassSummary(40, 47), cpassSummary(0, null)]));"],
+                                        capture_output=True, text=True, check=True).stdout)
+        self.assertIn("今回 40件・ダウンロード済み 合計47件", out[0])
+        self.assertIn("全部保存済み", out[1])
+        tail = src[src.index("// @cpass-end"):]
+        self.assertNotIn("t.remove(); }, 5000", tail)          # 5秒で消す形に戻さない
+        self.assertIn("t.onclick = () => t.remove()", tail)
+
 
 if __name__ == "__main__":
     unittest.main()

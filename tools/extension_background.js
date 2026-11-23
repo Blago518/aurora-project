@@ -112,6 +112,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
       .then((r) => (r.ok ? r.json() : null)).then((d) => send(d), () => send(null));
     return true;
   }
+  // 輸出許可書（DHL の運送状番号10桁.pdf）が Chrome のダウンロードの記録に何件あるか（extension_cpass.js の終わりの知らせ）
+  if (msg && msg.type === "cpassSaved") {
+    chrome.downloads.search({ filenameRegex: "[\\\\/]\\d{10}( \\(\\d+\\))?\\.pdf$", state: "complete", exists: true, limit: 0 })
+      .then((ds) => send({ count: new Set(ds.map((d) => (d.filename.match(/(\d{10})( \(\d+\))?\.pdf$/) || [])[1])).size }), () => send({}));
+    return true;
+  }
   if (msg && msg.type === "openTabs") {
     openTabs(msg.urls, _sender && _sender.tab, msg.max).then((n) => send({ ok: true, opened: n }), (e) => send({ error: String((e && e.message) || e) }));
     return true;

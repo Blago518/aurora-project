@@ -30,6 +30,11 @@ function cpassGroup(rows) {
   }
   return [...m.values()];
 }
+// 終わりの知らせ（消えない。2026-11-23 オーナー「見逃した」「ダウンロード先で確認しろ」）: 今回押した数と、Chrome のダウンロードの記録にある輸出許可書の数
+function cpassSummary(clicked, saved) {
+  const s = saved == null ? "" : `・ダウンロード済み 合計${saved}件`;
+  return (clicked ? `✓ 輸出許可書 最後のページまで済み（今回 ${clicked}件${s}）` : `✓ 輸出許可書は全部保存済み（今回 0件${s}）`) + "　× 閉じる";
+}
 // @cpass-end
 
 (function () {
@@ -41,8 +46,13 @@ function cpassGroup(rows) {
     let t = document.getElementById("aurora-cpass-note");
     if (!t) { t = document.createElement("div"); t.id = "aurora-cpass-note"; t.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#14214a;color:#fff;padding:8px 12px;border-radius:8px;font:13px sans-serif;opacity:.92"; document.body.appendChild(t); }
     t.textContent = msg;
+    return t;
   };
-  let busy = false, lastSig = "";
+  const savedCount = () => new Promise((ok) => {   // Chrome のダウンロードの記録で数える（裏方 background.js）
+    setTimeout(() => ok(null), 4000);   // 裏方が答えなくても、終わりの知らせは必ず出す
+    try { chrome.runtime.sendMessage({ type: "cpassSaved" }, (r) => { void chrome.runtime.lastError; ok(r && typeof r.count === "number" ? r.count : null); }); } catch (e) { ok(null); }
+  });
+  let busy = false, lastSig = "", total = 0;
   const collect = () => {
     const raw = [];
     for (const tb of document.querySelectorAll("tbody")) {
@@ -86,13 +96,16 @@ function cpassGroup(rows) {
     // 次のページがあれば自動で進む（料金明細は何ページかに分かれる。2026-11-23 1ページ目の7件だけで止まった）
     const next = [...document.querySelectorAll(".ant-pagination-next, [aria-label='next page'], [title='Next Page'], [title='次のページ'], .btn-next")]
       .find((e) => !/disabled/.test(e.className) && !e.disabled && e.getAttribute("aria-disabled") !== "true");
+    total += n;
     if (next) {
       note(`✓ このページの ${n}件を保存。次のページへ…`);
       (next.querySelector("button") || next).click();
       return;
     }
-    note(todo.length ? `✓ 輸出許可書 ${n}件を保存しました（最後のページまで）` : "✓ 輸出許可書は全部保存済み");
-    setTimeout(() => { const t = document.getElementById("aurora-cpass-note"); if (t) t.remove(); }, 5000);
+    await new Promise((res) => setTimeout(res, 3000));   // 最後の1件が保存されるのを待ってから数える
+    const t = note(cpassSummary(total, await savedCount()));   // 閉じるまで消さない（5秒で消えて見逃した）
+    t.style.cursor = "pointer"; t.onclick = () => t.remove();
+    total = 0;
   };
   // 一覧は後から描かれ、ページの中で画面が切り替わる（料金明細へ移る・ページ送り）ので、ずっと見張る（間を空けて）
   let timer = 0;

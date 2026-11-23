@@ -106,6 +106,33 @@ class FillTemplate(unittest.TestCase):
             self.assertEqual(ep.from_speedpak(p, "fedex"), [{"track": "380000000001", "date": "2026-11-23"}])
             self.assertEqual([x["track"] for x in ep.from_speedpak(p, "dhl")], ["8300000001"])
 
+    def test_status_counts_missing(self):
+        """ダウンロードにある PDF を数え、足りない番号を出す（2026-11-23 オーナー「ダウンロード先で確認しろ」。番号は作り物）."""
+        import openpyxl
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            dl, have = Path(d) / "dl", Path(d) / "have"
+            dl.mkdir()
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "オーダー"
+            ws.append(["作成時間", "OrangeConnex追跡番号", "輸送業者名", "追跡番号"])
+            for day, car, t in (("2026-11-19", "DHL", "8300000001"), ("2026-11-18", "DHL", "8300000002"), ("2026-11-17", "DHL", "8300000003"),
+                                ("2026-11-23", "FedEx", "380000000001")):
+                ws.append([day + " 08:00:00", "EX1000000000002DL06020002A0N", car, t])
+            wb.save(dl / "1000000000001.xlsx")
+            for name in ("8300000001.pdf", "8300000002.pdf", "8300000002 (1).pdf"):
+                (dl / name).write_text("x")
+            sent = []
+            with mock.patch.object(ep, "HAVE_DIR", have), mock.patch.object(ep, "STATEMENTS", Path(d) / "none"), \
+                    mock.patch.object(ep.collect_from_downloads, "__defaults__", (dl, have)), mock.patch.object(ep.have_permits, "__defaults__", (have,)), \
+                    mock.patch("ledger_sync.post_sheet", lambda sheet, body, post=None: sent.append((sheet, body)) or True):
+                rows = ep.report_status(dl)
+            self.assertEqual(ep.status_lines(rows), ["DHL: 3件中 2件 保存済み・まだ 1件（8300000003）", "FedEx: 1件中 0件 保存済み・まだ 1件（380000000001）"])
+            self.assertEqual(sent[0][0], "Mac_輸出許可書")
+            self.assertIn("DHL,'8300000003,2026-11-17,まだ", sent[0][1])
+            self.assertLess(sent[0][1].index("まだ"), sent[0][1].index("保存済み"))   # まだの物が上
+
     def test_find_fedex_template(self):
         with tempfile.TemporaryDirectory() as d:
             self._fedex(d)
