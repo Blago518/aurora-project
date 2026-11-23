@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import csv
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -85,6 +86,28 @@ class Description(unittest.TestCase):
         "露出計が動かない場合があります": [],
         "内蔵メーターは動きません。シャッターは全速切れます。": [],
         "露出計不良、シャッターが切れません": ["切れません"],
+        # 露出計不良の出品を実際に開いて見つけた誤り（ストアの決まり文句・「なく」の打ち消し）
+        "※撮影に影響のない傷やすれ、\n　カビくもりの有無等の\n　状態の程度の問題関しては": [],
+        "・フィルムカメラにおけるデートバック(日付機能)は\n2021年は対応外のため、全て動作未確認です。": [],
+        "レンズはカビや曇りなくクリアです。": [],
+        "薄くもりのみで撮影には影響ない程度です。": ["くもり"],
+        "シャッター全速切れますが、露出計不良です。": [],
+        "巻き上げレバーが固着しており動かない": ["動かない"],
+        "すれ・きず・くもり等の主観による過多など、\n撮影に影響のない状態に": [],
+        "極小のカビや薄い曇りなど「無」と記載されていても\n見落としや角度、光量によって": [],
+        "ごみ・薄かび、汚れあります。": ["かび"],
+        # オーキドが見つけた見逃し
+        "シャッター、露出計不良です": ["シャッター、露出計不良"],
+        "シャッター不良のためジャンク": ["シャッター不良"],
+        "露出計・シャッター共に不良": ["露出計・シャッター共に不良"],
+        "露出計不良のため格安": [],
+        "露出計は不良です。シャッターは良好です": [],
+        "カビくもりの有無は未確認です": ["カビ", "くもり"],
+        "カビやクモリが少なくありません": ["カビ", "クモリ"],
+        "カビ・クモリなく、撮影に問題ありません": [],
+        "カビやクモリも無く描写に影響はございません。": [],
+        "前玉にクモリがありますが実用には問題ないかと思います": ["クモリ"],
+        "ファインダ内LCD - 作動しません（点灯もしません）": ["作動しません"],
         "露出計以外は動きません": ["動きません"],
         "露出計を除き動作しません": ["動作しません"],
         "露出計のほかは動きません": ["動きません"],
@@ -111,6 +134,48 @@ class Description(unittest.TestCase):
         out = run_js(data, f"console.log(JSON.stringify({json.dumps(list(self.TEXTS), ensure_ascii=False)}"
                            ".map(t=>m.descHits(t,'').map(h=>h.word))))")
         self.assertEqual(out, [[h["word"] for h in ba.desc_hits(t)] for t in self.TEXTS])
+
+    METER = {
+        "Nikon F2 フォトミック 露出計不良": True,
+        "露出計は動きません。シャッターは全速切れます。": True,
+        "露出計不動のためジャンク": True,
+        "内蔵メーターは反応なし": True,
+        "露出計以外は不動です": False,
+        "露出計！シャッター不良 ハーフサイズ": False,
+        "ジャンク Rollei 35S 露出計NG ブラック": True,
+        "実用難あり■OM-1 ボディ■シャッター全速完動・露出計不良■": True,
+        "露出計も正常に動作します": False,
+        "露出計OK シャッターOK": False,
+        "Canon AE-1 ボディ": False,
+    }
+
+    def test_meter_ok(self):
+        """露出計の不良は狙い目の印（2026-11-23 オーナー）。判定は変えない."""
+        for t, want in self.METER.items():
+            self.assertEqual(ba.meter_ok(t), want, t)
+        urls = ba.meter_search_urls()
+        self.assertTrue(urls)
+        import robots
+        for u, _ in urls:
+            self.assertFalse(robots.removed_params(u), u)
+
+    def test_meter_sales_csv(self):
+        """露出計の不良と書いて売れた記録だけを数える（作り物の値）."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "chatwork_sales.csv"
+            p.write_text("title,sold_price_usd,source,memo\nカメラA ボディ,100,Chatwork,露出計不動\nカメラB ボディ,200,Chatwork,完動\n", encoding="utf-8")
+            rows = list(csv.reader(ba.meter_sales_csv([p]).splitlines()))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[1][2:4], ["カメラA ボディ", "100"])
+        self.assertEqual(rows[2][:2], ["確かめた行数", "2"])
+
+    def test_meter_ok_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        out = run_js(data, f"console.log(JSON.stringify({json.dumps(list(self.METER), ensure_ascii=False)}.map(t=>m.meterOk(t))))")
+        self.assertEqual(out, list(self.METER.values()))
 
     def test_read_description(self):
         page = ('<script id="__NEXT_DATA__" type="application/json">' + json.dumps(

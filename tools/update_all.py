@@ -237,6 +237,11 @@ def main(argv=None) -> int:
     ok = True
     if (DATA / "ledger.csv").exists() or list(DATA.glob("hanpukai_*.xlsx")):
         ok &= run("build_reference_prices.py")
+    try:   # 露出計の不良と書いて売れた記録 → 古物台帳「Mac_露出計実績」（2026-11-23 狙い目の裏づけ。サトシが読んで報告する）
+        import appraise
+        appraise.report_meter_sales()
+    except Exception as e:
+        print(f"  露出計の実績を数えられませんでした: {e}")
     # 落札相場は拡張機能を作る前に（前回の入札リストの出品も、終わっていればここで記録 → 拡張機能に出る）
     try:
         import yahoo_results  # 候補に出た出品が、実際にいくらで落札されたか（判定には使わない）

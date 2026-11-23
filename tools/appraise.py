@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import csv
 import html
+import io
 import json
 import math
 import re
@@ -137,6 +138,7 @@ class Item:
     seller_name: str = ""    # 出品者の表示名（注意を出す出品者の照合に使う。config.toml [caution]）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
+    meter_ok: bool = False  # 説明文に露出計の不良（狙い目。2026-11-23）
     desc_checked: bool = False  # 説明文を読んだか（check_descriptions）
     tentative: dict = field(default_factory=dict)   # 仮◎○（相場が無いが eBay 出品中の価格なら利益が出る。tentative.py）
     win: dict = field(default_factory=dict)  # 勝ちやすさ（win_score.py。終わった出品のうち今の上限額以下で終わった割合）{rate, n}
@@ -1301,6 +1303,65 @@ def lost_models(bid_rows: list[dict], days: int = 60) -> list[tuple[str, str]]:
     return out
 
 
+# 露出計の不良は狙い目（2026-11-23 オーナー「露出計不良を購入していい理由は伝えたはずだ。目標を忘れたか？」）:
+# ほかの入札者が避けて安く終わりやすいのに、記載して出せば普通に売れる。難として外すのではなく、名指しで探して印を付ける。
+# 判定・上限額・想定の売値は変えない（ジャンク表記を割り引かないのと同じ）。拡張機能の meterOk と同じ規則
+METER_OK_RE = re.compile(r"(?:露出計|メーター)(?!以外|の他|のほか|を除)(?:(?!シャッター)[^、。！!\n]){0,8}(?:不良|不動|故障|難|NG|ＮＧ|×|動きません|動かない|動かず|振れません|振れない|作動しません|反応しません|反応なし)")
+METER_NOTE = "★ 露出計不良は狙い目（売値は露出計が動く物の相場。露出計不良で売った実績はまだ無い）"
+METER_SEARCH_WORDS = ("露出計不良", "露出計不動", "露出計 難あり", "露出計 ジャンク")
+
+
+def meter_ok(text: str) -> bool:
+    """商品名・説明文に露出計の不良が書いてあるか（「露出計以外は不動」は除く）."""
+    return bool(METER_OK_RE.search(str(text or "")))
+
+
+METER_SALES_SHEET = "Mac_露出計実績"   # 露出計の不良と書いて売れた記録（狙い目の裏づけ。クラウドのサトシが読む）
+
+
+def meter_sales_csv(paths: list[Path] | None = None) -> str:
+    """販売の記録（自分・Chatwork・頒布会）のうち、露出計の不良が書いてある行の CSV. 1行目は見出し、最後に確かめた件数."""
+    paths = paths or [DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "ledger.csv")]
+    out, total = [["元のファイル", "根拠", "商品名", "売値USD", "書いてあった所"]], 0
+    for p in paths:
+        if not p.exists():
+            continue
+        for r in csv.DictReader(p.read_text(encoding="utf-8-sig").splitlines()):
+            total += 1
+            text = " ".join(str(v) for v in r.values() if v)
+            m = METER_OK_RE.search(text)
+            if m:
+                out.append([p.name, r.get("source", ""), r.get("title", "") or r.get("商品名", ""),
+                            r.get("sold_price_usd", "") or r.get("販売価格", ""), text[max(0, m.start() - 10):m.end() + 10]])
+    out.append(["確かめた行数", str(total), datetime.now().strftime("%Y-%m-%d %H:%M"), "", ""])
+    buf = io.StringIO()
+    csv.writer(buf).writerows(out)
+    return buf.getvalue()
+
+
+def report_meter_sales(post=None) -> int:
+    """露出計の不良で売れた記録を数え、古物台帳「Mac_露出計実績」に送る. 戻り値は件数."""
+    body = meter_sales_csv()
+    n = max(0, len(body.strip().splitlines()) - 2)
+    print(f"  露出計の不良と書いて売れた記録: {n}件")
+    try:
+        import ledger_sync
+        if ledger_sync.post_sheet(METER_SALES_SHEET, body, post=post):
+            print(f"  → 古物台帳「{METER_SALES_SHEET}」に送りました")
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠ 台帳に送れませんでした（{e}）")
+    return n
+
+
+def meter_search_urls() -> list[tuple[str, str]]:
+    """露出計の不良を名指しで探す検索URL（カメラのカテゴリ。robots.txt の Allow の形）."""
+    out = []
+    for w in METER_SEARCH_WORDS:
+        q = urllib.parse.urlencode({"p": w, "auccat": "23636", "aucminprice": "1000"})
+        out.append((f"https://auctions.yahoo.co.jp/search/search?{q}", f"{w}（狙い目）"))
+    return out
+
+
 def _model_url(brand: str, word: str) -> str:
     ja = [j for j, en in BRANDS_JA if en == brand]
     # 並べ替え（s1・o1）・件数（n）は robots.txt で Disallow → 付けない（終了が近い順は Mac の中で並べる。2026-11-19）
@@ -1679,15 +1740,16 @@ def calculate(item: Item, cfg: dict, fx: float, with_realized: bool = True) -> d
 OPTICAL_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)")
 OTHER_DEFECT_RE = re.compile(r"ヤケ|傷あり|キズあり|拭き傷")
 # 二重の打ち消し（2026-11-23 「クモリがないわけではない」を「クモリなし」と読んで ◎ を出した）は、打ち消しではなく「ある」
-DOUBLE_NEG_RE = re.compile(r"(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)")
+DOUBLE_NEG_RE = re.compile(r"(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|少なく(?:は)?(?:ない|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)")
 
 
 def is_negated(seg: str) -> bool:
     """その文の残りが難を打ち消しているか（extension_template.js の isNegated と同じ）."""
+    seg = re.sub(r"(?:影響|問題|支障)(?:は|が|の|も)?(?:ない|なし|無い|無し|ありません|ございません|なく)", "", seg)  # 「薄くもりのみで撮影には影響ない」は くもり あり
     return bool(_OPT_NEG_RE.search(seg)) and not DOUBLE_NEG_RE.search(seg)
 
 
-_OPT_NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
+_OPT_NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い|(?<!少)なく|無く)")
 
 
 def optical_title_words(text: str) -> list[str]:
@@ -1918,7 +1980,7 @@ def merge_memo(new: dict, dest: Path | None = None, how: str = "拡張機能で�
 # ---- 説明文チェック（extension_template.js の descHits と同じ規則）
 # 動作の不良（回りません・ピントが合いません・不安定・ヒビ など）も拾い、要確認にする（2026-11-23 オーナー決定。× にはしない。ジャンク表記だけでは拾わない）
 # 動作の不良の語と、同じ文にあれば決まり文句（「動作しない場合は返品可」）とみなす語
-MECH_PAT = (r"(?<!途)(?:回|動き|動か|切れ|降り|下り|作動し|動作し|通電し|戻|開き|開か|閉じ|閉ま)(?:りません|ません|らない|ない|らず|ず)|開きっぱなし|(?:電源|スイッチ)(?:が|は)?入(?:りません|らない|らず)|巻き?上げ(?:が|は)?(?:でき|出来)(?:ません|ない)|動作確認(?:が|は)?(?:でき|出来)て(?:いません|いない|おりません)|ピント(?:が|は|も)?(?:完全に)?(?:合いません|合わない|合わず|甘い)|合わない(?:時|とき)|不安定|(?:ヒビ|ひび)(?:割れ)?|クラック|割れ(?!物)|カタカタ|異音|(?:リング|ヘリコイド)(?:が|は|も)?(?:かなり|やや|少し|とても|非常に)?(?:固い|硬い|固く|硬く|重い|重く)")
+MECH_PAT = (r"(?<!途)(?:回|動き|動か|切れ|降り|下り|作動し|動作し|通電し|戻|開き|開か|閉じ|閉ま)(?:りません|ません|らない|ない|らず|ず)|開きっぱなし|(?:電源|スイッチ)(?:が|は)?入(?:りません|らない|らず)|巻き?上げ(?:が|は)?(?:でき|出来)(?:ません|ない)|動作確認(?:が|は)?(?:でき|出来)て(?:いません|いない|おりません)|ピント(?:が|は|も)?(?:完全に)?(?:合いません|合わない|合わず|甘い)|合わない(?:時|とき)|不安定|(?:ヒビ|ひび)(?:割れ)?|クラック|割れ(?!物)|カタカタ|異音|(?:シャッター|巻き?上げ|絞り|ミラー|AF|ＡＦ)(?:[、・とや]*(?:露出計|メーター))?(?:共に|ともに|とも)?(?:が|は|も|の)?(?:動作)?不良|(?:露出計|メーター)[、・とや]+(?:シャッター|巻き?上げ|絞り|ミラー|AF|ＡＦ)(?:共に|ともに|とも)?(?:が|は|も|の)?(?:動作)?不良|(?:リング|ヘリコイド)(?:が|は|も)?(?:かなり|やや|少し|とても|非常に)?(?:固い|硬い|固く|硬く|重い|重く)")
 MECH_RE = re.compile(MECH_PAT)
 METER_RE = re.compile(r"(?:露出計|メーター|測光)(?!以外|の他|のほか|を除)[^、。\n]{0,10}$")
 MECH_COND_RE = re.compile(r"^(?:こと|事)?(?:が|は)?(?:場合(?![がも](?:あり|ござい))|際(?:は|に)|(?:とき|時)(?:は|には)|(?:など|等)[^。\n]{0,10}(?:初期不良|返品|保証))")  # 語のすぐ後ろに続くときだけ（文のどこかの 場合・返品 では外さない）
@@ -1926,7 +1988,7 @@ HAS_RE = re.compile(r"^(?:が|も|は)?(?:あり(?!ませ)|有り(?!ませ)|ご�
 DEFECT_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|(?<!塗装)(?<!塗装の)(?<!ペイント)(?<!ペイントの)剥離|ヤケ|黄変|"
                        r"拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響|" + MECH_PAT + r")")
 PHOTO_ONLY_RE = re.compile(r"光学[^\n]{0,15}\n?(?:[^\n]{0,60}\n?){0,3}?[^\n]{0,40}写真[^\n]{0,10}確認")
-NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)")
+NEG_RE = re.compile(r"(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い|(?<!少)なく|無く)")
 
 
 def desc_hits(text: str, cond: str = "") -> list[dict]:
@@ -1941,6 +2003,14 @@ def desc_hits(text: str, cond: str = "") -> list[dict]:
         s_start = max(text.rfind("。", 0, i + 1), text.rfind("\n", 0, i + 1)) + 1
         s_end = re.search(r"[。\n]", text[i:])
         sentence = text[s_start:(i + s_end.start()) if s_end else i + 80]
+        # ストアの決まり文句（2026-11-23 露出計不良の出品を開いて見つけた。狙い目の出品が × になっていた）:
+        # 「カビくもりの有無等の状態の程度の問題に関しては」「デートバックは…全て動作未確認です」「セルフタイマーの動作確認は…」
+        if re.match(r"^[^。\n]{0,12}(?:の)?有無(?![^。\n]{0,8}(?:未確認|不明|分かりません|わかりません|確認できて))", text[i + len(w):i + len(w) + 30]):
+            continue
+        if w == "動作未確認" and re.search(r"デートバック|日付機能|セルフタイマー", text[max(0, i - 60):i]):
+            continue
+        if re.search(r"主観|見落とし|記載されていても|見え方|感じ方", text[i:i + 60]):
+            continue  # 「くもり等の主観による過多など」「極小のカビや薄い曇りなど「無」と記載されていても見落としや…」
         if (MECH_RE.fullmatch(w) or w in ("不動", "故障", "動作未確認")) and METER_RE.search(text[max(0, i - 14):i]):
             continue  # 露出計の不良は拾わない（2026-11-23 オーナー「露出計不良はオッケー」。記載して出せば売れる）
         if MECH_RE.fullmatch(w) and MECH_COND_RE.search(text[i + len(w):i + len(w) + 30]):
@@ -2036,6 +2106,7 @@ def check_descriptions(items: list[Item], delay: float, cfg: dict | None = None,
                 if cfg and it.expected_price_usd is not None:
                     it.calc = calculate(it, cfg, fx)
         it.desc_hits = desc_hits(text, cond)
+        it.meter_ok = meter_ok(text)
         it.desc_checked = True
         n += 1
         time.sleep(delay)
@@ -2157,6 +2228,8 @@ def rows_for_output(items: list[Item]) -> list[dict]:
     rows = []
     for it in items:
         mark, reason = judge(it)
+        if it.meter_ok or meter_ok(it.title):
+            reason = (reason + "／" if reason else "") + METER_NOTE
         c = it.calc
         links = ebay_links(eq_for(it)) if it.ebay_query else {}
         rows.append(
@@ -2707,6 +2780,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"売れ筋・負けた機種の検索: {len(hits)}本（{', '.join(lbl for _, lbl in hits[:8])}{' …' if len(hits) > 8 else ''}）",
                   file=sys.stderr)
             searches += [(u, 100) for u, _ in hits]  # 1本100件
+            meters = meter_search_urls()
+            print(f"露出計不良（狙い目）の検索: {len(meters)}本", file=sys.stderr)
+            searches += [(u, 100) for u, _ in meters]
         import robots
         fixed = [(su, robots.removed_params(su)) for su, _ in searches]
         fixed = [(su, ps) for su, ps in fixed if ps]

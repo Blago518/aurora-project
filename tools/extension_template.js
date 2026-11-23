@@ -403,10 +403,13 @@
   // 「カビ・クモリなし」「クモリ：無」のような打ち消しは除く（appraise.py の optical_title_words と同じ）。傷・ヤケは要確認のまま
   const OPTICAL_RE = /(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)/g;
   const OTHER_DEFECT_RE = /ヤケ|傷あり|キズあり|拭き傷/;
-  const OPT_NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)/;
+  const OPT_NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い|(?<!少)なく|無く)/;
   // 二重の打ち消し（2026-11-23 「クモリがないわけではない」）は、打ち消しではなく「ある」（appraise.py の is_negated と同じ）
-  const DOUBLE_NEG_RE = /(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)/;
-  function isNegated(seg) { return OPT_NEG_RE.test(seg) && !DOUBLE_NEG_RE.test(seg); }
+  const DOUBLE_NEG_RE = /(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|少なく(?:は)?(?:ない|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)/;
+  function isNegated(seg) {
+    seg = String(seg).replace(/(?:影響|問題|支障)(?:は|が|の|も)?(?:ない|なし|無い|無し|ありません|ございません|なく)/g, "");  // 「薄くもりのみで撮影には影響ない」は くもり あり
+    return OPT_NEG_RE.test(seg) && !DOUBLE_NEG_RE.test(seg);
+  }
   function opticalWords(text) {
     const out = [];
     for (const m of String(text || "").matchAll(OPTICAL_RE)) {
@@ -1022,6 +1025,13 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   // ヤフオクの落札相場（Mac の data/yahoo_results.csv → yahoo_results.model_stats。機種の比較用キーごと）。
   // 候補に出た出品が実際にいくらで落札されたか。表示だけ（判定・上限額には使わない）。記録が無ければ何も出さない
   // 注意を出す出品者（config.toml [caution]。2026-11-19 ユーザー決定「注意書きだけ出す」）。判定・上限額・並びは変えない
+  // 露出計の不良は狙い目（2026-11-23 オーナー）: 安く終わりやすいのに、記載して出せば売れる。印を出すだけ（判定・上限額は変えない。appraise.py の meter_ok と同じ）
+  const METER_OK_RE = /(?:露出計|メーター)(?!以外|の他|のほか|を除)(?:(?!シャッター)[^、。！!\n]){0,8}(?:不良|不動|故障|難|NG|ＮＧ|×|動きません|動かない|動かず|振れません|振れない|作動しません|反応しません|反応なし)/;
+  function meterOk(text) { return METER_OK_RE.test(String(text || "")); }
+  function meterLine(i) {
+    const d = (typeof state !== "undefined" && state.desc && state.desc[i.id]) || null;
+    return meterOk(i.title) || (d && d.meter) ? '<div class="s g">★ 露出計不良は狙い目（売値は露出計が動く物の相場。露出計不良で売った実績はまだ無い）</div>' : "";
+  }
   function cautionLine(i) {
     const c = DATA.caution || {}, name = String(i.sellerName || "");
     return name && (c.sellers || []).some((w) => w && name.includes(w)) ? `<div class="s x" title="${esc(name)}">⚠ ${esc(c.note || "注意する出品者")}</div>` : "";
@@ -1098,13 +1108,13 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   // ------------------------------------------------------------------ 説明文の状態チェック（◎○の出品だけ自動。出品ページを1件ずつ間隔を空けて読む）
   const LS_DESC = "yhkDescV3";  // 判定の語を変えたら番号を上げて、保存済みの結果を読み直させる
   // 動作の不良の語と、同じ文にあれば決まり文句（「動作しない場合は返品可」）とみなす語（appraise.py の MECH_PAT と同じ）
-  const MECH_PAT = String.raw`(?<!途)(?:回|動き|動か|切れ|降り|下り|作動し|動作し|通電し|戻|開き|開か|閉じ|閉ま)(?:りません|ません|らない|ない|らず|ず)|開きっぱなし|(?:電源|スイッチ)(?:が|は)?入(?:りません|らない|らず)|巻き?上げ(?:が|は)?(?:でき|出来)(?:ません|ない)|動作確認(?:が|は)?(?:でき|出来)て(?:いません|いない|おりません)|ピント(?:が|は|も)?(?:完全に)?(?:合いません|合わない|合わず|甘い)|合わない(?:時|とき)|不安定|(?:ヒビ|ひび)(?:割れ)?|クラック|割れ(?!物)|カタカタ|異音|(?:リング|ヘリコイド)(?:が|は|も)?(?:かなり|やや|少し|とても|非常に)?(?:固い|硬い|固く|硬く|重い|重く)`;
+  const MECH_PAT = String.raw`(?<!途)(?:回|動き|動か|切れ|降り|下り|作動し|動作し|通電し|戻|開き|開か|閉じ|閉ま)(?:りません|ません|らない|ない|らず|ず)|開きっぱなし|(?:電源|スイッチ)(?:が|は)?入(?:りません|らない|らず)|巻き?上げ(?:が|は)?(?:でき|出来)(?:ません|ない)|動作確認(?:が|は)?(?:でき|出来)て(?:いません|いない|おりません)|ピント(?:が|は|も)?(?:完全に)?(?:合いません|合わない|合わず|甘い)|合わない(?:時|とき)|不安定|(?:ヒビ|ひび)(?:割れ)?|クラック|割れ(?!物)|カタカタ|異音|(?:シャッター|巻き?上げ|絞り|ミラー|AF|ＡＦ)(?:[、・とや]*(?:露出計|メーター))?(?:共に|ともに|とも)?(?:が|は|も|の)?(?:動作)?不良|(?:露出計|メーター)[、・とや]+(?:シャッター|巻き?上げ|絞り|ミラー|AF|ＡＦ)(?:共に|ともに|とも)?(?:が|は|も|の)?(?:動作)?不良|(?:リング|ヘリコイド)(?:が|は|も)?(?:かなり|やや|少し|とても|非常に)?(?:固い|硬い|固く|硬く|重い|重く)`;
   const MECH_RE = new RegExp("^(?:" + MECH_PAT + ")$"), MECH_COND_RE = /^(?:こと|事)?(?:が|は)?(?:場合(?![がも](?:あり|ござい))|際(?:は|に)|(?:とき|時)(?:は|には)|(?:など|等)[^。\n]{0,10}(?:初期不良|返品|保証))/, HAS_RE = /^(?:が|も|は)?(?:あり(?!ませ)|有り(?!ませ)|ござい(?!ませ))/;
   const DEFECT_RE = new RegExp(String.raw`(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離|コーティング(?:剥がれ|はがれ|ハガレ|剥離|劣化|ムラ|傷|キズ)|(?<!塗装)(?<!塗装の)(?<!ペイント)(?<!ペイントの)剥離|ヤケ|黄変|拭き傷|拭き跡|絞り粘り|絞りに粘り|油染み|油浮き|油滲み|オイル染み|オイル漏れ|動作未確認|不動|故障|写りに影響|` + MECH_PAT + ")", "g");
   // 光学の欄で状態を書かず「写真を確認して」とだけ書くのは、写真に難が写っている合図のことが多い
   const PHOTO_ONLY_RE = /光学[^\n]{0,15}\n?(?:[^\n]{0,60}\n?){0,3}?[^\n]{0,40}写真[^\n]{0,10}確認/;
   // 同じ文の中にあれば「〜なし」と打ち消しているとみなす語
-  const NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い)/;
+  const NEG_RE = /(なし|無し|ナシ|ありません|有りません|ございません|見られません|見当たりません|確認できません|(?<!少)ない|無い|(?<!少)なく|無く)/;
   function descHits(text, cond) {
     const hits = [];
     for (const m of text.matchAll(DEFECT_RE)) {
@@ -1118,6 +1128,10 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const sentence = text.slice(sStart, sEnd < 0 ? m.index + 80 : m.index + sEnd);
       if (/返品|返金|対象外|保証|免責/.test(text.slice(Math.max(0, m.index - 200), m.index)) &&
           (sentence.match(/カビ|かび|くもり|クモリ|曇り|サビ|錆|キズ|傷|磨耗|摩耗|劣化|ゴミ|チリ|ホコリ/g) || []).length >= 3) continue;
+      // ストアの決まり文句（2026-11-23）: 「カビくもりの有無等の状態の程度の問題に関しては」「デートバックは…全て動作未確認です」
+      if (/^[^。\n]{0,12}(?:の)?有無(?![^。\n]{0,8}(?:未確認|不明|分かりません|わかりません|確認できて))/.test(text.slice(m.index + m[1].length, m.index + m[1].length + 30))) continue;
+      if (m[1] === "動作未確認" && /デートバック|日付機能|セルフタイマー/.test(text.slice(Math.max(0, m.index - 60), m.index))) continue;
+      if (/主観|見落とし|記載されていても|見え方|感じ方/.test(text.slice(m.index, m.index + 60))) continue;  // ストアの決まり文句
       // 露出計の不良は拾わない（2026-11-23 オーナー「露出計不良はオッケー」。記載して出せば売れる）
       if ((MECH_RE.test(m[1]) || /^(不動|故障|動作未確認)$/.test(m[1])) && /(?:露出計|メーター|測光)(?!以外|の他|のほか|を除)[^、。\n]{0,10}$/.test(text.slice(Math.max(0, m.index - 14), m.index))) continue;
       if (MECH_RE.test(m[1]) && MECH_COND_RE.test(text.slice(m.index + m[1].length, m.index + m[1].length + 30))) continue;  // 「万が一動作しない場合は」などは規約の文
@@ -1153,7 +1167,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const text = String(item.descriptionHtml || item.description || "")
       .replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|tr|h\d)>/gi, "\n").replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-    return { t: Date.now(), cond: item.conditionName || "", hits: descHits(text, item.conditionName || ""), ship: shipFee(item) };
+    return { t: Date.now(), cond: item.conditionName || "", hits: descHits(text, item.conditionName || ""), meter: meterOk(text), ship: shipFee(item) };
   }
   // 出品ページの送料（appraise.py の item_shipping と同じ）: 出品者負担なら0、配送方法の送料（一律）の一番安いもの。分からなければ null
   function shipFee(item) {
@@ -1342,7 +1356,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       const markHtml = ALL && !c ? '<span class="s">相場なし</span>' : i.mark;
       return `<tr class="${soon ? "soon" : ""}${seenOf(i.id) ? " seen" : ""}"><td class="m ${cls}">${seenBox(i.id)}${markHtml}<div class="s ${soon ? "hot" : ""}">${left}</div>${ALL && c && i.reason ? `<div class="s">${esc(i.reason)}</div>` : ""}</td>
 <td>${i.trusted ? '<span class="trustb" title="安心ストア（フォロー中）">★</span>' : ""}<a class="t" href="https://auctions.yahoo.co.jp/jp/auction/${i.id}" target="_blank" rel="noopener" title="${esc(i.title)}">${esc(i.title)}</a>${flags}
-${cautionLine(i)}<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${yahooLine(modelKey(i.title)[1])}${descLine(i.id)}${pinNote(i)}</td>
+${cautionLine(i)}${meterLine(i)}<div class="s">${setLine(i) || (r.title ? `根拠: ${esc(r.title)} [${esc(srcLabel(r))}]${isMemo(r) ? "（手で直した相場）" : ""}` : "相場データなし ― sold を見て［直す$］に売れた商品代を入れると判定します")}</div>${isMemo(r) ? memoTrend(r.title) : ""}${condLine(i)}${yahooLine(modelKey(i.title)[1])}${descLine(i.id)}${pinNote(i)}</td>
 <td class="n"><a class="usd" href="${e.pr}" target="_blank" rel="noopener" title="${esc("Product Research を開く（Best Offer込みの成約も確認できます）\n" + tip)}">${nd(i.usd)}</a>${trendArrow(i)}<div class="s">送料別</div>${soldLine(r)}${junk ? `<div class="s">元${nd(r.price)}</div>` : ""}
 <div class="pills"><a class="pill sold" href="${e.sold}" target="_blank" rel="noopener" title="eBayで売れた履歴（高い順）">sold</a><a class="pill" href="${e.now}" target="_blank" rel="noopener" title="eBayに出品中（高い順）">now</a></div><div class="pills"><button class="open3" data-a="open3" data-urls="${esc(JSON.stringify([`https://auctions.yahoo.co.jp/jp/auction/${i.id}`, e.sold, e.now]))}" title="ヤフオクの出品ページ・sold・now を、新しいタブに左からこの順で開きます">全て開く</button></div>
 <div class="fix" title="${esc(`相場を直す（機種: ${modelKey(i.title)[0]}）\nsold の商品代（送料を含まない$）と、売れた物の状態を入れてください。計算では送料$${SHIP()}を足して手数料を出します。同じ機種の過去データより優先されます`)}">${memoInputs(modelKey(i.title)[0], 'placeholder="直す$"', "直す")}</div></td>
@@ -1427,7 +1441,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, queryForTitle, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
+    module.exports = { meterOk, cautionLine, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, queryForTitle, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 
