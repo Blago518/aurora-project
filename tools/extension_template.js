@@ -1119,7 +1119,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
       if (/返品|返金|対象外|保証|免責/.test(text.slice(Math.max(0, m.index - 200), m.index)) &&
           (sentence.match(/カビ|かび|くもり|クモリ|曇り|サビ|錆|キズ|傷|磨耗|摩耗|劣化|ゴミ|チリ|ホコリ/g) || []).length >= 3) continue;
       // 露出計の不良は拾わない（2026-11-23 オーナー「露出計不良はオッケー」。記載して出せば売れる）
-      if ((MECH_RE.test(m[1]) || /^(不動|故障|動作未確認)$/.test(m[1])) && /(?:露出計|メーター|測光)[^、。\n]{0,10}$/.test(text.slice(Math.max(0, m.index - 14), m.index))) continue;
+      if ((MECH_RE.test(m[1]) || /^(不動|故障|動作未確認)$/.test(m[1])) && /(?:露出計|メーター|測光)(?!以外|の他|のほか)[^、。\n]{0,10}$/.test(text.slice(Math.max(0, m.index - 14), m.index))) continue;
       if (MECH_RE.test(m[1]) && MECH_COND_RE.test(text.slice(m.index + m[1].length, m.index + m[1].length + 30))) continue;  // 「万が一動作しない場合は」などは規約の文
       const rest = text.slice(m.index, m.index + 60);
       const kv = rest.slice(m[1].length).match(/^\s*[：:]\s*([^\s　、。|｜]+)/);  // 「クモリ：ごくわずか」のような項目形式は値だけ見る
