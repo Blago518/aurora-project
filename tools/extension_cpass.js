@@ -18,6 +18,18 @@ function cpassPending(rows, done) {
   }
   return out;
 }
+// 表の行をまとめる: 右端の「実行する」列が別の表に描かれる作り（固定列）でも、同じ行の番号とリンクを1つにする。
+// 行の鍵は data-row-key（無ければ表の中の何行目か）
+function cpassGroup(rows) {
+  // rows: [{key, text, hasCert}] → [{text, hasCert}]
+  const m = new Map();
+  for (const r of rows) {
+    const g = m.get(r.key) || { text: "", hasCert: false };
+    g.text += " " + r.text; g.hasCert = g.hasCert || r.hasCert;
+    m.set(r.key, g);
+  }
+  return [...m.values()];
+}
 // @cpass-end
 
 (function () {
@@ -30,12 +42,26 @@ function cpassPending(rows, done) {
     if (!t) { t = document.createElement("div"); t.id = "aurora-cpass-note"; t.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#14214a;color:#fff;padding:8px 12px;border-radius:8px;font:13px sans-serif;opacity:.92"; document.body.appendChild(t); }
     t.textContent = msg;
   };
-  let started = false;
+  let busy = false, lastSig = "";
+  const collect = () => {
+    const raw = [];
+    for (const tb of document.querySelectorAll("tbody")) {
+      [...tb.querySelectorAll(":scope > tr")].forEach((tr, i) => raw.push({ tr, key: tr.getAttribute("data-row-key") || "i" + i, text: tr.innerText, hasCert: leafWith(tr, CERT).length > 0 }));
+    }
+    const groups = new Map();
+    for (const r of raw) { const g = groups.get(r.key) || { trs: [], text: "", hasCert: false }; g.trs.push(r.tr); g.text += " " + r.text; g.hasCert = g.hasCert || r.hasCert; groups.set(r.key, g); }
+    return [...groups.values()].filter((g) => cpassRowId(g.text));
+  };
   const run = async () => {
-    if (started || !/各注文番号の料金明細/.test(document.body.innerText)) return;
-    const rowEls = [...document.querySelectorAll("tr")].filter((tr) => cpassRowId(tr.innerText));
-    if (!rowEls.length) return;   // 表がまだ出ていない
-    started = true;
+    if (busy || !/各注文番号の料金明細/.test(document.body.innerText)) return;
+    const rowsNow = collect();
+    if (!rowsNow.length) return;   // 表がまだ出ていない
+    const sig = rowsNow.map((g) => cpassRowId(g.text)).join(",");
+    if (sig === lastSig) return;   // 同じ表はもう見た（ページ送り・検索で表が変われば、また見る）
+    busy = true; lastSig = sig;
+    try { await work(rowsNow); } finally { busy = false; }
+  };
+  const work = async (rowsNow) => {
     const st = await chrome.storage.local.get(["cpassDone", "cpassDetailDay"]);
     const done = st.cpassDone || [];
     // 輸出取引の詳細（xlsx）: 1日1回
@@ -44,12 +70,12 @@ function cpassPending(rows, done) {
       const b = leafWith(document, "輸出取引の詳細")[0];
       if (b) { b.click(); await chrome.storage.local.set({ cpassDetailDay: today }); await new Promise((r) => setTimeout(r, 2500)); }
     }
-    const rows = rowEls.map((tr) => ({ tr, text: tr.innerText, hasCert: leafWith(tr, CERT).length > 0 }));
+    const rows = rowsNow;
     const todo = cpassPending(rows, done);
     let n = 0;
     for (const id of todo) {
       const r = rows.find((x) => cpassRowId(x.text) === id);
-      const link = r && leafWith(r.tr, CERT)[0];
+      const link = r && r.trs.map((tr) => leafWith(tr, CERT)[0]).find(Boolean);
       if (!link) continue;
       note(`輸出許可書を保存中… ${++n}/${todo.length}`);
       link.click();
@@ -60,9 +86,9 @@ function cpassPending(rows, done) {
     note(todo.length ? `✓ 輸出許可書 ${n}件を保存しました（このページの分）` : "✓ このページの輸出許可書は保存済み");
     setTimeout(() => { const t = document.getElementById("aurora-cpass-note"); if (t) t.remove(); }, 5000);
   };
-  // 一覧は後から描かれるので、出るまで見張る（最大30秒）
-  const obs = new MutationObserver(() => { run(); });
+  // 一覧は後から描かれ、ページの中で画面が切り替わる（料金明細へ移る・ページ送り）ので、ずっと見張る（間を空けて）
+  let timer = 0;
+  const obs = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(run, 800); });
   obs.observe(document.documentElement, { childList: true, subtree: true });
-  setTimeout(() => obs.disconnect(), 30000);
   run();
 })();
