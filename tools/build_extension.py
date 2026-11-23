@@ -193,6 +193,11 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
             "js": ["evidence.js"],
             "run_at": "document_idle",
         }, {
+            # SpeedPAK セラーポータル: 料金明細を開いたら DHL の輸出許可書と「輸出取引の詳細」を自動で保存（extension_cpass.js。2026-11-23）
+            "matches": ["https://ebay-jp.orangeconnex.com/*"],
+            "js": ["cpass.js"],
+            "run_at": "document_idle",
+        }, {
             # オークファンの入札予約: 予約の手伝いと、予約一覧の読み取り（extension_aucfan.js）
             "matches": ["https://tools.aucfan.com/*"],
             "js": ["aucfan.js"],
@@ -208,6 +213,7 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
     manifest["host_permissions"] = ["<all_urls>"] + (["https://api.ebay.com/*"] if keys else [])
     shutil.copy(HERE / "extension_aucfan.js", folder / "aucfan.js")
     shutil.copy(HERE / "extension_evidence.js", folder / "evidence.js")
+    shutil.copy(HERE / "extension_cpass.js", folder / "cpass.js")
     tpl = (HERE / "extension_background.js").read_text(encoding="utf-8")
     cfg = cfg or ba.load_config(None)
     app, cert = keys or (None, None)

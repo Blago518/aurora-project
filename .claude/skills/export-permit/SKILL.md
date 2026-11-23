@@ -4,6 +4,11 @@ description: DHL・FedEx から輸出許可通知書（輸出許可書）の写�
 ---
 # 輸出許可通知書を DHL・FedEx からもらう
 
+**自動の形（2026-11-23。オーナー「手順書を作っているのは自動化してほしいから」）**:
+- DHL: Chrome で SpeedPAK セラーポータル https://ebay-jp.orangeconnex.com の「各注文番号の料金明細」を開くだけ。拡張機能（extension_cpass.js）が、まだ取っていない行の「証明書をダウンロードする」を押して PDF（名前は DHL の運送状番号10桁）を保存し、「輸出取引の詳細」（xlsx）も1日1回保存する。
+- FedEx: 毎朝の update_all.py が「輸出取引の詳細」のシート「オーダー」（列 輸送業者名・追跡番号）から FedEx の12桁を集め、まだもらっていない物だけを FedEx のリクエストシート（ダウンロードから自動で見つけて data/fedex_template.xlsx に覚える）に入れて reports/fedex_export_permit_<日付>.xlsx を作る。オーナーに残るのは FedEx のサイトでの申請と、受付メールへの返信（Excel を添付）だけ。
+- CPaSS の注文一覧（xlsx）の Trackcode は SpeedPAK の番号（EX…/EM…）で、DHL・FedEx の運送状番号ではない（使わない）。
+
 2026-11-23 オーナー依頼「DHLとfedexから輸出許可証をもらわないといけない」「fedexのexcelはあなたが自動入力して作成するように」。
 発送は CPaSS 経由（オークレボから）。**CPaSS 経由でも、輸出許可通知書の輸出者はオーナー本人**（2026-11-23 にもらった過去の FedEx 5通・DHL 4通で確かめた）。
 

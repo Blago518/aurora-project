@@ -225,6 +225,15 @@ def main(argv=None) -> int:
         moved = move_evidence(args.downloads)
         if moved:
             print(f"  ヤフオクの仕入れ証跡 {moved}件を 税理 › ヤフオク のフォルダに移しました")
+        # 輸出許可書: DHL の PDF を数え、FedEx の依頼用 Excel を作り直す（材料が無ければ何もしない。2026-11-23 オーナー「自動化してほしい」）
+        try:
+            import export_permit
+            if export_permit.TEMPLATE.exists() and export_permit.speedpak_files([args.downloads]):
+                export_permit.main([])
+        except SystemExit:
+            pass
+        except Exception as e:
+            print(f"  輸出許可書の Excel を作れませんでした: {e}")
     print("\n▶ Chatwork の販売報告")
     import chatwork_sync
     chatwork_sync.sync(dry_run=args.dry_run)

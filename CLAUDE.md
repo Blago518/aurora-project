@@ -38,6 +38,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `win_score.py` | **勝ちやすさ**: 入札リストの ◎○・売れ筋・負けた機種について、ヤフオクの終わった出品（`/closedsearch/closedsearch?p=`、Allow の形）を読み、今の判定ロジックの上限入札額以下で終わった割合・月の件数を `data/win_score.csv` に（1回30機種・1機種2ページ・3秒間隔・同じ機種は7日ごと）。1割未満の機種は入札リスト・拡張機能の下に回す（判定・上限額は変えない） |
 | `extension_template.js` | Chrome拡張機能の中身（判定は appraise.py と同一） |
 | `extension_evidence.js` | **ヤフオクの仕入れ証跡**: Chrome で取引ナビを開くと、その画面を PNG で ダウンロード/ヤフオク仕入証跡/ に自動保存（名前は 終了日_出品者_金額_オークションID。同じIDは1回だけ）。`update_all.py` が毎朝 デスクトップ › 税理 › 8.〜 › ヤフオク に移す |
+| `extension_cpass.js` | **輸出許可書**: Chrome で SpeedPAK セラーポータルの「各注文番号の料金明細」を開くと、まだ取っていない DHL の輸出許可書（証明書をダウンロードする）と「輸出取引の詳細」（xlsx）を自動で保存。`update_all.py` が毎朝、その xlsx から FedEx の依頼用 Excel を作る（`export_permit.py`） |
 | `build_extension.py` | data/ と config.toml を埋め込んで `extension/` を作る |
 | `build_reference_prices.py` | 古物台帳（data/ledger.csv）と頒布会リスト（data/hanpukai_*.xlsx）→ `data/reference_prices.csv`。台帳に豪ドル・ポンドのまま記入された販売金額は、eBay の取引レポート（data/ebay_report.csv）の換算レートでドルに直す |
 | `update_all.py` | **全部まとめて最新にする**: ダウンロードフォルダの古物台帳CSV・頒布会xlsx・明細の取り込み → Chatwork 同期 → 相場データ・拡張機能・スマホ用データ・ナレッジを作り直す |

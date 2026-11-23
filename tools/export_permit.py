@@ -195,9 +195,73 @@ def from_cpass(statements: Path, since: date | None, carrier: str = "fedex") -> 
     return out
 
 
+TEMPLATE = ROOT / "data" / "fedex_template.xlsx"   # FedEx のリクエストシート（1回渡せば次から使う。data/ はコミットしない）
+
+
+def find_fedex_template(dirs: list[Path]) -> Path | None:
+    """ダウンロードにある FedEx のリクエストシート（見出し「AWB（運送状番号）」と「フェデックスアカウント番号」がある xlsx）. 新しい物."""
+    import openpyxl
+    for d in dirs:
+        for p in (sorted(d.glob("*.xlsx"), key=lambda x: x.stat().st_mtime, reverse=True) if d.is_dir() else []):
+            try:
+                ws = openpyxl.load_workbook(p, read_only=True).active
+                text = " ".join(str(v) for row in ws.iter_rows(min_row=1, max_row=20, values_only=True) for v in row if v)
+            except Exception:
+                continue
+            if "AWB" in text and "アカウント番号" in text:
+                return p
+    return None
+
+
+def speedpak_files(dirs: list[Path]) -> list[Path]:
+    """SpeedPAK セラーポータルの「輸出取引の詳細」（xlsx。シート「オーダー」に 輸送業者名・追跡番号）. 新しい順."""
+    import openpyxl
+    out = []
+    for d in dirs:
+        for p in (sorted(d.glob("*.xlsx"), key=lambda x: x.stat().st_mtime, reverse=True) if d.is_dir() else []):
+            try:
+                wb = openpyxl.load_workbook(p, read_only=True)
+                if "オーダー" in wb.sheetnames:
+                    out.append(p)
+            except Exception:
+                continue
+    return out
+
+
+def from_speedpak(path: Path, carrier: str = "fedex", since: date | None = None) -> list[dict]:
+    """輸出取引の詳細のシート「オーダー」から、その運送会社の運送状番号（FedEx 12桁・DHL 10桁）と作成日（2026-11-23 オーナーが渡した形）."""
+    import openpyxl
+    ws = openpyxl.load_workbook(path, data_only=True)["オーダー"]
+    rows = [r for r in ws.iter_rows(values_only=True) if any(v not in (None, "") for v in r)]
+    if not rows:
+        return []
+    h = [str(x or "").strip() for x in rows[0]]
+    ci, ti, di = h.index("輸送業者名"), h.index("追跡番号"), h.index("作成時間") if "作成時間" in h else None
+    rx = FEDEX_TRACK_RE if carrier == "fedex" else DHL_TRACK_RE
+    out, seen = [], set()
+    for r in rows[1:]:
+        if carrier.lower() not in str(r[ci] or "").lower():
+            continue
+        t = re.sub(r"[\s-]", "", str(r[ti] or ""))
+        if not rx.match(t) or t in seen:
+            continue
+        d = str(r[di] or "")[:10] if di is not None else ""
+        try:
+            dd = date.fromisoformat(d)
+        except ValueError:
+            dd = None
+        if since and dd and dd < since:
+            continue
+        if dd and (date.today() - dd).days > 365 * 3:
+            continue
+        seen.add(t)
+        out.append({"track": t, "date": d})
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="FedEx の輸出許可通知書の依頼用 Excel を自動で埋める")
-    ap.add_argument("template", type=Path, nargs="?", help="FedEx から届いた依頼用 Excel（xlsx）")
+    ap.add_argument("template", type=Path, nargs="?", help="FedEx から届いた依頼用 Excel（xlsx）。1回渡せば data/fedex_template.xlsx に覚える")
     ap.add_argument("--dhl", action="store_true", help="DHL: まだ輸出許可通知書をもらっていない運送状番号の一覧を出す（DHL は公式フォームに貼る）")
     ap.add_argument("--list", type=Path, help="追跡番号を1行に1つ書いたファイル（無ければ CPaSS 注文一覧から）")
     ap.add_argument("--since", help="この日以降の発送だけ（例 2026-11-01）")
@@ -209,7 +273,8 @@ def main(argv=None) -> int:
     if got:
         print(f"ダウンロードの輸出許可通知書 {got}件を data/export_permits/ に写しました（もらった物として数えます）")
     if a.dhl:
-        ships = from_list(a.list) if a.list else from_cpass(STATEMENTS, since, "dhl")
+        sp = speedpak_files([Path.home() / "Downloads", STATEMENTS])
+        ships = from_list(a.list) if a.list else from_speedpak(sp[0], "dhl", since) if sp else from_cpass(STATEMENTS, since, "dhl")
         have = have_permits()
         rest = [x["track"] for x in ships if DHL_TRACK_RE.match(re.sub(r"[\s-]", "", x["track"])) and x["track"] not in have]
         out = a.out or REPORTS / f"dhl_export_permit_{date.today():%Y%m%d}.txt"
@@ -218,9 +283,24 @@ def main(argv=None) -> int:
         print(f"DHL の運送状番号 {len(rest)}件（もらっていない物だけ）→ {out}\n" + "\n".join(rest))
         print("DHL の「輸出入関連書類送付リクエスト受付フォーム」に貼ってください。")
         return 0
-    if not a.template:
-        ap.error("FedEx の Excel を指定してください（DHL は --dhl）")
-    ships = from_list(a.list) if a.list else from_cpass(STATEMENTS, since)
+    import shutil
+    if a.template:
+        TEMPLATE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(a.template.expanduser(), TEMPLATE)   # 次からは指定しなくてよい
+    elif TEMPLATE.exists():
+        a.template = TEMPLATE
+    else:
+        found = find_fedex_template([Path.home() / "Downloads"])
+        if not found:
+            ap.error("ダウンロードに FedEx のリクエストシート（受付メールに付いている Excel）がありません。受付メールの Excel をダウンロードしてから、もう一度動かしてください。")
+        TEMPLATE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(found, TEMPLATE)
+        a.template = TEMPLATE
+        print(f"FedEx のリクエストシート「{found.name}」を見つけました（次からはこれを使います）")
+    sp = speedpak_files([Path.home() / "Downloads", STATEMENTS])
+    if not a.list and not sp:
+        ap.error("ダウンロードに SpeedPAK の「輸出取引の詳細」（xlsx）がありません。SpeedPAK セラーポータルの「各注文番号の料金明細」を Chrome で開くと、拡張機能が自動で保存します。")
+    ships = from_list(a.list) if a.list else from_speedpak(sp[0], "fedex", since)
     out = a.out or REPORTS / f"fedex_export_permit_{date.today():%Y%m%d}.xlsx"
     have = have_permits()
     before = len(ships)

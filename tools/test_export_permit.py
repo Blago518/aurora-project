@@ -72,6 +72,29 @@ class FillTemplate(unittest.TestCase):
             self.assertEqual(ep.collect_from_downloads(src, dst), 0)   # 2回目は写さない
             self.assertTrue((src / "5800000001.pdf").exists())          # 元は消さない
 
+    def test_speedpak_detail(self):
+        """SpeedPAK の「輸出取引の詳細」（シート「オーダー」）から運送会社ごとの番号（2026-11-23 の形。番号は作り物）."""
+        import openpyxl
+        with tempfile.TemporaryDirectory() as d:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "オーダー"
+            ws.append(["作成時間", "OrangeConnex追跡番号", "ご請求金額（JPY）", "実支払額（JPY）", "割引（JPY）", "還元金額（JPY）", "輸送業者名", "追跡番号"])
+            ws.append(["2026-11-23 10:26:20", "EM1000000000001FE06030071G0N", "6,966", "6,966", "0", "0", "FedEx", "380000000001"])
+            ws.append(["2026-11-19 08:33:42", "EX1000000000002DL06020002A0N", "4,736", "4,736", "0", "0", "DHL", "8300000001"])
+            ws.append(["2026-11-18 08:33:42", "EM1000000000003FE06030071G0N", "4,736", "4,736", "0", "0", "FedEx", "380000000001"])
+            wb.create_sheet("SKUの詳細")
+            p = Path(d) / "1795399601275.xlsx"
+            wb.save(p)
+            self.assertEqual(ep.speedpak_files([Path(d)]), [p])
+            self.assertEqual(ep.from_speedpak(p, "fedex"), [{"track": "380000000001", "date": "2026-11-23"}])
+            self.assertEqual([x["track"] for x in ep.from_speedpak(p, "dhl")], ["8300000001"])
+
+    def test_find_fedex_template(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._fedex(d)
+            self.assertEqual(ep.find_fedex_template([Path(d)]).name, "fedex.xlsx")
+
     def test_no_header_stops(self):
         import openpyxl
         with tempfile.TemporaryDirectory() as d:
