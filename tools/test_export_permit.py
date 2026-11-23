@@ -46,6 +46,22 @@ class FillTemplate(unittest.TestCase):
             self.assertEqual(ws["B18"].value, "870000000002")
             self.assertIsNone(ws["B19"].value)
 
+    def test_old_numbers_cleared_and_account_kept(self):
+        """前回の依頼で番号とアカウント番号が入ったシートを使っても、古い番号は消し、アカウント番号はそのまま使う（2026-11-23）."""
+        import openpyxl
+        with tempfile.TemporaryDirectory() as d:
+            p = self._fedex(d)
+            wb = openpyxl.load_workbook(p)
+            ws = wb.active
+            ws["B13"] = 100000001
+            ws["B17"], ws["B18"] = "870000000091", "870000000092"   # 前回の分
+            wb.save(p)
+            self.assertEqual(ep.template_account(p), "100000001")
+            out = Path(d) / "o.xlsx"
+            n, _ = ep.fill(p, [{"track": "870000000001", "date": ""}], out, ep.template_account(p))
+            ws = openpyxl.load_workbook(out).active
+            self.assertEqual((n, ws["B17"].value, ws["B18"].value, ws["B13"].value), (1, "870000000001", None, 100000001))
+
     def test_fedex_split_when_full(self):
         import openpyxl
         with tempfile.TemporaryDirectory() as d:
