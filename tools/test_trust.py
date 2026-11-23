@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import csv
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -98,6 +99,9 @@ class Description(unittest.TestCase):
         # オーキドが見つけた見逃し
         "シャッター、露出計不良です": ["シャッター、露出計不良"],
         "シャッター不良のためジャンク": ["シャッター不良"],
+        "露出計・シャッター共に不良": ["露出計・シャッター共に不良"],
+        "露出計不良のため格安": [],
+        "露出計は不良です。シャッターは良好です": [],
         "カビくもりの有無は未確認です": ["カビ", "くもり"],
         "カビやクモリが少なくありません": ["カビ", "クモリ"],
         "カビ・クモリなく、撮影に問題ありません": [],
@@ -154,6 +158,16 @@ class Description(unittest.TestCase):
         import robots
         for u, _ in urls:
             self.assertFalse(robots.removed_params(u), u)
+
+    def test_meter_sales_csv(self):
+        """露出計の不良と書いて売れた記録だけを数える（作り物の値）."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "chatwork_sales.csv"
+            p.write_text("title,sold_price_usd,source,memo\nカメラA ボディ,100,Chatwork,露出計不動\nカメラB ボディ,200,Chatwork,完動\n", encoding="utf-8")
+            rows = list(csv.reader(ba.meter_sales_csv([p]).splitlines()))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[1][2:4], ["カメラA ボディ", "100"])
+        self.assertEqual(rows[2][:2], ["確かめた行数", "2"])
 
     def test_meter_ok_js_same(self):
         if not shutil.which("node"):

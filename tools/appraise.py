@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import csv
 import html
+import io
 import json
 import math
 import re
@@ -1315,6 +1316,43 @@ def meter_ok(text: str) -> bool:
     return bool(METER_OK_RE.search(str(text or "")))
 
 
+METER_SALES_SHEET = "Mac_露出計実績"   # 露出計の不良と書いて売れた記録（狙い目の裏づけ。クラウドのサトシが読む）
+
+
+def meter_sales_csv(paths: list[Path] | None = None) -> str:
+    """販売の記録（自分・Chatwork・頒布会）のうち、露出計の不良が書いてある行の CSV. 1行目は見出し、最後に確かめた件数."""
+    paths = paths or [DATA / n for n in ("reference_prices.csv", "chatwork_sales.csv", "ledger.csv")]
+    out, total = [["元のファイル", "根拠", "商品名", "売値USD", "書いてあった所"]], 0
+    for p in paths:
+        if not p.exists():
+            continue
+        for r in csv.DictReader(p.read_text(encoding="utf-8-sig").splitlines()):
+            total += 1
+            text = " ".join(str(v) for v in r.values() if v)
+            m = METER_OK_RE.search(text)
+            if m:
+                out.append([p.name, r.get("source", ""), r.get("title", "") or r.get("商品名", ""),
+                            r.get("sold_price_usd", "") or r.get("販売価格", ""), text[max(0, m.start() - 10):m.end() + 10]])
+    out.append(["確かめた行数", str(total), datetime.now().strftime("%Y-%m-%d %H:%M"), "", ""])
+    buf = io.StringIO()
+    csv.writer(buf).writerows(out)
+    return buf.getvalue()
+
+
+def report_meter_sales(post=None) -> int:
+    """露出計の不良で売れた記録を数え、古物台帳「Mac_露出計実績」に送る. 戻り値は件数."""
+    body = meter_sales_csv()
+    n = max(0, len(body.strip().splitlines()) - 2)
+    print(f"  露出計の不良と書いて売れた記録: {n}件")
+    try:
+        import ledger_sync
+        if ledger_sync.post_sheet(METER_SALES_SHEET, body, post=post):
+            print(f"  → 古物台帳「{METER_SALES_SHEET}」に送りました")
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠ 台帳に送れませんでした（{e}）")
+    return n
+
+
 def meter_search_urls() -> list[tuple[str, str]]:
     """露出計の不良を名指しで探す検索URL（カメラのカテゴリ。robots.txt の Allow の形）."""
     out = []
@@ -1942,7 +1980,7 @@ def merge_memo(new: dict, dest: Path | None = None, how: str = "拡張機能で�
 # ---- 説明文チェック（extension_template.js の descHits と同じ規則）
 # 動作の不良（回りません・ピントが合いません・不安定・ヒビ など）も拾い、要確認にする（2026-11-23 オーナー決定。× にはしない。ジャンク表記だけでは拾わない）
 # 動作の不良の語と、同じ文にあれば決まり文句（「動作しない場合は返品可」）とみなす語
-MECH_PAT = (r"(?<!途)(?:回|動き|動か|切れ|降り|下り|作動し|動作し|通電し|戻|開き|開か|閉じ|閉ま)(?:りません|ません|らない|ない|らず|ず)|開きっぱなし|(?:電源|スイッチ)(?:が|は)?入(?:りません|らない|らず)|巻き?上げ(?:が|は)?(?:でき|出来)(?:ません|ない)|動作確認(?:が|は)?(?:でき|出来)て(?:いません|いない|おりません)|ピント(?:が|は|も)?(?:完全に)?(?:合いません|合わない|合わず|甘い)|合わない(?:時|とき)|不安定|(?:ヒビ|ひび)(?:割れ)?|クラック|割れ(?!物)|カタカタ|異音|(?:シャッター|巻き?上げ|絞り|ミラー|AF|ＡＦ)(?:[、・とや]*(?:露出計|メーター))?(?:が|は|も|の)?(?:動作)?不良|(?:リング|ヘリコイド)(?:が|は|も)?(?:かなり|やや|少し|とても|非常に)?(?:固い|硬い|固く|硬く|重い|重く)")
+MECH_PAT = (r"(?<!途)(?:回|動き|動か|切れ|降り|下り|作動し|動作し|通電し|戻|開き|開か|閉じ|閉ま)(?:りません|ません|らない|ない|らず|ず)|開きっぱなし|(?:電源|スイッチ)(?:が|は)?入(?:りません|らない|らず)|巻き?上げ(?:が|は)?(?:でき|出来)(?:ません|ない)|動作確認(?:が|は)?(?:でき|出来)て(?:いません|いない|おりません)|ピント(?:が|は|も)?(?:完全に)?(?:合いません|合わない|合わず|甘い)|合わない(?:時|とき)|不安定|(?:ヒビ|ひび)(?:割れ)?|クラック|割れ(?!物)|カタカタ|異音|(?:シャッター|巻き?上げ|絞り|ミラー|AF|ＡＦ)(?:[、・とや]*(?:露出計|メーター))?(?:共に|ともに|とも)?(?:が|は|も|の)?(?:動作)?不良|(?:露出計|メーター)[、・とや]+(?:シャッター|巻き?上げ|絞り|ミラー|AF|ＡＦ)(?:共に|ともに|とも)?(?:が|は|も|の)?(?:動作)?不良|(?:リング|ヘリコイド)(?:が|は|も)?(?:かなり|やや|少し|とても|非常に)?(?:固い|硬い|固く|硬く|重い|重く)")
 MECH_RE = re.compile(MECH_PAT)
 METER_RE = re.compile(r"(?:露出計|メーター|測光)(?!以外|の他|のほか|を除)[^、。\n]{0,10}$")
 MECH_COND_RE = re.compile(r"^(?:こと|事)?(?:が|は)?(?:場合(?![がも](?:あり|ござい))|際(?:は|に)|(?:とき|時)(?:は|には)|(?:など|等)[^。\n]{0,10}(?:初期不良|返品|保証))")  # 語のすぐ後ろに続くときだけ（文のどこかの 場合・返品 では外さない）
