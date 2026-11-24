@@ -57,6 +57,19 @@ class RecKey(unittest.TestCase):
             self.assertEqual(bs.rec_key(t)[0], label, t)
         self.assertIsNone(bs.rec_key("CONTAX ALL WORKS 35mm film camera"))   # 機種が書いていない物は出さない
 
+    def test_not_model_numbers_and_editions(self):
+        """状態・通し番号は型番にしない（オーキドの見回り）。記念モデルは元の機種と別の行（2026-11-24 オーナー「aria と aria 70 years は別」）."""
+        self.assertEqual(bs.rec_key("[Exc+5] Canon New F-1 AE Finder")[0], "Canon New F-1")
+        self.assertEqual(bs.rec_key("Count 001 Sony α7 III Body")[0], "Sony α7 III")
+        self.assertEqual(bs.rec_key("Nikon New FM2 silver")[0], "Nikon FM2")
+        self.assertEqual(bs.rec_key("Nikon F3 HP Body")[0], "Nikon F3 HP")
+        self.assertEqual(bs.rec_key("Olympus OM-4 Ti Black")[0], "Olympus OM-4 Ti")
+        aria = bs.rec_key("Contax Aria Body")[1]
+        for t in ("CONTAX Aria 70 Years Silver", "Contax Aria 70th Anniversary", "CONTAX Aria 70周年 記念モデル"):
+            k = bs.rec_key(t)
+            self.assertEqual(k[0], "Contax Aria 70 Years", t)
+            self.assertNotEqual(k[1], aria, t)
+
     def test_body_with_lens_keeps_body_name(self):
         """ボディ＋レンズは「Contax 50mm F1.4」のようなレンズの数字だけの名前にしない。ボディの型番の数字（F2・67）はレンズの数字と取り違えない."""
         self.assertEqual(bs.rec_key("Contax Aria Body + Planar 50mm F1.4")[0], "Contax Aria 50mm F1.4")

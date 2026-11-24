@@ -260,12 +260,13 @@ def _lens_spec(tokens: list[str]) -> set[str]:
     return out
 
 
+EDITION_RE = re.compile(r"\b(\d{2,3})\s*(?:th\s*)?(?:years?|yrs|anniversary|anniv|周年)", re.I)
 RANK_TOKEN_RE = re.compile(r"(?:exc|ex|mint|n\.?mint|nmint|near|top|ab|bc)[+\d]*", re.I)
 
 
 def _not_model(tokens: list[str]) -> set[str]:
     """数字があっても型番ではない語（2026-11-24 オーキドの見回り）: 状態のランク（Exc+5・MINT+++）、通し番号（Count 001）、
-    記念モデルの年数（Aria 70 Years・70th Anniversary の 70）."""
+    記念モデルの年数（Aria 70 Years・70th Anniversary の 70。年数は rec_key が「70 Years」として最後に足す）."""
     out = set()
     for i, t in enumerate(tokens):
         l, nxt = t.lower(), (tokens[i + 1].lower() if i + 1 < len(tokens) else "")
@@ -300,6 +301,9 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         return bool((re.search(r"\d", t) and t != "35mm") or t in CAMERA_LINE_WORDS)
 
     skip = _not_model(rest)
+    m_ed = EDITION_RE.search(title)
+    if m_ed:
+        skip |= {t for t in rest if t == m_ed.group(1)}   # 「70周年」の 70（周年は商品名の語の切り出しで落ちる）
     # 「New」は Canon New F-1 だけ型の語（New FM2・NEW X-700 は同じ機種の呼び方なので、別の行に分けない）
     skip |= {t for i, t in enumerate(rest) if t.lower() == "new" and not (i + 1 < len(rest) and re.match(r"f-?1\b", rest[i + 1].lower()))}
     keep, shown = [], []
@@ -342,6 +346,10 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         shown = [t for t in rest if t.lower() in series or t in shown or FIXED_BODY_RE.fullmatch(t)]   # SQ-A・CLE・Df も名前に残す
         seen = set()
         shown = [t for t in shown if not (t.lower() in seen or seen.add(t.lower()))]
+    # 記念モデル（Contax Aria 70 Years）は、元の機種と値段が違うので別の行にする（2026-11-24 オーナー「aria と aria 70 years は別」）
+    if m_ed and kind == "camera":
+        ed = f"{int(m_ed.group(1))} Years"
+        shown, keep = shown + [ed], keep + [ed.lower()]
     label = " ".join([brand] + shown)
     return label, " ".join([brand.lower()] + keep), kind
 
