@@ -174,6 +174,7 @@ class RecMakerModel(unittest.TestCase):
                  "OM System Zuiko 50mm F1.8": ("Olympus Zuiko 50mm F1.8", "Olympus", "mf"),   # 昔の OM レンズの銘板
                  "M.Zuiko 12-40mm F2.8 PRO": ("Olympus M.Zuiko 12-40mm F2.8", "Olympus", "af"),
                  "OM SYSTEM M.Zuiko 12-40mm F2.8 PRO II": ("OM SYSTEM M.Zuiko 12-40mm F2.8", "Olympus", "af"),
+                 "Olympus Zuiko Digital 14-54mm F2.8-3.5": ("Olympus Zuiko Digital 14-54mm F2.8-3.5", "Olympus", "af"),
                  "Konica Big Mini F": ("Konica Big Mini F", "Konica", "film")}
         for t, (label, brand, cat) in cases.items():
             k = bs.rec_key(t)

@@ -502,6 +502,9 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         line = "M.Zuiko" if re.search(r"M\.\s?Zuiko", title, re.I) else "Zuiko Digital" if re.search(r"Zuiko\s+Digital", title, re.I) else ""
         if line:
             shown = [line] + shown
+    elif kind == "lens" and brand in ("Olympus", "OM SYSTEM") and re.search(r"Zuiko\s+Digital", title, re.I) and "digital" not in keep:
+        i = next(i for i, t in enumerate(shown) if t.lower() == "zuiko")   # フォーサーズの Zuiko Digital はフィルム用の Zuiko と別の行
+        shown, keep = shown[:i + 1] + ["Digital"] + shown[i + 1:], keep + ["digital"]
     shown = [re.sub(r"^(\d{3,4})(XL)", r"\1 \2", t) for t in shown]
     if brand == "Rollei":
         shown = [re.sub(r"^35-(?=[A-Za-z])", "35 ", t) for t in shown]
