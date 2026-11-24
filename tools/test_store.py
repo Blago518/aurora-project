@@ -72,17 +72,154 @@ class RecKey(unittest.TestCase):
 
     def test_body_with_lens_keeps_body_name(self):
         """ボディ＋レンズは「Contax 50mm F1.4」のようなレンズの数字だけの名前にしない。ボディの型番の数字（F2・67）はレンズの数字と取り違えない."""
-        self.assertEqual(bs.rec_key("Contax Aria Body + Planar 50mm F1.4")[0], "Contax Aria 50mm F1.4")
-        self.assertEqual(bs.rec_key("Kowa Six + 85mm 2.8 Silver")[0], "Kowa Six 85mm 2.8")
-        self.assertEqual(bs.rec_key("Nikon FA + Ai 50mm 1.8")[0], "Nikon FA 50mm 1.8")
-        self.assertEqual(bs.rec_key("Nikon F2 Ai 50mm F1.4")[0], "Nikon F2 50mm F1.4")
+        self.assertEqual(bs.rec_key("Contax Aria Body + Planar 50mm F1.4")[0], "Contax Aria + 50mm F1.4")
+        self.assertEqual(bs.rec_key("Kowa Six + 85mm 2.8 Silver")[0], "Kowa Six + 85mm F2.8")
+        self.assertEqual(bs.rec_key("Nikon FA + Ai 50mm 1.8")[0], "Nikon FA + 50mm F1.8")
+        self.assertEqual(bs.rec_key("Nikon F2 Ai 50mm F1.4")[0], "Nikon F2 + 50mm F1.4")
         self.assertEqual(bs.rec_key("Pentax 67 Body")[0], "Pentax 67")
         # レンズの商品名は今までどおり（状態の語やフードを名前にしない）
-        self.assertEqual(bs.rec_key("[Top MINT w/Hood] NIKON AF-S NIKKOR 200-500mm f/5.6E ED VR F mount JAPAN 3148637")[0], "Nikon 200-500mm F5.6E")
+        self.assertEqual(bs.rec_key("[Top MINT w/Hood] NIKON AF-S NIKKOR 200-500mm f/5.6E ED VR F mount JAPAN 3148637")[0], "Nikon AF-S 200-500mm F5.6E")
         self.assertEqual(bs.rec_key("Minolta M Rokkor 40mm f/2 CLE")[0], "Minolta 40mm F2 CLE")
 
     def test_unknown_brand(self):
         self.assertIsNone(bs.rec_key("Some Camera"))
+
+
+class RecMakerModel(unittest.TestCase):
+    """おすすめのメーカーと型番（2026-11-24 オーナー「om はオリンパスですよね？メーカーも型番もよく調べて精査して」）.
+    「Mac_おすすめ」の実際の商品名 559件を全部読み直して見つけた誤り。直したら、その商品名をここに足す."""
+
+    def test_om_is_olympus(self):
+        """OM SYSTEM（2021年にオリンパスのカメラ事業を引き継いだ）は Olympus の枠。フィルムの OM-1 とは別の行."""
+        for t in ("OM SYSTEM OM-1", "OM SYSTEM OM-5 ボディ", "OMデジタル OM-5", "OM SYSTEM M.Zuiko 12-40mm F2.8 PRO II"):
+            label = bs.rec_key(t)[0]
+            self.assertEqual(bs.rec_brand(label), "Olympus", (t, label))
+        self.assertEqual(bs.rec_key("OM SYSTEM OM-1")[0], "OM SYSTEM OM-1")
+        self.assertNotEqual(bs.rec_key("OM SYSTEM OM-1")[1], bs.rec_key("Olympus OM-1 Body")[1])
+        self.assertEqual(bs.rec_key("OM Zuiko 50mm F1.8")[0].split()[0], "Olympus")   # フィルムの OM マウントのレンズ
+        self.assertEqual(bs.rec_key("OM-D E-M5 Mark II")[0], "Olympus OM-D E-M5 Mark II")
+        self.assertEqual(bs.rec_cat("camera", ["OM SYSTEM OM-1"]), "digital")
+
+    def test_condition_tags_are_not_model(self):
+        """[Exc+5]・[MINT w/Caps]・w/Box はレンズの名前・種類を変えない（AF のレンズが Film に出ていた）."""
+        for t, label, cat in [("[Exc+5] Canon EF 135mm f/2.8 Soft focus Lens Canon EF Mount From JAPAN", "Canon EF 135mm F2.8", "af"),
+                              ("[MINT w/Caps] Canon EF 400mm F/5.6 L USM Telephoto Prime AF Lens From JAPAN", "Canon EF 400mm F5.6 L AF", "af"),
+                              ("Canon EF 135mm f/2 L USM w/box", "Canon EF 135mm F2 L", "af"),
+                              ("[MINT+++] Nikon NIKKOR 135mm f/3.5 Ai from FA,FE2,FM2,FM3A,F4,F5,F6 From JAPAN", "Nikon 135mm F3.5 Ai", "mf"),
+                              ("[Top MINT w/Box] Nikon AF-S NIKKOR 80-400mm f/4.5-5.6G ED VR Lens From JAPAN", "Nikon AF-S 80-400mm F4.5-5.6", "af")]:
+            k = bs.rec_key(t)
+            self.assertEqual((k[0], bs.rec_cat(k[2], [t])), (label, cat), t)
+
+    def test_f_number_without_f(self):
+        """「100mm 2.8」の 2.8 は F値。表示に F を付け、f/2.8 と書いた同じレンズと同じ行にする."""
+        self.assertEqual(bs.rec_key("Canon EF 100mm 2.8 USM")[0], "Canon EF 100mm F2.8")
+        self.assertEqual(bs.rec_key("Canon EF 100mm 2.8 USM")[1], bs.rec_key("Canon EF 100mm f/2.8 USM")[1])
+        self.assertEqual(bs.rec_key("Nikon Z 24-120mm 4")[0], "Nikon Z 24-120mm F4")
+        self.assertEqual(bs.rec_key("Canon 35mm 2.8 L39 + Finder")[0], "Canon 35mm F2.8 L39")
+        k = bs.rec_key("Canon 35mm 2.8 L39 + Finder")
+        self.assertEqual(bs.rec_cat(k[2], ["Canon 35mm 2.8 L39 + Finder"]), "mf")
+
+    def test_kit_label(self):
+        """ボディ＋レンズは「+」でつなぐ。レンズ固定のカメラ・8mm には付けない."""
+        cases = {"Fujifilm X-T2 + 18-55mm 2.8-4": "Fujifilm X-T2 + 18-55mm F2.8-4",
+                 "Canon EOS 90D + EF-S 18-135 IS USM 箱付": "Canon EOS 90D + 18-135mm",
+                 "Fujifilm X-A5 XC Body + XC15-45mm f/3.5-5.6 OIS PZ 箱付": "Fujifilm X-A5 + 15-45mm F3.5-5.6",
+                 "Canon 7 Black + 35mm 2 L39": "Canon 7 + 35mm F2 L39",
+                 "Nikon Nikonos V Orange + 35mm 2.5": "Nikon Nikonos V + 35mm F2.5",
+                 "leica IIIF Red Dial Self Timer + Summicron 50mm 2 L39": "Leica IIIF Red + 50mm F2",
+                 "Mamiya RB67 SD + Sekor C 90mm 3.8": "Mamiya RB67 Pro SD + 90mm F3.8",
+                 "Olympus mju Zoom 35-70mm": "Olympus mju Zoom 35-70mm",
+                 "Canon 514 XL Super8 Movie Camera 9-45mm f/1.4": "Canon 514 XL Super 8 9-45mm F1.4",
+                 "[Top MINT w/Box ] Canon 1014 XL-S Super 8 8mm Film Movie Camera From JAPAN": "Canon 1014 XL-S Super 8"}
+        for t, label in cases.items():
+            self.assertEqual(bs.rec_key(t)[0], label, t)
+
+    def test_model_names(self):
+        cases = {"Minolta a7 Dynax 7 Maxxum 7 Body w/Box": ("Minolta α-7", "film"),
+                 "Minolta a-7 Digital Camera": ("Minolta α-7 Digital", "digital"),
+                 "Ricoh GR Digital IV": ("Ricoh GR Digital IV", "digital"),
+                 "Yashica Matt 124G": ("Yashica Mat-124G", "film"),
+                 "Yashica Mat-124 G 革ケース付": ("Yashica Mat-124G", "film"),
+                 "Hasselblad 500C/M + A12 II Filmback": ("Hasselblad 500CM", "film"),
+                 "Nikon F3 P HP + MD-4": ("Nikon F3P HP", "film"),
+                 "ZEISS Contax IIIa Type Color Dial + Sonnar 50mm 2": ("Contax IIIa Color + 50mm F2", "film"),
+                 "Olympus Six F.C. 7.5cm F3.5": ("Olympus Six F.C. 7.5cm F3.5", "film"),
+                 "Rollei Rolleicode III TLR Xener 75mm": ("Rollei Rolleicord III 75mm", "film"),
+                 "[Near MINT] Fujifilm TIARA Zoom 28-56mm Point & Shoot Film Camera from JAPAN": ("Fujifilm TIARA Zoom 28-56mm", "film"),
+                 "Leica Summaron 35mm 3.5cm F3.5 Lens L39 LTM Mount": ("Leica 35mm F3.5 L39", "mf"),
+                 "Nikon NIKKOR-P 10.5cm 2.5 S Mount": ("Nikon 10.5cm F2.5", "mf"),
+                 "Sony Alpha SAL85F28 85mm f/2.8 SAM": ("Sony 85mm F2.8", "af"),
+                 "TAMRON SP 70-300 4-5.6 A005 for Canon": ("Tamron 70-300mm F4-5.6", "af"),
+                 "Nikon 135 3.5 for Bronica S": ("Nikon 135mm F3.5", "mf"),
+                 "Nikon AF-S 24-70mm f/2.8 E ED VR + FTZ": ("Nikon AF-S 24-70mm F2.8", "af"),
+                 "Nikon S3 Rangefinder": ("Nikon S3", "film"),
+                 "[Exc+5] Olympus XA Rangefinder Film Camera From JAPAN": ("Olympus XA", "film"),
+                 "[Top MINT] Olympus μ mju ZOOM WIDE 80 Point&Shoot 35mm Film Camera From JAPAN": ("Olympus mju Zoom Wide 80", "film")}
+        for t, (label, cat) in cases.items():
+            k = bs.rec_key(t)
+            self.assertEqual((k[0], bs.rec_cat(k[2], [t])), (label, cat), t)
+
+    def test_maker_order(self):
+        """メーカー名の並び・メーカー名なし（2026-11-24 オーキドが PR 212 に42本の名前を通して見つけた）."""
+        cases = {"Kyocera Contax T2": ("Contax T2", "Contax", "film"),
+                 "Kyocera Contax Aria": ("Contax Aria", "Contax", "film"),
+                 "Konica Minolta α-7 Digital": ("Minolta α-7 Digital", "Minolta", "digital"),
+                 "Konica Minolta Dimage A2": ("Minolta Dimage A2", "Minolta", "digital"),
+                 "OM-1 35mm SLR Film Camera Black Body": ("Olympus OM-1", "Olympus", "film"),
+                 "OM-10 Body": ("Olympus OM-10", "Olympus", "film"),
+                 "OM-1 Mark II": ("OM SYSTEM OM-1 Mark II", "Olympus", "digital"),
+                 "Rollei 35 S": ("Rollei 35 S", "Rollei", "film"),
+                 "Rollei 35 SE": ("Rollei 35 SE", "Rollei", "film"),
+                 "PEN-F Olympus half frame": ("Olympus PEN-F", "Olympus", "film"),
+                 "OM System Zuiko 50mm F1.8": ("Olympus Zuiko 50mm F1.8", "Olympus", "mf"),   # 昔の OM レンズの銘板
+                 "M.Zuiko 12-40mm F2.8 PRO": ("Olympus M.Zuiko 12-40mm F2.8", "Olympus", "af"),
+                 "OM SYSTEM M.Zuiko 12-40mm F2.8 PRO II": ("OM SYSTEM M.Zuiko 12-40mm F2.8", "Olympus", "af"),
+                 "Olympus Zuiko Digital 14-54mm F2.8-3.5": ("Olympus Zuiko Digital 14-54mm F2.8-3.5", "Olympus", "af"),
+                 "Konica Big Mini F": ("Konica Big Mini F", "Konica", "film")}
+        for t, (label, brand, cat) in cases.items():
+            k = bs.rec_key(t)
+            self.assertEqual((k[0], bs.rec_brand(k[0]), bs.rec_cat(k[2], [t])), (label, brand, cat), t)
+        self.assertNotEqual(bs.rec_key("Rollei 35 S")[1], bs.rec_key("Rollei 35")[1])
+        self.assertNotEqual(bs.rec_key("Minolta α-7 Digital")[1], bs.rec_key("Minolta α-7")[1])
+
+    def test_digital_not_film(self):
+        for t in ("Canon SX 710 HS", "Canon A2600 Pink", "Canon Power Shot S95 Black", "Fujifilm X-100F Black", "Nikon S570 Pink",
+                  "Pentax Q10 + 02 Lens", "RICOH WG-50 Black", "Sony W610 Blue"):
+            k = bs.rec_key(t)
+            self.assertEqual(bs.rec_cat(k[2], [t]), "digital", (t, k))
+        for t in ("Olympus XA2", "Nikon S3 Rangefinder", "Nikon S2"):
+            self.assertEqual(bs.rec_cat("camera", [t]), "film", t)
+
+    def test_af_mf(self):
+        cases = {"Olympus 12-40mm 2.8": "af", "Olympus 100-400mm 5.6-6.3": "af", "olympus 8mm 3.5 ed": "af", "LUMIX 20-60mm 3.5-5.6": "af",
+                 "Canon RF-S 55-210mm 5-7.1": "af", "Fujifilm 18-120mm 4 LM PZ WR": "af", "SIGMA 17-50mm 2.8 for Pentax": "af",
+                 "SIGMA 20mm 1.8 for Canon EF": "af", "Pentax SMC DA Fisheye 10-17mm f/3.5-4.5 ED IF": "af",
+                 "Hasselblad FE 250mm f/4": "mf", "Olympus G.Zuiko 28mm f/3.5": "mf", "Olympus Zuiko Auto 35-70mm f/3.6": "mf",
+                 "Olympus 21mm f/3.5": "mf", "Olympus OM Zuiko 8mm F2.8 Fisheye": "mf"}
+        for t, cat in cases.items():
+            k = bs.rec_key(t)
+            self.assertEqual(bs.rec_cat(k[2], [t]), cat, (t, k))
+
+    def test_accessories_not_recommended(self):
+        """カメラでもレンズでもない物（ファインダー・フィルムバック・フラッシュ・双眼鏡・フィルター・モーター・アダプター）は出さない."""
+        skip = ["Bronica Filmback SQ 135N", "Mamiya 645 120 Filmback for RB67", "Mamiya Cds Finder", "Rollei Prism Finder for Rolleiflex",
+                "Nikon Action Finder DA-1", "Nikon Eye Level DE-2", "Nikon DP-1 Finder", "Nikon DR-3", "Nikon High Magnification Viewfinder DW-21",
+                "Hasselblad PME", "Hasselblad Diopter 0", "Hasselblad Quick Focusing Handle", "Horseman Universal Zoom Finder",
+                "Tested [Almost MINT] Contax TLA140 Shoe Mount Flash w/ Case For G1 G2 From JAPAN", "konica flash for Hexar",
+                "Kowa Genesis 44 Prominar 8.5x44 Field 7.0° Binoculars", "Nikon 7x35 A 7.3", "Pentax Papilio II 6.5x21 元箱付",
+                "Kowa TSN-884 PROMINAR + TE-11WZ 25-60x", "Leica SERIE 7 UVa 13009", "Leica 12504 Hood + Filter 13009",
+                "Pentax Bayonet Polarizing Lens Filter 67mm for 6x7 67", "Mamiya Hood 48mm for C330", "Pentax Hood for 6x7 Takumar 75mm 4.5",
+                "Fujifilm Film Cassette iii x8個", "Intenscreen for Nikon FE, FA, FM2, FE2", "Nikon FTZ II", "Nikon MD-4", "Nikon MD-4 for F3",
+                "Nikon MF-6B", "Nikon PB-６", "Nikon TC-20EIII", "Canon Macro Ring LITE MR-14EX", "Minolta Autometer III", "Pentax Spot Meter V",
+                "Pentax Dial Data LX", "Voigtlander Trigger Winder For Besser T ・ R2", "Linhof Cam 150mm", "Horseman P T 18cm Cam",
+                "Nippon Kogaku Nikkorex 8 Tele 2x", "Nikon Digital SLR Camera Attachment FSA-L1"]
+        for t in skip:
+            self.assertTrue(bs.rec_skip(t), t)
+        keep = ["Nikon S3 Rangefinder", "Topcon 35-S 35mm Rangefinder Film Camera Topcor 44mm f/2", "Hasselblad 500C/M + A12 II Filmback",
+                "Nikon F3 P HP + MD-4", "Canon Serenar 85mm f/2 + 85mm Finder", "Leica Elma-R 180mm f/4 3-Cam", "Nikon F2 Photomic A Silver",
+                "Nikon F Eye Level silver", "Pentax 6x7 Eye Level Body", "Olympus OM-1 Body", "Mamiya RZ67 + 110mm 2.8 W + 120 Filmback"]
+        for t in keep:
+            self.assertFalse(bs.rec_skip(t), t)
 
 
 class Recommendations(unittest.TestCase):
