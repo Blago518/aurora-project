@@ -70,7 +70,7 @@ KNOWLEDGE_SHEET = "共有_ナレッジ"  # 講座資料などの要点（Claude 
 UNPRICED_SHEET = "Mac_未登録機種"
 MESSAGES_SHEET = "Mac_メッセージ"  # eBay の受信メッセージの見出しと返信済みか（ebay_api.py messages --upload。毎時）  # 毎朝の入札リストで相場が無かった機種（夜にクラウドが下調べする）
 BID_COLUMNS = ["auction_id", "title", "max_bid", "final_price", "result", "end", "usd", "profit_at_max", "profit_final",
-               "trusted", "tentative", "store_tax", "ship", "bid_at"]
+               "trusted", "tentative", "store_tax", "ship", "bid_at", "my_bid", "bid_fail"]
 SERVICE = "aurora-ledger"
 SHEET = "古物台帳"
 
@@ -830,7 +830,7 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
     w.writeheader()
     w.writerows(rows)
     if dry_run:
-        print(f"入札結果: {len(rows)}行を送る予定 → Claude更新版「{BID_SHEET}」", file=sys.stderr)
+        print(f"入札結果: {len(rows)}行を送る予定 → 古物台帳「{BID_SHEET}」", file=sys.stderr)
         return len(rows)
     try:
         if post:
@@ -849,7 +849,7 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
         print("入札結果: 送れませんでした。スプレッドシートの Apps Script が古いためです"
               "（python3 tools/ledger_sync.py script で貼り替え）", file=sys.stderr)
         return None
-    print(f"入札結果: {len(rows)}行 → Claude更新版「{BID_SHEET}」", file=sys.stderr)
+    print(f"入札結果: {len(rows)}行 → 古物台帳「{BID_SHEET}」", file=sys.stderr)
     return len(rows)
 
 

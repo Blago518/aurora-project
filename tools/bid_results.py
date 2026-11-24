@@ -31,7 +31,8 @@ LOG = DATA / "bid_log.csv"
 HISTORY = DATA / "bid_history.csv"  # 以前の入札分析シートの入札履歴（ledger_sync.py が古物台帳「共有_過去の入札」から作る）
 REPORT = ROOT / "reports" / "bid_results.md"
 FIELDS = ["auction_id", "title", "max_bid", "pay_max", "usd", "profit_at_max", "end", "trusted", "tentative", "store_tax",
-          "ship", "bid_at", "result", "final_price", "profit_final", "checked_at", "via"]
+          "ship", "bid_at", "result", "final_price", "profit_final", "checked_at", "via", "my_bid", "bid_fail"]
+# my_bid: オークファンで実際に入れた額（max_bid は拡張機能が出した上限額＝提示額）。bid_fail: オークファンの失敗コード（入札が入らなかった）
 PHONE = DATA / "phone_bids.csv"  # スマホの［予約］の記録（ledger_sync.py が古物台帳「共有_店舗」の「入札予約」の行から作る。2026-11-21）
 
 sys.path.insert(0, str(HERE))
@@ -118,8 +119,38 @@ def import_aucfan_snipes(downloads: Path | None = None, dest: Path | None = None
             added += 1
         elif not rows[aid].get("result") and s.get("max_bid"):
             rows[aid]["max_bid"] = s["max_bid"]  # オークファンで入札設定を変えたら合わせる
+    added += _merge_closed_snipes(rows, downloads)
     _write(list(rows.values()), dest)
     return added
+
+
+def _merge_closed_snipes(rows: dict, downloads: Path) -> int:
+    """オークファンの「入札完了」の一覧（aurora_snipes_closed.csv）: 実際に入れた額と失敗コードを入札の記録に足す. 新しく足した件数.
+
+    失敗コードが付いた入札は入っていないので、結果を「入札失敗」にする（落札率・負けの倍率に数えない。落札と分かった物は変えない）."""
+    files = sorted(downloads.glob("aurora_snipes_closed*.csv"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        return 0
+    added = 0
+    for s in _read(files[-1]):
+        aid = (s.get("auction_id") or "").strip()
+        if not aid:
+            continue
+        r = rows.get(aid)
+        if r is None:
+            r = rows[aid] = {"auction_id": aid, "title": s.get("title", ""), "max_bid": s.get("my_bid", ""),
+                             "pay_max": s.get("my_bid", ""), "bid_at": s.get("seen_at", ""), "tentative": "0", "via": "aucfan"}
+            added += 1
+        if s.get("my_bid"):
+            r["my_bid"] = s["my_bid"]
+        if s.get("fail_code"):
+            r["bid_fail"] = s["fail_code"]
+            if r.get("result") in ("負け", "確認待ち", "落札(見込み)"):
+                r["result"] = FAILED
+    return added
+
+
+FAILED = "入札失敗"
 
 
 def _num(v) -> float | None:
@@ -206,6 +237,8 @@ def judge_result(row: dict, state: dict, cfg: dict, fx: float, won_ids: set[str]
         result = "落札"
     else:
         result = "確認待ち" if days is None or days < wait_days(cfg) else "負け"
+    if row.get("bid_fail") and result != "落札":
+        result = FAILED  # オークファンの失敗コード: 入札が入っていない（負けではない）
     out = {"result": result, "final_price": int(final)}
     usd = _num(row.get("usd"))
     if usd is not None:
@@ -290,7 +323,7 @@ def summarize(rows: list[dict], days: int | None = 30) -> dict:
             return True
     rs = [r for r in rows if recent(r)]
     # 確認待ち（台帳に載るのを待っている）は結果待ちに、流れた（入札0件で終了）は落札率に数えない
-    done = [r for r in rs if r.get("result") and r["result"] not in ("確認待ち", "流れた")]
+    done = [r for r in rs if r.get("result") and r["result"] not in ("確認待ち", "流れた", FAILED)]
     unsold = [r for r in rs if r.get("result") == "流れた"]
     won = [r for r in done if r["result"].startswith("落札")]
     lost = [r for r in done if r["result"] == "負け"]
@@ -299,8 +332,8 @@ def summarize(rows: list[dict], days: int | None = 30) -> dict:
               if _num(r.get("max_bid")) and _num(r.get("final_price")) is not None]
     near = [x for x in ratios if x <= 1.1]
     return {
-        "bids": len(rs), "pending": len(rs) - len(done) - len(unsold), "done": len(done), "won": len(won), "lost": len(lost),
-        "unsold": len(unsold),
+        "bids": len(rs), "pending": len(rs) - len(done) - len(unsold) - sum(1 for r in rs if r.get("result") == FAILED), "done": len(done), "won": len(won), "lost": len(lost),
+        "unsold": len(unsold), "failed": sum(1 for r in rs if r.get("result") == FAILED),
         "win_rate": round(len(won) / len(done) * 100) if done else None,
         "profit_won": len(profit_won),
         "profit_sum": int(sum(_num(r.get("profit_final")) or 0 for r in won)),
