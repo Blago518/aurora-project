@@ -67,6 +67,9 @@ class InstantLaneJunk(unittest.TestCase):
         "写真工業臨時増刊 No.48 世界のカメラ",
         "OLYMPUS E-M5 MarkII用 グリップ HLD-8G",
         "Contax T2 TVS ロングストラップ",
+        # 2026-11-24 予約リストに ◎ で出ていた（「元箱付き」で付属品の印が外れていた・英語のスクリーン）
+        "CONTAX コンタックス TVS用 データバック 元箱付き 中古 #160",
+        "PENTAX 645 FOCUSING SCREEN AG80 #A00146",
     ]
     BODY = [  # 付属品が「付き」の本体は付属品扱いしない
         "Nikon F3 HP フォーカシングスクリーン付",

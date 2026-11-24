@@ -184,6 +184,22 @@ def run(script: str, *args: str) -> bool:
     return ok
 
 
+def wait_online(host: str = "github.com", seconds: int = 120, step: int = 5, sleep=time.sleep) -> bool:
+    """ネットにつながるまで待つ（最大 seconds 秒）. つながれば True.
+    2026-11-24: Mac が起きた直後に更新が始まり、名前が引けず（Could not resolve host）、プログラムの取り込みと古物台帳の読み込みが両方とも失敗した."""
+    import socket
+    waited = 0
+    while True:
+        try:
+            socket.create_connection((host, 443), timeout=5).close()
+            return True
+        except OSError:
+            if waited >= seconds:
+                return False
+            sleep(step)
+            waited += step
+
+
 def self_update(root: Path | None = None, run_git=None) -> tuple[bool, str]:
     """マージ済みの変更を Mac に取り込む（git pull --ff-only）. 戻り値: (新しくなったか, 更新ログに残す1行).
     2026-11-23: 毎朝の更新は取り込みをしていなかったので、マージのたびにオーナーがコマンドを打っていた。
@@ -194,6 +210,8 @@ def self_update(root: Path | None = None, run_git=None) -> tuple[bool, str]:
     def git(*a):
         return subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, timeout=90)
 
+    if run_git is None:
+        wait_online()  # つながらないままでも下で「取り込めませんでした」を残して続ける
     git = run_git or git
     try:
         branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
