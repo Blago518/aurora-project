@@ -25,8 +25,13 @@
       if (!bid) continue;
       const cur = t.match(/現在価格[^\d]{0,12}([\d,]+)\s*円/);
       const titleEl = [...box.querySelectorAll("a")].find((x) => (x.textContent || "").trim().length > 8 && !/Yahoo!?オークションで見る/.test(x.textContent));
+      // 「入札完了」の一覧（type=close）: 入札した時刻・終了の時刻・失敗コード（付いていれば、その入札は入っていない）
+      const at = t.match(/入札\s*(\d{1,2}月\d{1,2}日\d{1,2}時\d{1,2}分)/);
+      const end = t.match(/終了\s*(\d{1,2}月\d{1,2}日\d{1,2}時\d{1,2}分)/);
+      const fail = t.match(/失敗コード\s*[：:]\s*(\d+)\s*(.{0,120})/);
       out.set(m[1], { auction_id: m[1], max_bid: yen(bid[1]), current: cur ? yen(cur[1]) : null,
-        title: titleEl ? titleEl.textContent.trim() : "", box });
+        title: titleEl ? titleEl.textContent.trim() : "", bid_time: at ? at[1] : "", end_time: end ? end[1] : "",
+        fail_code: fail ? fail[1] : "", fail_text: fail ? fail[2].trim() : "", box });
     }
     return [...out.values()];
   }
@@ -52,6 +57,7 @@
     if (!/入札予約/.test(document.body.textContent || "")) return;
     const list = parseSnipes(document);
     if (!list.length) return;
+    if (/[?&]type=close/.test(location.search)) return scanClosed(list);
     let over = 0;
     for (const s of list) {
       if (s.current && s.max_bid && s.current > s.max_bid) {
@@ -65,6 +71,28 @@
       list.map((s) => [s.auction_id, s.title, s.max_bid, s.current ?? "", new Date().toISOString()].map(q).join(",")).join("\n");
     send({ type: "saveFile", name: "aurora_snipes.csv", csv });
     if (over) banner(`<b>Aurora</b>: 予約 ${list.length}件のうち <b>${over}件</b> は現在価格が入札設定を超えています（赤枠）。上限額を超えて入札しないなら、そのままで構いません。`, "#7a2318");
+  }
+
+  // 「入札完了」の一覧: 自分が入れた額・入札の時刻・失敗コードを ダウンロード/aurora_snipes_closed.csv に保存。
+  // 何ページもあるので、開いたページの分をブラウザにためて足していく（同じ出品は新しい方で上書き。最大 500件）。予約中の一覧（aurora_snipes.csv）は上書きしない
+  async function scanClosed(list) {
+    const now = new Date().toISOString();
+    let all = {};
+    try { all = (await chrome.storage.local.get("aucfanClosed")).aucfanClosed || {}; } catch (e) { all = {}; }
+    for (const s of list) {
+      all[s.auction_id] = { auction_id: s.auction_id, title: s.title, my_bid: s.max_bid, bid_time: s.bid_time,
+        end_time: s.end_time, fail_code: s.fail_code, fail_text: s.fail_text, seen_at: now };
+    }
+    const rows = Object.values(all).sort((x, y) => (x.seen_at < y.seen_at ? 1 : -1)).slice(0, 500);
+    try { await chrome.storage.local.set({ aucfanClosed: Object.fromEntries(rows.map((r) => [r.auction_id, r])) }); } catch (e) { /* ためられなくても、このページの分は保存する */ }
+    const cols = ["auction_id", "title", "my_bid", "bid_time", "end_time", "fail_code", "fail_text", "seen_at"];
+    const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    const r = await send({ type: "saveFile", name: "aurora_snipes_closed.csv", csv: cols.join(",") + "\n" + rows.map((x) => cols.map((c) => q(x[c])).join(",")).join("\n") });
+    const failed = list.filter((s) => s.fail_code).length;
+    banner(`<b>Aurora</b>: このページの入札 ${list.length}件を記録しました（合計 ${rows.length}件）。` +
+      (failed ? `<br><b>${failed}件に失敗コード</b>が付いています（その入札は入っていません）。` : "") +
+      (r && r.error ? `<br>保存できませんでした（${r.error}）` : "") +
+      `<br><span style="opacity:.8">ほかのページも開くと、その分も足されます。</span>`, failed ? "#7a2318" : "#0b1728");
   }
 
   // 予約の手伝い: ヤフオクのパネルの［予約］から来たとき

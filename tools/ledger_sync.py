@@ -70,7 +70,7 @@ KNOWLEDGE_SHEET = "共有_ナレッジ"  # 講座資料などの要点（Claude 
 UNPRICED_SHEET = "Mac_未登録機種"
 MESSAGES_SHEET = "Mac_メッセージ"  # eBay の受信メッセージの見出しと返信済みか（ebay_api.py messages --upload。毎時）  # 毎朝の入札リストで相場が無かった機種（夜にクラウドが下調べする）
 BID_COLUMNS = ["auction_id", "title", "max_bid", "final_price", "result", "end", "usd", "profit_at_max", "profit_final",
-               "trusted", "tentative", "store_tax", "ship", "bid_at"]
+               "trusted", "tentative", "store_tax", "ship", "bid_at", "my_bid", "bid_fail"]
 SERVICE = "aurora-ledger"
 SHEET = "古物台帳"
 

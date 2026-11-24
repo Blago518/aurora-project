@@ -102,6 +102,36 @@ class Aucfan(unittest.TestCase):
         self.assertEqual(rows["a1"]["max_bid"], "21000")  # オークファンで変えた入札設定に合わせる
         self.assertEqual(rows["x9"]["max_bid"], "12800")
 
+    def test_closed_snipes(self):
+        """「入札完了」の一覧: 実際に入れた額を足し、失敗コードの入札は「入札失敗」にして落札率に数えない（値は作り物）."""
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            dl, log = d / "dl", d / "bid_log.csv"
+            dl.mkdir()
+            br._write([dict(ROW, result="負け", final_price="30000"),
+                       dict(ROW, auction_id="w1", result="落札", final_price="9000")], log)
+            (dl / "aurora_snipes_closed.csv").write_text(
+                'auction_id,title,my_bid,bid_time,end_time,fail_code,fail_text,seen_at\n'
+                '"a1","Nikon FM2","13800","11月23日22時28分","11月23日22時34分","900010010","","2026-11-24T01:00:00Z"\n'
+                '"w1","Canon A-1","9500","11月23日21時00分","11月23日21時06分","","","2026-11-24T01:00:00Z"\n'
+                '"n7","Contax 50mm F1.4","23200","11月23日22時19分","11月23日22時25分","900010010","","2026-11-24T01:00:00Z"\n',
+                encoding="utf-8")
+            self.assertEqual(br.import_aucfan_snipes(dl, log), 1)
+            rows = {r["auction_id"]: r for r in br._read(log)}
+            s = br.summarize(list(rows.values()), None)
+        self.assertEqual(rows["a1"]["my_bid"], "13800")
+        self.assertEqual(rows["a1"]["max_bid"], ROW["max_bid"])  # 拡張機能の上限額（提示額）は変えない
+        self.assertEqual(rows["a1"]["result"], "入札失敗")
+        self.assertEqual(rows["w1"]["result"], "落札")
+        self.assertEqual(rows["w1"]["my_bid"], "9500")
+        self.assertEqual(rows["n7"]["bid_fail"], "900010010")
+        self.assertEqual((s["failed"], s["lost"], s["won"]), (1, 0, 1))
+        # まだ結果の無い失敗の入札は、終了後に最終価格を読んだとき「入札失敗」になる
+        res = br.judge_result(rows["n7"], {"status": "closed", "price": "30000", "bids": 5, "end": "2026-11-23T22:25:00+09:00"},
+                              CFG, 150.0, set())
+        self.assertEqual(res["result"], "入札失敗")
+        self.assertEqual(res["final_price"], 30000)
+
 
 if __name__ == "__main__":
     unittest.main()
