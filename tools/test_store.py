@@ -37,6 +37,37 @@ class RecKey(unittest.TestCase):
         self.assertEqual(bs.rec_key("Nikon FM2 Black Body Exc+++")[0], "Nikon FM2")
         self.assertNotEqual(bs.rec_key("Canon AE-1 Program")[1], bs.rec_key("Canon AE-1")[1])
 
+    def test_descriptive_words_are_not_models(self):
+        """2026-11-24 オーナー「all works は機種じゃない」。説明・色の語を機種名にせず、同じ機種を1行にまとめる（実際のおすすめの商品名）."""
+        cases = {
+            "ALL WORKS [Top MINT] Contax RX SLR 35mm Film Camera Black Body From JAPAN": "Contax RX",
+            "Contax Aria ALL WORKS": "Contax Aria",
+            "Contax Aria 35mm SLR Film Camera Body Black": "Contax Aria",
+            "Pentax MX Black All Works": "Pentax MX",
+            "Pentax MX Silver Body Tested": "Pentax MX",
+            "Konica Hexar Silver Fully Working": "Konica Hexar",
+            "Nikon FE silver": "Nikon FE",
+            "Nikon FM Silver": "Nikon FM",
+            "Nikon Df Silver": "Nikon Df",
+            "Olympus Pen F Half Frame": "Olympus Pen F",
+            "Fujifilm X Half Silver": "Fujifilm X Half",
+            "Leica IIIF Red Dial + Self Timer": "Leica IIIF Red",
+        }
+        for t, label in cases.items():
+            self.assertEqual(bs.rec_key(t)[0], label, t)
+        self.assertIsNone(bs.rec_key("CONTAX ALL WORKS 35mm film camera"))   # 機種が書いていない物は出さない
+
+    def test_body_with_lens_keeps_body_name(self):
+        """ボディ＋レンズは「Contax 50mm F1.4」のようなレンズの数字だけの名前にしない。ボディの型番の数字（F2・67）はレンズの数字と取り違えない."""
+        self.assertEqual(bs.rec_key("Contax Aria Body + Planar 50mm F1.4")[0], "Contax Aria 50mm F1.4")
+        self.assertEqual(bs.rec_key("Kowa Six + 85mm 2.8 Silver")[0], "Kowa Six 85mm 2.8")
+        self.assertEqual(bs.rec_key("Nikon FA + Ai 50mm 1.8")[0], "Nikon FA 50mm 1.8")
+        self.assertEqual(bs.rec_key("Nikon F2 Ai 50mm F1.4")[0], "Nikon F2 50mm F1.4")
+        self.assertEqual(bs.rec_key("Pentax 67 Body")[0], "Pentax 67")
+        # レンズの商品名は今までどおり（状態の語やフードを名前にしない）
+        self.assertEqual(bs.rec_key("[Top MINT w/Hood] NIKON AF-S NIKKOR 200-500mm f/5.6E ED VR F mount JAPAN 3148637")[0], "Nikon 200-500mm F5.6E")
+        self.assertEqual(bs.rec_key("Minolta M Rokkor 40mm f/2 CLE")[0], "Minolta 40mm F2 CLE")
+
     def test_unknown_brand(self):
         self.assertIsNone(bs.rec_key("Some Camera"))
 
