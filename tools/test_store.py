@@ -75,7 +75,10 @@ class RecKey(unittest.TestCase):
 class Recommendations(unittest.TestCase):
     def test_sample(self):
         recs = bs.recommendations(ba.read_sales(SAMPLES / "sales_history.csv"), CFG, 150.0)
-        self.assertEqual([r["label"] for r in recs], ["Nikon FM2", "Canon NewFD 50mm F1.4"])
+        # Canon NewFD 50mm F1.4（$78〜85）は、どの値段で買っても基準（$99以下は利益4,000円）に届かないので出さない
+        # （アプリに「税込 上限なし」と出て、いくらでも買えるように読めた。2026-11-24）
+        self.assertEqual([r["label"] for r in recs], ["Nikon FM2"])
+        self.assertTrue(all(r["maxBuy"] > 0 for r in recs))
         fm2 = recs[0]
         self.assertEqual((fm2["sales"], fm2["usd"], fm2["kind"]), (3, 255.0, "camera"))
         # 上限額で買えば基準を満たす
@@ -84,6 +87,22 @@ class Recommendations(unittest.TestCase):
         self.assertGreaterEqual(c["margin_now_pct"], CFG["judge"]["min_margin_pct"])
         # ジャンク販売だけの機種（Pentax 67 For Parts）はおすすめに出さない
         self.assertNotIn("Pentax 67", [r["label"] for r in recs])
+
+
+    def test_memo_only_model(self):
+        """販売履歴の無い機種（Contax Aria）も、相場メモに登録すればおすすめに出る。販売履歴がある機種は相場メモで上書きしない（2026-11-24 オーナー「Ariaいれたら？」）."""
+        rows = ba.read_sales(SAMPLES / "sales_history.csv")
+        memo = [{"title": "Contax Aria", "sold_price_usd": "300", "source": "相場メモ（Near MINT）", "memo": "拡張機能で直した 2026-11-20"},
+                {"title": "Contax Aria", "sold_price_usd": "340", "source": "相場メモ（Near MINT）", "memo": "拡張機能で直した 2026-11-25"},
+                {"title": "Nikon FM2", "sold_price_usd": "999", "source": "相場メモ", "memo": "拡張機能で直した 2026-11-25"}]
+        for m in memo:
+            m["_price"] = float(m["sold_price_usd"])
+        recs = {r["label"]: r for r in bs.recommendations(rows + memo, CFG, 150.0)}
+        aria = recs["Contax Aria"]
+        self.assertEqual((aria["sales"], aria["usd"], aria["kind"], aria["cat"]), (0, 340.0, "camera", "film"))   # いちばん新しい登録
+        self.assertTrue(aria["basis"].startswith("相場メモ"))
+        self.assertGreater(aria["maxBuy"], 0)
+        self.assertEqual(recs["Nikon FM2"]["usd"], 255.0)   # 販売実績のある機種は販売実績のまま
 
 
 class StoreParity(unittest.TestCase):

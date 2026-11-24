@@ -31,7 +31,7 @@ ROOT = HERE.parent
 CORE_JS = ROOT / "store" / "core.js"
 ICLOUD = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "aurora"
 CORE_START, CORE_END = "  // @core-start", "  // @core-end"
-REC_SOURCES = ("reference_prices.csv", "chatwork_sales.csv")  # おすすめは販売履歴（自分・Chatwork・頒布会。相場メモは除く）
+REC_SOURCES = ("reference_prices.csv", "chatwork_sales.csv")  # おすすめは販売履歴（自分・Chatwork・頒布会）。相場メモは販売履歴の無い機種だけ（build で足す）
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ LENS_LINE_WORDS = {"fd", "newfd", "new", "ef", "ef-s", "rf", "ai", "ai-s", "nona
                    # Carl Zeiss の系統（2026-11-20）
                    "distagon", "tessar", "biogon", "makro-planar", "vario-sonnar", "jena", "biotar", "flektogon", "pancolar",
                    "otus", "batis", "loxia", "milvus", "zm", "zf", "ze", "zf.2", "hexanon", "rokkor", "zuiko", "xenar", "symmar"}
-CAMERA_LINE_WORDS = ba.GENERATIONS | {"program", "pro", "super", "classic", "dx", "quartz", "date"}
+CAMERA_LINE_WORDS = ba.GENERATIONS | {"program", "pro", "super", "classic", "dx", "quartz", "date", "new", "hp", "ti", "titan"}   # New F-1・F3 HP・OM-4 Ti・F2 Titan（2026-11-24）
 
 
 # おすすめの4分類（2026-11-22 オーナー「MF、AF、Film、digital の4つのボタン。MFレンズ、AFレンズ、フィルムカメラ、デジタルカメラ」）。表示だけ
@@ -240,7 +240,8 @@ NAME_STOP = {"all", "works", "work", "worked", "working", "fully", "full", "test
              "gray", "grey", "brown", "blue", "shiny", "only", "manual", "focus", "frame", "shutter", "meter", "lens",
              "set", "kit", "cla", "serviced", "overhauled", "junk", "parts", "repair", "as-is", "is", "as", "for",
              "from", "japan", "used", "late", "early", "model", "type", "version", "strap", "case", "cap", "caps", "hood",
-             "box", "mount", "point", "shoot", "yashikor", "yashinon", "xener"}
+             "box", "mount", "point", "shoot", "yashikor", "yashinon", "xener",
+             "years", "year", "anniversary", "count"}
 # 残す語: red（Leica の Red Dial）・half（Ricoh Auto Half・Fujifilm X Half）・new（Yashica-Flex New B・New F-1）
 SPEC_RE = re.compile(r"\d+(?:\.\d)?(?:-\d+(?:\.\d)?)?mm|\d+\.\d+")
 
@@ -256,6 +257,21 @@ def _lens_spec(tokens: list[str]) -> set[str]:
                 or (re.fullmatch(r"\d{2,3}", l) and lensy)):
             out.add(l)
         prev = l
+    return out
+
+
+RANK_TOKEN_RE = re.compile(r"(?:exc|ex|mint|n\.?mint|nmint|near|top|ab|bc)[+\d]*", re.I)
+
+
+def _not_model(tokens: list[str]) -> set[str]:
+    """数字があっても型番ではない語（2026-11-24 オーキドの見回り）: 状態のランク（Exc+5・MINT+++）、通し番号（Count 001）、
+    記念モデルの年数（Aria 70 Years・70th Anniversary の 70）."""
+    out = set()
+    for i, t in enumerate(tokens):
+        l, nxt = t.lower(), (tokens[i + 1].lower() if i + 1 < len(tokens) else "")
+        if (RANK_TOKEN_RE.fullmatch(l) and re.search(r"[+\d]", l)) or re.fullmatch(r"0\d+", l) or re.fullmatch(r"\d+(?:st|nd|rd|th)", l) \
+                or (re.fullmatch(r"\d+", l) and nxt in ("years", "year", "anniversary", "anniv", "yrs")):
+            out.add(t)
     return out
 
 
@@ -283,8 +299,13 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
                         or (t == "z" and brand == "Nikon") or (t == "g" and brand == "Contax"))
         return bool((re.search(r"\d", t) and t != "35mm") or t in CAMERA_LINE_WORDS)
 
+    skip = _not_model(rest)
+    # 「New」は Canon New F-1 だけ型の語（New FM2・NEW X-700 は同じ機種の呼び方なので、別の行に分けない）
+    skip |= {t for i, t in enumerate(rest) if t.lower() == "new" and not (i + 1 < len(rest) and re.match(r"f-?1\b", rest[i + 1].lower()))}
     keep, shown = [], []
     for orig in rest:
+        if orig in skip:
+            continue
         ks = [t for t in norm(orig) if wanted(t) and t not in keep]
         if ks:
             keep += ks
@@ -345,8 +366,13 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
             continue
         label, key, kind = k
         g = groups.setdefault(key, {"label": label, "brand": "Carl Zeiss" if label.startswith("Carl Zeiss") else label.split()[0], "kind": kind,
-                                    "sales": [], "lists": [], "titles": []})
+                                    "sales": [], "lists": [], "memos": [], "titles": []})
         g["titles"].append(r.get("title") or title)
+        if ba.is_memo(r):
+            # 相場メモ（オーナーが sold を見て登録した額）。販売履歴の無い機種だけに使う（2026-11-24 オーナー「Ariaいれたら？」）
+            d = re.search(r"20\d\d-\d\d-\d\d", (r.get("memo") or "") + " " + (r.get("date") or ""))
+            g["memos"].append({"usd": round(r["_price"], 2), "date": d.group(0) if d else ""})
+            continue
         tier = ba.source_tier(r)
         rec = {"title": r.get("title", ""), "usd": round(r["_price"], 2), "junk": "ジャンク" in flags,
                "date": r.get("date", ""), "purchase": ba._float_or_none(r.get("purchase_jpy")), "tier": tier}
@@ -357,10 +383,13 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
     for g in groups.values():
         good = [s for s in g["sales"] if not s["junk"]]
         base = good or [s for s in g["lists"] if not s["junk"]]
-        if not base:
+        memo = max(g["memos"], key=lambda m: m["date"]) if g["memos"] and not base else None   # いちばん新しい1つ（appraise.match_prefer_memo と同じ）
+        if not base and not memo:
             continue
-        usd = round(statistics.median([s["usd"] for s in base]), 2)
+        usd = round(statistics.median([s["usd"] for s in base]), 2) if base else memo["usd"]
         calc = store_calc(usd, cfg, fx)
+        if calc["max_bid_jpy"] <= 0:
+            continue   # どの値段で買っても基準に届かない機種は、おすすめに出さない（アプリに「上限なし」と出ていた。2026-11-24）
         # 実際の利益（販売額と仕入値の両方がある自分・Chatworkの実績だけ）
         profits = [store_calc(s["usd"], cfg, fx, int(s["purchase"]))["profit_now_jpy"]
                    for s in g["sales"] if s["purchase"]]
@@ -370,7 +399,8 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
             "label": g["label"], "brand": g["brand"], "kind": g["kind"],
             "cat": rec_cat(g["kind"], g["titles"] or [g["label"]]),   # 表示名は型の語を落とすので（IXY 310 → Canon 310）、元の商品名で決める
             "sales": n, "lists": len(g["lists"]), "usd": usd,
-            "basis": (["販売実績", "Chatwork実績", "頒布会"][min(s["tier"] for s in good)] if good else "鑑定表（推定）"),
+            "basis": (["販売実績", "Chatwork実績", "頒布会"][min(s["tier"] for s in good)] if good
+                      else "相場メモ" if memo else "鑑定表（推定）"),
             "maxBuy": calc["max_bid_jpy"], "breakeven": calc["breakeven_bid_jpy"],
             "profit": profit, "profitN": len(profits),
             "score": profit * n if profit is not None and profit > 0 else None,
@@ -516,6 +546,9 @@ def build(cfg: dict, fx: float) -> dict:
         p = ROOT / "data" / name
         if p.exists():
             rows += ba.read_sales(p)
+    memo_path = ROOT / "data" / "price_memo.csv"
+    if memo_path.exists():   # 相場メモは、販売履歴の無い機種だけおすすめに使う（recommendations の memos）
+        rows += [r for r in ba.read_sales(memo_path) if ba.is_memo(r)]
     data["recs"] = recommendations(rows, cfg, fx)
     data["refs"] += candidate_refs(float(cfg["shipping"].get("deduction_usd", 0)))
     data["trivia"] = trivia()
