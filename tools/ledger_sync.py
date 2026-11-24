@@ -830,7 +830,7 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
     w.writeheader()
     w.writerows(rows)
     if dry_run:
-        print(f"入札結果: {len(rows)}行を送る予定 → Claude更新版「{BID_SHEET}」", file=sys.stderr)
+        print(f"入札結果: {len(rows)}行を送る予定 → 古物台帳「{BID_SHEET}」", file=sys.stderr)
         return len(rows)
     try:
         if post:
@@ -849,7 +849,7 @@ def upload_bids(dry_run: bool = False, log: Path | None = None, post=None) -> in
         print("入札結果: 送れませんでした。スプレッドシートの Apps Script が古いためです"
               "（python3 tools/ledger_sync.py script で貼り替え）", file=sys.stderr)
         return None
-    print(f"入札結果: {len(rows)}行 → Claude更新版「{BID_SHEET}」", file=sys.stderr)
+    print(f"入札結果: {len(rows)}行 → 古物台帳「{BID_SHEET}」", file=sys.stderr)
     return len(rows)
 
 
