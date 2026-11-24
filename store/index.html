@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.23.2";
+  var APP_VERSION = "2026.11.24.1";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -1297,7 +1297,7 @@ function renderRecs() {
     }
     const L = linksWithCat(withEx(r.label), recIsLens(r) ? "3323" : recCat(r) === "digital" ? "31388" : "15230");
     return `<div class="rec" data-rec="${esc(r.label)}"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
-      <div class="buy">税込 <strong>${buy > 0 ? yen(buy) : "上限なし"}</strong>${buy > 0 ? " 以下なら買い" : ""} <span class="s">／${usdTxt}${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
+      <div class="buy">${buy > 0 ? `税込 <strong>${yen(buy)}</strong> 以下なら買い` : yn(false)} <span class="s">／${usdTxt}${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
       <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">Sold</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">Now</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
   };
   $("recList").innerHTML = list.length ? groups.map((G) => `<h3 class="grp">${esc(G.name)} <span class="s">${G.items.length}品</span></h3>` + G.items.map(one).join("")).join("") : `<div class="empty">この条件の販売実績はまだありません</div>`;
@@ -1441,7 +1441,7 @@ function bidCard(i, B, done, now, tag) {
   const tax = r ? storeNote(i, mx) : i.taxNote ? "（" + esc(i.taxNote) + "）" : "";
   const nowTx = i.price && pf != null ? `この価格なら利益 ${signYen(pf)}${no && pf > 0 && r && r.minProfit ? `（基準 ${yen(r.minProfit)}）` : ""}` : "";
   const sure = r ? r.ck.own : !i.check;   // OK の緑は、根拠が確認不要の物と ✓確認済みの物だけ（確かめる前は NO だけ出す。2026-11-22 オーキド）
-  const maxHtml = `<div class="max${no ? " no" : ""}">${no ? yn(false) : sure ? yn(true) : ""}${!(mx > 0) ? `<strong>上限なし</strong>`
+  const maxHtml = `<div class="max${no ? " no" : ""}">${no ? yn(false) : sure ? yn(true) : ""}${!(mx > 0) ? ""
     : no ? `<strong>上限 ${yen(mx)}</strong><span class="s">${[tax, nowTx].filter(Boolean).join("・")}</span>`
     : `<strong>${yen(mx)}</strong><span class="s">まで入札${tax}${nowTx ? "・" + nowTx : ""}</span>`}</div>`;
   return `<div class="bid${i.check && !(ck && ck.own) ? " tent" : ""}${did ? " did" : ""}" data-card="${esc(i.id)}">

@@ -12,6 +12,7 @@ const BANNED = [
   ["購入しない", "2026-11-22「購入しない、じゃなくて、OKとかNOとか」"],
   ["買えない", "2026-11-21「買えない、ではなく」"],
   ["ボーダー", "2026-11-21「ボーダー？」"],
+  ["上限なし", "2026-11-24 おすすめの Contax NX。「いくらでも買える」と読める。判断は NO の1語"],
 ];
 
 async function cardTexts(p) {
@@ -129,13 +130,15 @@ function checkCards(cards, when) {
           recSel.brand = b; renderBrands(); renderRecs();
           const groups = [...document.querySelectorAll("#recList h3.grp")].map((h) => h.firstChild.textContent.trim());
           const labels = [...document.querySelectorAll("#recList [data-rec]")].map((x) => x.dataset.rec);
-          out.push({ kind, b, groups, labels, wants: labels.map((l) => (DATA.recs.find((r) => r.label === l) || {})._want) });
+          out.push({ kind, b, groups, labels, wants: labels.map((l) => (DATA.recs.find((r) => r.label === l) || {})._want),
+                     text: document.querySelector("#recList").innerText });
         }
       }
       return out;
     });
     for (const x of recChk) {
       x.labels.forEach((l, i) => { if (x.wants[i] && x.wants[i] !== x.kind) bad(`${lab}: おすすめ ${x.kind}/${x.b} に別の枠の「${l}」（${x.wants[i]}）`); });
+      for (const [w, why] of BANNED) if (x.text.includes(w)) bad(`${lab}: おすすめ ${x.kind}/${x.b} に使わない言葉「${w}」（${why}）`);   // 全部の種類×メーカー×「すべて」の値段で見る
       const gi = (g) => x.groups.indexOf(g);
       if (gi("8mm・シネ") >= 0 && gi("8mm・シネ") !== x.groups.length - 1) bad(`${lab}: おすすめ ${x.kind}/${x.b} で 8mm・シネ が最後でない: ${x.groups}`);
       if ((x.kind === "film" || x.kind === "digital") && x.groups.some((g) => /レンズ|テレコン/.test(g))) bad(`${lab}: おすすめ ${x.kind}/${x.b} にレンズの見出し: ${x.groups}`);

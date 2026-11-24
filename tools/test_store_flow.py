@@ -64,7 +64,9 @@ def fixture() -> dict:
     cfg = ba.load_config(None)
     d = bx.build_data(cfg, float(cfg["fx"]["usd_jpy"]))
     d.update(kind="aurora-store", built="test", sweet=[], trivia=[], trusted=[], kantei=[], memoHist={},
-             recs=[{"label": "Canon AE-1", "brand": "Canon", "kind": "camera", "cat": "film", "usd": 400, "maxBuy": 40000, "sales": 3, "profit": 5000, "basis": "販売実績"}]
+             recs=[{"label": "Canon AE-1", "brand": "Canon", "kind": "camera", "cat": "film", "usd": 400, "maxBuy": 40000, "sales": 3, "profit": 5000, "basis": "販売実績"},
+                   # 古いデータ: どの値段でも基準に届かない機種（「税込 上限なし」と出ていた。2026-11-24 Contax NX）
+                   {"label": "Canon AV-1", "brand": "Canon", "kind": "camera", "cat": "film", "usd": 44.99, "maxBuy": -2765, "sales": 1, "profit": -2765, "basis": "販売実績"}]
              + NIKON_RECS)
     d.pop("inbox", None)
     ref = lambda t, usd: {"title": t, "price": usd, "tier": 1, "source": "販売実績", "acc": False, "tokens": sorted(ba._tokens(t))}  # 実際のデータと同じ形

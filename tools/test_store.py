@@ -57,6 +57,19 @@ class RecKey(unittest.TestCase):
             self.assertEqual(bs.rec_key(t)[0], label, t)
         self.assertIsNone(bs.rec_key("CONTAX ALL WORKS 35mm film camera"))   # 機種が書いていない物は出さない
 
+    def test_not_model_numbers_and_editions(self):
+        """状態・通し番号は型番にしない（オーキドの見回り）。記念モデルは元の機種と別の行（2026-11-24 オーナー「aria と aria 70 years は別」）."""
+        self.assertEqual(bs.rec_key("[Exc+5] Canon New F-1 AE Finder")[0], "Canon New F-1")
+        self.assertEqual(bs.rec_key("Count 001 Sony α7 III Body")[0], "Sony α7 III")
+        self.assertEqual(bs.rec_key("Nikon New FM2 silver")[0], "Nikon FM2")
+        self.assertEqual(bs.rec_key("Nikon F3 HP Body")[0], "Nikon F3 HP")
+        self.assertEqual(bs.rec_key("Olympus OM-4 Ti Black")[0], "Olympus OM-4 Ti")
+        aria = bs.rec_key("Contax Aria Body")[1]
+        for t in ("CONTAX Aria 70 Years Silver", "Contax Aria 70th Anniversary", "CONTAX Aria 70周年 記念モデル", "Contax Aria 70years Limited", "Contax Aria 70 Year"):
+            k = bs.rec_key(t)
+            self.assertEqual(k[0], "Contax Aria 70 Years", t)
+            self.assertNotEqual(k[1], aria, t)
+
     def test_body_with_lens_keeps_body_name(self):
         """ボディ＋レンズは「Contax 50mm F1.4」のようなレンズの数字だけの名前にしない。ボディの型番の数字（F2・67）はレンズの数字と取り違えない."""
         self.assertEqual(bs.rec_key("Contax Aria Body + Planar 50mm F1.4")[0], "Contax Aria 50mm F1.4")
@@ -75,7 +88,10 @@ class RecKey(unittest.TestCase):
 class Recommendations(unittest.TestCase):
     def test_sample(self):
         recs = bs.recommendations(ba.read_sales(SAMPLES / "sales_history.csv"), CFG, 150.0)
-        self.assertEqual([r["label"] for r in recs], ["Nikon FM2", "Canon NewFD 50mm F1.4"])
+        # Canon NewFD 50mm F1.4（$78〜85）は、どの値段で買っても基準（$99以下は利益4,000円）に届かないので出さない
+        # （アプリに「税込 上限なし」と出て、いくらでも買えるように読めた。2026-11-24）
+        self.assertEqual([r["label"] for r in recs], ["Nikon FM2"])
+        self.assertTrue(all(r["maxBuy"] > 0 for r in recs))
         fm2 = recs[0]
         self.assertEqual((fm2["sales"], fm2["usd"], fm2["kind"]), (3, 255.0, "camera"))
         # 上限額で買えば基準を満たす
@@ -84,6 +100,22 @@ class Recommendations(unittest.TestCase):
         self.assertGreaterEqual(c["margin_now_pct"], CFG["judge"]["min_margin_pct"])
         # ジャンク販売だけの機種（Pentax 67 For Parts）はおすすめに出さない
         self.assertNotIn("Pentax 67", [r["label"] for r in recs])
+
+
+    def test_memo_only_model(self):
+        """販売履歴の無い機種（Contax Aria）も、相場メモに登録すればおすすめに出る。販売履歴がある機種は相場メモで上書きしない（2026-11-24 オーナー「Ariaいれたら？」）."""
+        rows = ba.read_sales(SAMPLES / "sales_history.csv")
+        memo = [{"title": "Contax Aria", "sold_price_usd": "300", "source": "相場メモ（Near MINT）", "memo": "拡張機能で直した 2026-11-20"},
+                {"title": "Contax Aria", "sold_price_usd": "340", "source": "相場メモ（Near MINT）", "memo": "拡張機能で直した 2026-11-25"},
+                {"title": "Nikon FM2", "sold_price_usd": "999", "source": "相場メモ", "memo": "拡張機能で直した 2026-11-25"}]
+        for m in memo:
+            m["_price"] = float(m["sold_price_usd"])
+        recs = {r["label"]: r for r in bs.recommendations(rows + memo, CFG, 150.0)}
+        aria = recs["Contax Aria"]
+        self.assertEqual((aria["sales"], aria["usd"], aria["kind"], aria["cat"]), (0, 340.0, "camera", "film"))   # いちばん新しい登録
+        self.assertTrue(aria["basis"].startswith("相場メモ"))
+        self.assertGreater(aria["maxBuy"], 0)
+        self.assertEqual(recs["Nikon FM2"]["usd"], 255.0)   # 販売実績のある機種は販売実績のまま
 
 
 class StoreParity(unittest.TestCase):
