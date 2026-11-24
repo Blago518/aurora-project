@@ -159,6 +159,24 @@ class RecMakerModel(unittest.TestCase):
             k = bs.rec_key(t)
             self.assertEqual((k[0], bs.rec_cat(k[2], [t])), (label, cat), t)
 
+    def test_maker_order(self):
+        """メーカー名の並び・メーカー名なし（2026-11-24 オーキドが PR 212 に42本の名前を通して見つけた）."""
+        cases = {"Kyocera Contax T2": ("Contax T2", "Contax", "film"),
+                 "Kyocera Contax Aria": ("Contax Aria", "Contax", "film"),
+                 "Konica Minolta α-7 Digital": ("Minolta α-7 Digital", "Minolta", "digital"),
+                 "Konica Minolta Dimage A2": ("Minolta Dimage A2", "Minolta", "digital"),
+                 "OM-1 35mm SLR Film Camera Black Body": ("Olympus OM-1", "Olympus", "film"),
+                 "OM-10 Body": ("Olympus OM-10", "Olympus", "film"),
+                 "OM-1 Mark II": ("OM SYSTEM OM-1 Mark II", "Olympus", "digital"),
+                 "Rollei 35 S": ("Rollei 35 S", "Rollei", "film"),
+                 "Rollei 35 SE": ("Rollei 35 SE", "Rollei", "film"),
+                 "PEN-F Olympus half frame": ("Olympus PEN-F", "Olympus", "film")}
+        for t, (label, brand, cat) in cases.items():
+            k = bs.rec_key(t)
+            self.assertEqual((k[0], bs.rec_brand(k[0]), bs.rec_cat(k[2], [t])), (label, brand, cat), t)
+        self.assertNotEqual(bs.rec_key("Rollei 35 S")[1], bs.rec_key("Rollei 35")[1])
+        self.assertNotEqual(bs.rec_key("Minolta α-7 Digital")[1], bs.rec_key("Minolta α-7")[1])
+
     def test_digital_not_film(self):
         for t in ("Canon SX 710 HS", "Canon A2600 Pink", "Canon Power Shot S95 Black", "Fujifilm X-100F Black", "Nikon S570 Pink",
                   "Pentax Q10 + 02 Lens", "RICOH WG-50 Black", "Sony W610 Blue"):

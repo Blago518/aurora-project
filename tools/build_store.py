@@ -94,7 +94,7 @@ MF_RE = re.compile(r"\bMF\b|manual\s*focus|マニュアル|\bnon[-\s]?Ai\b|\bAi[
                    r"\bMD\b|\bMC\b|Rokkor|\bOM\b|G\.?\s?Zuiko|\bL39\b|\bLTM\b|Leica\s*M\b|\bC/?Y\b|\bAE[JG]\b|\bMM[JG]\b|"
                    r"Hasselblad|Mamiya|Bronica|Pentax\s*67|\b6x7\b|\bZ[FE]\.?2?\b|Loxia|Milvus|Voigtl|Helios|Jupiter|Industar", re.I)
 DIGITAL_CAM_RE = re.compile(r"digital|dslr|mirrorless|\d+(?:\.\d+)?\s?MP\b|megapixel|万画素|デジタル|デジカメ|ミラーレス|コンデジ|"
-                            r"coolpix|powershot|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|"
+                            r"coolpix|powershot|dimage|cyber[-\s]?shot|\bDSC-|Nikon\s*1\b|OM\s*SYSTEM\s*OM-\d|\bOM-\d\s*Mark|lumix|finepix|\bIXY\b|\bIXUS\b|exilim|handycam|camcorder|ビデオ|"
                             r"\bD\d{1,4}[A-Z]?\b|\bDf\b|EOS\s?(?:R\d*|M\d*|Kiss\s?(?:X|M)\w*|\d{1,4}D\w*)\b|Nikon\s*Z\s?(?:\d{1,2}(?:\s?I{1,3})?|fc?)\b|"
                             r"X-?(?:T|E|H|S|Pro)\d|X-[AM]\d|X-?100|power\s+shot|\bSX\s?\d{3}\b|\bA\d{4}\b|\bWG-\d|Sony\s+(?:DSC-?)?WX?\d{2,4}\b|Nikon\s+S\d{3,4}\b|\bGFX|\bGR\s?(?:II|III|IV)x?\b|\bGR\s?DIGITAL\b|OM-?D|\bE-?M\d|\bE-?PL?\d|\bE-\d{1,3}\b|"
                             r"ILCE|\bNEX|\bK-(?:1|3|5|7|30|50|70|S\d|r|x)\b|\bKP\b|(?<!Minolta\s)α\s?\d|Sony\s*A7|\bA7[RSC]?\s?(?:I{1,3}|IV|M\d)?\b|RX100|\bGH\d|\bGX\d|(?:powershot|lumix|Canon)\s*G\d{1,2}\b|\bG\d{1,2}\s?X\b|"
@@ -275,6 +275,14 @@ def rec_clean(title: str) -> str:
     t = re.sub(r"\b500\s?C/M\b", "500CM", t, flags=re.I)
     t = re.sub(r"\bF3\s+P\b", "F3P", t)
     t = re.sub(r"\bRicoh\s+GR\s+(?=\d{2}\s?mm)", "Ricoh GR Lens ", t, flags=re.I)
+    # メーカー名の並び（2026-11-24 オーキドの確かめ）: 「Kyocera Contax T2」「Yashica Contax」は Contax、「Konica Minolta α-7 Digital」は Minolta
+    t = re.sub(r"\b(?:Kyocera|Yashica)\s+(?=Contax\b)", "", t, flags=re.I)
+    t = re.sub(r"\bKonica\s*[-/]?\s*Minolta\b", "Minolta", t, flags=re.I)
+    # メーカー名を書かない「OM-1 35mm SLR Film Camera」は Olympus（OM-D・OM SYSTEM の書き方は上で別に扱う）
+    if re.match(r"\s*OM-\d", t, re.I):
+        t = ("OM SYSTEM " if re.search(r"mark\s*I|mirrorless|digital|ミラーレス|デジタル", t, re.I) else "Olympus ") + t
+    t = re.sub(r"\bhalf[\s-]*frame\b", " ", t, flags=re.I)   # 「PEN-F half frame」の half frame は判の説明
+    t = re.sub(r"\bRollei\s+35\s+(SE|S|TE|T|B|LED|Classic)\b", r"Rollei 35-\1", t, flags=re.I)   # Rollei 35 S は 35 と別の機種
     t = re.sub(r"\bYashica\s+Matt?[-\s]?124\s?G\b", "Yashica Mat-124G", t, flags=re.I)
     t = re.sub(r"\bPro\s+(SD|S)\b", r"Pro-\1", t)
     # 単位の無いレンズ（「Nikon 135 3.5 for Bronica S」）
@@ -470,7 +478,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         # ボディの名前が無く、レンズの数字だけの物（「Nikon Nikkor 105 2.5」）は今までどおり（rec_cat がレンズに分ける）
     if kind == "camera":
         # 表示名にシリーズの語を残す（「Canon 310」→「Canon IXY 310」、「Nikon fc」→「Nikon Z fc」。2026-11-22）。比べるキーは変えない
-        series = set(ba.LINE_WORDS) | SERIES_BODY_WORDS | {"z", "d-lux", "v-lux", "c-lux", "trip", "electro", "zoom", "system", "eos", "sx", "wide", "panorama", "deluxe", "nikonos"}
+        series = set(ba.LINE_WORDS) | SERIES_BODY_WORDS | {"z", "d-lux", "v-lux", "c-lux", "trip", "electro", "zoom", "system", "eos", "sx", "wide", "panorama", "deluxe", "nikonos", "samurai"}
         shown = [t for t in rest if t.lower() in series or t in shown or FIXED_BODY_RE.fullmatch(t)]   # SQ-A・CLE・Df も名前に残す
         seen = set()
         shown = [t for t in shown if not (t.lower() in seen or seen.add(t.lower()))]
@@ -489,6 +497,8 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     shown = [{"ZOOM": "Zoom", "WIDE": "Wide", "PANORAMA": "Panorama", "Pro-S": "Pro S", "Pro-SD": "Pro SD", "ltm": "L39", "LTM": "L39"}.get(t, t) for t in shown]
     shown = [re.sub(r"^f(?=\d)", "F", t) for t in shown]   # f1.8 → F1.8
     shown = [re.sub(r"^(\d{3,4})(XL)", r"\1 \2", t) for t in shown]
+    if brand == "Rollei":
+        shown = [re.sub(r"^35-(?=[A-Za-z])", "35 ", t) for t in shown]
     label = " ".join([brand] + shown)
     return label, " ".join([key_brand] + keep), kind
 
