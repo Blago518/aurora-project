@@ -124,5 +124,15 @@
       `${money.length === 1 ? "（入札額の欄に入れておきました。確認してください）" : ""}</div>`, "#1f5c3a");
   }
 
-  setTimeout(() => { scanList(); assist(); }, 800);
+  // 一覧は後から読み込まれたり、ページ送りで中身だけ入れ替わったりする。中身（出品と失敗コードの並び）が変わるたびに読み直す
+  let lastSig = "";
+  function rescan() {
+    let sig = "";
+    try { sig = location.search + "|" + parseSnipes(document).map((s) => s.auction_id + ":" + s.fail_code + ":" + s.fail_text.length).join(","); } catch (e) { return; }
+    if (!sig || sig === lastSig) return;
+    lastSig = sig;
+    scanList();
+  }
+  setTimeout(() => { rescan(); assist(); }, 800);
+  setInterval(rescan, 1500);
 })();
