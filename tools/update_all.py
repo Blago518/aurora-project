@@ -12,7 +12,7 @@
    拡張機能で［直す］［登録］した相場（ダウンロード/aurora_price_memo.csv）もここで取り込まれる。
 4. 勝ちやすさ（win_score.py）: 入札リスト・売れ筋・負けた機種のヤフオクの終わった出品から、今の上限額以下で終わった割合 → data/win_score.csv
    入札リスト: data/search_urls.txt の検索をまとめて鑑定（robots.txt で Disallow の引数は外して読む） → reports/bid_report_*.html を開く（◎○の件数を通知）
-   一番上に「今日の予約リスト（目標8本）」→ 古物台帳「Mac_予約リスト」
+   一番上に「今日の予約リスト（目標10本）」→ 古物台帳「Mac_予約リスト」
    → スマホ用データ（store_data.json・iCloud・暗号化して自動配信。入札候補もスマホの「入札」タブに届く）→ ナレッジ
    → eBay の出品中一覧・注文・取引明細（eBay API 設定済みなら）→ 数字のグラフ（reports/dashboard.html）
 5. 落札相場（拡張機能を作る前）: 前回の入札リスト・拡張機能（ダウンロード/aurora_seen.csv）の ◎○・仮◎○・確認してから の出品を見張り、
@@ -402,7 +402,7 @@ def bid_list() -> int | None:
     return len(good)
 
 
-RESERVE_SHEET = "Mac_予約リスト"  # 今日の予約リスト（目標8本。2026-11-19 ユーザー決定）→ 古物台帳（クラウド・スマホから見る）
+RESERVE_SHEET = "Mac_予約リスト"  # 今日の予約リスト（目標10本。2026-11-19 ユーザー決定の8本を 2026-11-24 に10本へ）→ 古物台帳（クラウド・スマホから見る）
 
 
 def upload_reserve(reports: Path, post=None) -> int | None:

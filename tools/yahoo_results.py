@@ -293,6 +293,75 @@ def upload(rows: list[dict], days: int = 90, post=None) -> int | None:
     return body.count("\n") - 1
 
 
+REVIEW_SHEET = "Mac_答え合わせ"  # 上限入札額以下で終わった候補と、入札の記録・予約リストに出ていたか（2026-11-24 オーナーが選択式で決定）
+REVIEW_MARKS = ("◎", "○", "入札した")
+RESERVE_FILE_RE = re.compile(r"reserve_list_(\d{8})_\d{4}\.csv$")
+
+
+def reserve_history(reports: Path | None = None) -> tuple[dict[str, str], set[str]]:
+    """毎朝の予約リスト（reports/reserve_list_日付_時刻.csv）に出た出品 {オークションID: 区分} と、リストが残っている日付（YYYYMMDD）."""
+    reports = reports or REPORTS
+    shown, days = {}, set()
+    for f in sorted(reports.glob("reserve_list_*.csv")) if reports.exists() else []:
+        m = RESERVE_FILE_RE.search(f.name)
+        if not m:
+            continue
+        days.add(m.group(1))
+        for r in _read(f):
+            aid = _aid(r.get("ヤフオク") or "")
+            if aid:
+                shown[aid.lower()] = "即決" if str(r.get("区分") or "").startswith("即決") else "予約"
+    return shown, days
+
+
+def review_csv(rows: list[dict], bids: list[dict] | None = None, shown: dict | None = None, list_days: set | None = None,
+               days: int = 14, now: datetime | None = None) -> str:
+    """答え合わせ: 候補（◎○・入札した）のうち、上限入札額（提示額）以下で落札された出品（直近 days 日）.
+
+    「上限まで入れていれば取れた」とは言えない（落札者の上限は見えない）。取れた可能性があった出品の一覧.
+    商品名から付属品・別物と分かる物、ジャンクなどの語がある物は、外さずに印を付ける（説明文は読んでいない）."""
+    now = now or datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+    bid = {str(b.get("auction_id") or "").lower(): b for b in (bids or [])}
+    shown, list_days = shown or {}, list_days or set()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["終了日", "機種", "落札額(円・ストアは税抜)", "上限額(提示額)", "上限との差", "入札数", "入札の記録", "入れた額",
+                "オークファンの失敗コード", "予約リスト", "商品名で分かる注意", "商品名", "ヤフオク"])
+    done = []
+    for r in rows:
+        end, price, mx = _when(r.get("end")), _num(r.get("final_price")), _num(r.get("max_bid"))
+        if (not r.get("checked_at") or r.get("status") != "落札された" or end is None or end < since
+                or r.get("mark") not in REVIEW_MARKS or not price or not mx or price > mx):
+            continue
+        done.append((end, price, mx, r))
+    for end, price, mx, r in sorted(done, key=lambda x: x[0], reverse=True):
+        aid = str(r["auction_id"]).lower()
+        b = bid.get(aid)
+        day = end.astimezone(JST)
+        if aid in shown:
+            listed = shown[aid]
+        else:  # その出品が終わる当日か前日の予約リストが残っていれば「出ていない」、残っていなければ「記録なし」
+            near = {day.strftime("%Y%m%d"), (day - timedelta(days=1)).strftime("%Y%m%d")}
+            listed = "出ていない" if near & list_days else "記録なし"
+        flags = [f for f in ba.detect_flags(str(r.get("title") or "")) if f in ("付属品のみ?", "アダプター等", "ジャンク", "光学難あり", "セット品")]
+        w.writerow([day.strftime("%Y-%m-%d"), r.get("model", ""), int(price), int(mx), int(mx - price), r.get("bids", ""),
+                    "あり" if b or r.get("mark") == "入札した" else "なし", (b or {}).get("my_bid", ""), (b or {}).get("bid_fail", ""),
+                    listed, "・".join(flags), str(r.get("title", ""))[:100],
+                    f"https://auctions.yahoo.co.jp/jp/auction/{r['auction_id']}"])
+    return buf.getvalue()
+
+
+def upload_review(rows: list[dict], post=None, reports: Path | None = None, log: Path | None = None) -> int | None:
+    """答え合わせ → 古物台帳「Mac_答え合わせ」（まるごと置き換え）. 送った行数. 未設定・失敗は None."""
+    import ledger_sync
+    shown, list_days = reserve_history(reports)
+    body = review_csv(rows, _read(log or DATA / "bid_log.csv"), shown, list_days)
+    if not ledger_sync.post_sheet(REVIEW_SHEET, body, post=post):
+        return None
+    return body.count("\n") - 1
+
+
 def run(cfg: dict | None = None, downloads: Path | None = None, fetch=None, post=None) -> dict:
     cfg = cfg or ba.load_config(None)
     st = settings(cfg)
@@ -312,6 +381,12 @@ def run(cfg: dict | None = None, downloads: Path | None = None, fetch=None, post
     sent = upload(rows, st["days"], post=post)
     if sent is not None:
         print(f"落札相場: {sent}行 → 古物台帳「{SHEET}」", file=sys.stderr)
+    try:
+        n = upload_review(rows, post=post)
+        if n is not None:
+            print(f"答え合わせ: 上限額以下で落札された候補 {n}件 → 古物台帳「{REVIEW_SHEET}」", file=sys.stderr)
+    except Exception as e:  # noqa: BLE001  答え合わせが作れなくても落札相場はそのまま
+        print(f"答え合わせを作れませんでした（{e}）", file=sys.stderr)
     return {"added": added, **res, "models": len(stats)}
 
 
