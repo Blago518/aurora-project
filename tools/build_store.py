@@ -270,7 +270,7 @@ def _not_model(tokens: list[str]) -> set[str]:
     out = set()
     for i, t in enumerate(tokens):
         l, nxt = t.lower(), (tokens[i + 1].lower() if i + 1 < len(tokens) else "")
-        if (RANK_TOKEN_RE.fullmatch(l) and re.search(r"[+\d]", l)) or re.fullmatch(r"0\d+", l) or re.fullmatch(r"\d+(?:st|nd|rd|th)", l) \
+        if (RANK_TOKEN_RE.fullmatch(l) and re.search(r"[+\d]", l)) or re.fullmatch(r"0\d+", l) or re.fullmatch(r"\d+(?:st|nd|rd|th)?(?:years?|yrs|anniversary)?", l) and (l[-1].isalpha()) \
                 or (re.fullmatch(r"\d+", l) and nxt in ("years", "year", "anniversary", "anniv", "yrs")):
             out.add(t)
     return out
@@ -349,7 +349,8 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     # 記念モデル（Contax Aria 70 Years）は、元の機種と値段が違うので別の行にする（2026-11-24 オーナー「aria と aria 70 years は別」）
     if m_ed and kind == "camera":
         ed = f"{int(m_ed.group(1))} Years"
-        shown, keep = shown + [ed], keep + [ed.lower()]
+        shown = [t for t in shown if t.lower() != "limited"] + [ed]   # 記念モデルは限定品なので「Limited」の有無で分けない
+        keep = [t for t in keep if t != "limited"] + [ed.lower()]
     label = " ".join([brand] + shown)
     return label, " ".join([brand.lower()] + keep), kind
 

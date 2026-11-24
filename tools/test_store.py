@@ -65,7 +65,7 @@ class RecKey(unittest.TestCase):
         self.assertEqual(bs.rec_key("Nikon F3 HP Body")[0], "Nikon F3 HP")
         self.assertEqual(bs.rec_key("Olympus OM-4 Ti Black")[0], "Olympus OM-4 Ti")
         aria = bs.rec_key("Contax Aria Body")[1]
-        for t in ("CONTAX Aria 70 Years Silver", "Contax Aria 70th Anniversary", "CONTAX Aria 70周年 記念モデル"):
+        for t in ("CONTAX Aria 70 Years Silver", "Contax Aria 70th Anniversary", "CONTAX Aria 70周年 記念モデル", "Contax Aria 70years Limited", "Contax Aria 70 Year"):
             k = bs.rec_key(t)
             self.assertEqual(k[0], "Contax Aria 70 Years", t)
             self.assertNotEqual(k[1], aria, t)
