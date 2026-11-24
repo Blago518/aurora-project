@@ -392,7 +392,8 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     key_brand = brand.lower()
     if brand == "OM":
         # OM SYSTEM（OM デジタルソリューションズ）はデジタルの OM-1・OM-5 など。「OM Zuiko 50mm」の OM はオリンパスのフィルムの OM マウント
-        if re.search(r"OM\s*SYSTEM|OM\s*デジタル|OM\s*Digital", title, re.I):
+        # 昔のフィルム用レンズの銘板「OM-SYSTEM ZUIKO」（M.Zuiko でない Zuiko）は Olympus（2026-11-24 オーキドの確かめ）
+        if re.search(r"OM\s*SYSTEM|OM\s*デジタル|OM\s*Digital", title, re.I) and not re.search(r"(?<!M\.)(?<!M\.\s)\bZuiko\b(?!\s*Digital)", title, re.I):
             brand, key_brand, rest = "OM SYSTEM", "om system", [t for t in rest if t.lower() != "system"]
         else:
             brand = key_brand = "Olympus"
@@ -469,7 +470,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
             lens_part = [t for t in keep if t in spec]
             names = names[:2]
             j = rest.index(names[-1]) + 1   # 名前のすぐ後ろの世代（Ricoh GR Digital IV の IV）
-            while j < len(rest) and rest[j].lower() in ba.GENERATIONS | {"v", "vi"}:
+            while j < len(rest) and (rest[j].lower() in ba.GENERATIONS | {"v", "vi"} or re.fullmatch(r"[A-Z]", rest[j])):   # Big Mini F の F
                 names.append(rest[j])
                 j += 1
             keep, shown = [t.lower() for t in names] + lens_part, names + [t for t in rest if t.lower() in lens_part]
@@ -496,6 +497,11 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
             shown = shown[:i] + ["+"] + shown[i:]
     shown = [{"ZOOM": "Zoom", "WIDE": "Wide", "PANORAMA": "Panorama", "Pro-S": "Pro S", "Pro-SD": "Pro SD", "ltm": "L39", "LTM": "L39"}.get(t, t) for t in shown]
     shown = [re.sub(r"^f(?=\d)", "F", t) for t in shown]   # f1.8 → F1.8
+    if kind == "lens" and brand in ("Olympus", "OM SYSTEM") and not any(t.lower() in ("zuiko", "m.zuiko") for t in shown):
+        # 系統（M.Zuiko・Zuiko Digital）は表示名に残す。比べるキーは変えない（書いていない商品名と同じ行のまま）
+        line = "M.Zuiko" if re.search(r"M\.\s?Zuiko", title, re.I) else "Zuiko Digital" if re.search(r"Zuiko\s+Digital", title, re.I) else ""
+        if line:
+            shown = [line] + shown
     shown = [re.sub(r"^(\d{3,4})(XL)", r"\1 \2", t) for t in shown]
     if brand == "Rollei":
         shown = [re.sub(r"^35-(?=[A-Za-z])", "35 ", t) for t in shown]

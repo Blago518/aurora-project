@@ -170,7 +170,11 @@ class RecMakerModel(unittest.TestCase):
                  "OM-1 Mark II": ("OM SYSTEM OM-1 Mark II", "Olympus", "digital"),
                  "Rollei 35 S": ("Rollei 35 S", "Rollei", "film"),
                  "Rollei 35 SE": ("Rollei 35 SE", "Rollei", "film"),
-                 "PEN-F Olympus half frame": ("Olympus PEN-F", "Olympus", "film")}
+                 "PEN-F Olympus half frame": ("Olympus PEN-F", "Olympus", "film"),
+                 "OM System Zuiko 50mm F1.8": ("Olympus Zuiko 50mm F1.8", "Olympus", "mf"),   # 昔の OM レンズの銘板
+                 "M.Zuiko 12-40mm F2.8 PRO": ("Olympus M.Zuiko 12-40mm F2.8", "Olympus", "af"),
+                 "OM SYSTEM M.Zuiko 12-40mm F2.8 PRO II": ("OM SYSTEM M.Zuiko 12-40mm F2.8", "Olympus", "af"),
+                 "Konica Big Mini F": ("Konica Big Mini F", "Konica", "film")}
         for t, (label, brand, cat) in cases.items():
             k = bs.rec_key(t)
             self.assertEqual((k[0], bs.rec_brand(k[0]), bs.rec_cat(k[2], [t])), (label, brand, cat), t)
