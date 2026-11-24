@@ -144,9 +144,7 @@ def _merge_closed_snipes(rows: dict, downloads: Path) -> int:
         if s.get("my_bid"):
             r["my_bid"] = s["my_bid"]
         if s.get("fail_code") and not _outbid(s):
-            r["bid_fail"] = s["fail_code"]
-            if r.get("result") in ("負け", "確認待ち", "落札(見込み)"):
-                r["result"] = FAILED
+            r["bid_fail"] = s["fail_code"]  # 記録するだけ。結果（負け・確認待ち）は変えない（下の説明）
     return added
 
 
@@ -154,7 +152,11 @@ FAILED = "入札失敗"
 
 
 def _outbid(s: dict) -> bool:
-    """失敗コードのうち「あなたの入札価格を上回る入札が行われました」（202）は、入札は入って競り負けた物. 入札失敗にしない.
+    """（2026-11-24 訂正）システムエラーの入札を「入札失敗」として落札率から外すのはやめた: オーナーの全521件のうち、
+    最終価格と照らせた11件では10件が「最終価格 ＞ 入れた額」で、入札が入っていても落札できていない。
+    エラーの表示だけでは「入っていれば勝てた」と言えないので、bid_fail は記録だけにし、結果は今までどおり台帳と最終価格で決める。
+
+    失敗コードのうち「あなたの入札価格を上回る入札が行われました」（202）は、入札は入って競り負けた物. 入札失敗にしない.
 
     2026-11-24 にオーナーの一覧で見た2種類: 202＝上回る入札（負け）／900010010＝システムエラー。入札が適切に処理されませんでした（入っていない）."""
     return str(s.get("fail_code") or "").strip() == "202" or "上回る入札" in str(s.get("fail_text") or "")
@@ -244,8 +246,6 @@ def judge_result(row: dict, state: dict, cfg: dict, fx: float, won_ids: set[str]
         result = "落札"
     else:
         result = "確認待ち" if days is None or days < wait_days(cfg) else "負け"
-    if row.get("bid_fail") and result != "落札":
-        result = FAILED  # オークファンの失敗コード: 入札が入っていない（負けではない）
     out = {"result": result, "final_price": int(final)}
     usd = _num(row.get("usd"))
     if usd is not None:
