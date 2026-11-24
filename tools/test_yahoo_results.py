@@ -1,5 +1,6 @@
 """落札相場の記録（yahoo_results.py）と、入札の結果を古物台帳で決めるテスト. python -m unittest discover -s tools で実行."""
 import csv
+import io
 import json
 import shutil
 import tempfile
@@ -67,6 +68,44 @@ class Watch(unittest.TestCase):
                                      "mark": "◎", "seen_from": "morning"}], rows, NOW)
         self.assertEqual((added, len(rows), rows[0]["seen_from"], rows[0]["end"]),
                          (0, 2, "extension+morning", "2026-11-19T21:05:00+09:00"))
+
+
+class Review(unittest.TestCase):
+    """答え合わせ（古物台帳「Mac_答え合わせ」）: 上限額以下で落札された候補と、入札の記録・予約リストに出ていたか（値は作り物）."""
+
+    def test_review(self):
+        now = datetime(2026, 11, 24, 3, 0, tzinfo=timezone.utc)
+        base = {"checked_at": "2026-11-23 09:00", "status": "落札された", "bids": "3", "store_tax": "0", "model": "Nikon F3"}
+        rows = [
+            dict(base, auction_id="x1000000001", title="Nikon F3 ボディ", end="2026-11-22T21:00:00+09:00", final_price="23000", max_bid="39500", mark="◎"),
+            dict(base, auction_id="x1000000002", title="Nikon F3 ジャンク", end="2026-11-22T22:00:00+09:00", final_price="9000", max_bid="39500", mark="○"),
+            dict(base, auction_id="x1000000003", title="Nikon F3用 フォーカシングスクリーン", end="2026-11-21T22:00:00+09:00", final_price="2300", max_bid="36500", mark="◎"),
+            dict(base, auction_id="x1000000004", title="Nikon F3 HP", end="2026-11-22T22:00:00+09:00", final_price="50000", max_bid="39500", mark="◎"),  # 上限より上 → 出さない
+            dict(base, auction_id="x1000000005", title="Nikon F3 P", end="2026-11-22T22:00:00+09:00", final_price="20000", max_bid="39500", mark="仮◎"),  # 仮の相場 → 出さない
+            dict(base, auction_id="x1000000006", title="Nikon Z 20mm F1.8", end="2026-11-23T21:00:00+09:00", final_price="82900", max_bid="88000", mark="入札した"),
+            dict(base, auction_id="x1000000007", title="Nikon F3 古い", end="2026-10-01T21:00:00+09:00", final_price="20000", max_bid="39500", mark="◎"),  # 期間の外
+        ]
+        bids = [{"auction_id": "x1000000006", "my_bid": "27800", "bid_fail": "900010010"}]
+        body = yr.review_csv(rows, bids, {"x1000000001": "予約"}, {"20261122"}, now=now)
+        got = {r["ヤフオク"].rsplit("/", 1)[-1]: r for r in csv.DictReader(io.StringIO(body))}
+        self.assertEqual(set(got), {"x1000000001", "x1000000002", "x1000000003", "x1000000006"})
+        self.assertEqual((got["x1000000001"]["予約リスト"], got["x1000000001"]["入札の記録"], got["x1000000001"]["上限との差"]), ("予約", "なし", "16500"))
+        self.assertEqual(got["x1000000002"]["予約リスト"], "出ていない")  # その日のリストは残っていて、載っていない
+        self.assertIn("ジャンク", got["x1000000002"]["商品名で分かる注意"])   # ジャンクの語は外さず、印を付ける
+        self.assertEqual(got["x1000000003"]["予約リスト"], "記録なし")    # 11/20・11/21 のリストは残っていない
+        self.assertIn("付属品のみ?", got["x1000000003"]["商品名で分かる注意"])
+        self.assertEqual((got["x1000000006"]["入札の記録"], got["x1000000006"]["入れた額"], got["x1000000006"]["オークファンの失敗コード"]),
+                         ("あり", "27800", "900010010"))
+
+    def test_reserve_history(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / "reserve_list_20261122_0946.csv").write_text(
+                "順,区分,判定,ヤフオク\n1,即決（今すぐ買える）,◎,https://auctions.yahoo.co.jp/jp/auction/x1000000001\n"
+                "2,予約,◎,https://auctions.yahoo.co.jp/jp/auction/X1000000002\n", encoding="utf-8-sig")
+            shown, days = yr.reserve_history(d)
+        self.assertEqual(shown, {"x1000000001": "即決", "x1000000002": "予約"})
+        self.assertEqual(days, {"20261122"})
 
 
 class Check(unittest.TestCase):

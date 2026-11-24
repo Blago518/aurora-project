@@ -2307,12 +2307,12 @@ def rows_for_output(items: list[Item]) -> list[dict]:
     return rows
 
 
-# ---- 今日の予約リスト（2026-11-19 ユーザー決定: 1日8本の入札を目標。予約はユーザーがオークファンなどで入れる。プログラムは入札しない）
+# ---- 今日の予約リスト（2026-11-19 ユーザー決定: 1日8本 → 2026-11-24 オーナーが選択式で10本に。本数は config.toml [reserve] target。予約はユーザーがオークファンなどで入れる。プログラムは入札しない）
 # ◎○（根拠が販売履歴＝確認不要）のうち、終了が今日〜明日の出品を「勝ちやすさ × 利益（今の価格で落札したとき）」の大きい順に target 本。
 # 勝ちやすさの記録が無い機種は default_rate（全体の勝ちやすさの目安）で並べる。即決価格が上限額以下の出品は別枠で先頭（数えない）。
 # 1日の予約額の合計には上限を付けない（2026-11-19 ユーザー決定）
 RESERVE_FIELDS = ["順", "区分", "判定", "勝ちやすさ", "上限入札額(入札欄に入れる額)", "支払い額(ストアは税込)", "現在価格",
-                  "即決価格", "利益(今の価格で落札)", "終了", "商品名", "ヤフオク", "注意"]
+                  "即決価格", "利益(今の価格で落札)", "終了", "商品名", "ヤフオク", "注意", "落札の中央値(この機種・直近90日)"]
 
 
 def _end_dt(s: str):
@@ -2357,8 +2357,16 @@ def reserve_list(rows: list[dict], now: datetime | None = None, target: int = 8,
     return instant, picks[:max(0, target)]
 
 
-def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 10.0) -> list[dict]:
-    """予約リストの表（CSV・古物台帳「Mac_予約リスト」・レポートの一番上）."""
+def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 10.0, sold_stats: dict | None = None) -> list[dict]:
+    """予約リストの表（CSV・古物台帳「Mac_予約リスト」・レポートの一番上）.
+
+    sold_stats: 機種ごとの落札額（yahoo_results.load_model_stats）。行に「落札の中央値」を出すだけで、並び・判定・上限には使わない
+    （2026-11-24 オーナー「落札金額のデータも入札に活かしたい」→ 選択式で「答え合わせ＋10本」）."""
+    sold_stats = sold_stats or {}
+
+    def sold(r):
+        st = sold_stats.get(model_key(r.get("タイトル") or "")[1])
+        return "{:,}円（{}件）".format(st["med"], st["n"]) if st else ""
     out = []
     for kind, lst in (("即決（今すぐ買える）", instant), ("予約", picks)):
         for r in lst:
@@ -2372,6 +2380,7 @@ def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 
                 "現在価格": r.get("現在価格"), "即決価格": r.get("即決価格"),
                 "利益(今の価格で落札)": r.get("利益(現在価格)"), "終了": r.get("終了") or "",
                 "商品名": r.get("タイトル") or "", "ヤフオク": r["ヤフオクURL"], "注意": r.get("出品者の注意") or "",
+                "落札の中央値(この機種・直近90日)": sold(r),
             })
     return out
 
@@ -2849,7 +2858,12 @@ def main(argv: list[str] | None = None) -> int:
     target = int(rs.get("target", 8))
     instant, picks = reserve_list(rows, target=target, days=int(rs.get("days", 2)),
                                   default_rate=float(ws.get("default_rate", 0.2)))
-    reserve = reserve_rows(instant, picks, cfg["yahoo"]["store_tax_pct"])
+    try:
+        import yahoo_results
+        sold_stats = yahoo_results.load_model_stats()
+    except Exception:  # noqa: BLE001  落札額の記録が無くても予約リストは作る
+        sold_stats = {}
+    reserve = reserve_rows(instant, picks, cfg["yahoo"]["store_tax_pct"], sold_stats)
     write_reserve_csv(reserve, args.out / f"reserve_list_{stamp}.csv")
     print(f"今日の予約リスト: 予約 {len(picks)}本（目標{target}本）・即決 {len(instant)}件 → reserve_list_{stamp}.csv", file=sys.stderr)
     write_csv(rows, args.out / f"bid_report_{stamp}.csv")
