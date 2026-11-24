@@ -234,6 +234,31 @@ def rec_cat(kind: str, titles: list[str]) -> str:
     return "digital" if dg * 2 > len(titles) else "film"
 
 
+# 機種名にしない説明の語（2026-11-24 オーナー「Contax ALL WORKS は機種じゃない」。同じ機種が色・状態の語で別の行に分かれるのも防ぐ）
+NAME_STOP = {"all", "works", "work", "worked", "working", "fully", "full", "tested", "test", "excellent", "exc", "mint", "near",
+             "top", "rare", "vintage", "beautiful", "good", "great", "clean", "nice", "black", "silver", "chrome", "white",
+             "gray", "grey", "brown", "blue", "shiny", "only", "manual", "focus", "frame", "shutter", "meter", "lens",
+             "set", "kit", "cla", "serviced", "overhauled", "junk", "parts", "repair", "as-is", "is", "as", "for",
+             "from", "japan", "used", "late", "early", "model", "type", "version", "strap", "case", "cap", "caps", "hood",
+             "box", "mount", "point", "shoot", "yashikor", "yashinon", "xener"}
+# 残す語: red（Leica の Red Dial）・half（Ricoh Auto Half・Fujifilm X Half）・new（Yashica-Flex New B・New F-1）
+SPEC_RE = re.compile(r"\d+(?:\.\d)?(?:-\d+(?:\.\d)?)?mm|\d+\.\d+")
+
+
+def _lens_spec(tokens: list[str]) -> set[str]:
+    """ボディの商品名に付いたレンズの数字（50mm・F1.4・Planar 50/1.7 の 50 と 1.7）. ボディの型番の数字（67・139・Nikon F2）は入れない.
+    F◯ は、すぐ前が焦点距離・数字のときだけ F値（ba.is_f_number と同じ考え。「Nikon F2 Ai 50mm F1.4」の F2 はボディ）."""
+    out, prev = set(), ""
+    for t in tokens:
+        l = t.lower()
+        lensy = bool(LENS_FAMILY_RE.search(prev) or prev in LENS_LINE_WORDS)
+        if (SPEC_RE.fullmatch(l) or (re.fullmatch(r"f\d.*", l) and (prev in out or re.fullmatch(r"\d.*", prev)))
+                or (re.fullmatch(r"\d{2,3}", l) and lensy)):
+            out.add(l)
+        prev = l
+    return out
+
+
 def rec_key(title: str) -> tuple[str, str, str] | None:
     """おすすめ用の機種まとめ（表示名, 比較キー, camera/lens）. ブランド不明なら None."""
     toks = ba.title_to_query(title, 20).split()
@@ -264,12 +289,32 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         if ks:
             keep += ks
             shown.append(orig)
-    if not any(re.search(r"\d", t) for t in keep):
-        # 数字の無い機種名（Spotmatic・Hexar・Contaflex など）は、カメラだけ、名前の語を2つまで使う（2026-11-20）
-        names = [t for t in rest if t.lower() not in CAMERA_WORDS | ba.NOISE_TOKENS and len(t) >= 2 and not re.search(r"\d", t)]
-        if kind != "camera" or not names:
+    spec = _lens_spec(rest) if kind == "camera" else set()
+    if not any(re.search(r"\d", t) and t not in spec for t in keep):
+        # 数字の無い機種名（Spotmatic・Hexar・Contaflex・Aria・MX など）は、カメラだけ、名前の語を2つまで使う（2026-11-20）
+        # 「ALL WORKS」「Black」「Excellent」のような説明の語、付いてきたレンズの名前は機種名にしない（2026-11-24 オーナー「all works は機種じゃない」）。
+        # ボディ＋レンズ（「Contax Aria + Planar 50mm F1.4」）は、レンズの数字だけで「Contax 50mm F1.4」という機種にせず、ボディの名前を先に出す
+        # レンズの数字が付いていて、ボディ＋レンズ・カメラと分かる語（+・w/・Body・TLR・Film Camera など）がある物だけ、ボディの名前を探す
+        has_spec = any(t in spec for t in keep)
+        kit = has_spec and bool(KIT_WORDS_RE.search(title) or CAMERA_WORDS & {w.lower() for w in re.findall(r"[A-Za-z]+", title)})
+        names, prev_ok = [], False
+        for i, t in enumerate(rest if kit or not has_spec else []):   # 「Minolta M Rokkor 40mm f/2 CLE」のようなレンズは今までどおり
+            l = t.lower()
+            if kit and l in spec:
+                break   # ボディの名前はレンズの数字より前だけ（「Canon EF 400mm ... Hood」の Hood を名前にしない）
+            ok = (not re.search(r"\d", t) and re.fullmatch(r"[A-Za-z][\w.\-]*", t) is not None
+                  and l not in CAMERA_WORDS | ba.NOISE_TOKENS | NAME_STOP and l not in BRAND_NAMES
+                  and not LENS_FAMILY_RE.search(l) and not (kit and l in LENS_LINE_WORDS)   # 付いたレンズのマウント（EF・Ai）は名前にしない
+                  and (len(t) >= 2 or ((prev_ok or i == 0) and re.fullmatch(r"[A-Za-z]", t))))   # 「Pen F」「Nikon F」「Fujifilm X Half」の1文字も名前
+            if ok:
+                names.append(t)
+            prev_ok = ok
+        if names and kind == "camera":
+            lens_part = [t for t in keep if t in spec]
+            keep, shown = [t.lower() for t in names[:2]] + lens_part, names[:2] + [t for t in rest if t.lower() in lens_part]
+        elif not any(re.search(r"\d", t) for t in keep) or kind != "camera":
             return None
-        keep, shown = [t.lower() for t in names[:2]], names[:2]
+        # ボディの名前が無く、レンズの数字だけの物（「Nikon Nikkor 105 2.5」）は今までどおり（rec_cat がレンズに分ける）
     if kind == "camera":
         # 表示名にシリーズの語を残す（「Canon 310」→「Canon IXY 310」、「Nikon fc」→「Nikon Z fc」。2026-11-22）。比べるキーは変えない
         series = set(ba.LINE_WORDS) | SERIES_BODY_WORDS | {"z", "d-lux", "v-lux", "c-lux", "trip", "electro", "zoom", "system", "eos"}
