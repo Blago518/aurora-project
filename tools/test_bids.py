@@ -114,11 +114,14 @@ class Aucfan(unittest.TestCase):
                 'auction_id,title,my_bid,bid_time,end_time,fail_code,fail_text,seen_at\n'
                 '"a1","Nikon FM2","13800","11月23日22時28分","11月23日22時34分","900010010","","2026-11-24T01:00:00Z"\n'
                 '"w1","Canon A-1","9500","11月23日21時00分","11月23日21時06分","","","2026-11-24T01:00:00Z"\n'
-                '"n7","Contax 50mm F1.4","23200","11月23日22時19分","11月23日22時25分","900010010","","2026-11-24T01:00:00Z"\n',
+                '"n7","Contax 50mm F1.4","23200","11月23日22時19分","11月23日22時25分","900010010","システムエラー。入札が適切に処理されませんでした。","2026-11-24T01:00:00Z"\n'
+                '"o2","Olympus 50mm F1.2","35800","11月22日21時02分","11月22日21時08分","202","あなたの入札価格を上回る入札が行われました","2026-11-24T01:00:00Z"\n',
                 encoding="utf-8")
-            self.assertEqual(br.import_aucfan_snipes(dl, log), 1)
+            self.assertEqual(br.import_aucfan_snipes(dl, log), 2)
             rows = {r["auction_id"]: r for r in br._read(log)}
             s = br.summarize(list(rows.values()), None)
+        self.assertEqual(rows["o2"].get("bid_fail") or "", "")  # 202（上回る入札）は入札は入って競り負け。入札失敗にしない
+        self.assertEqual(rows["o2"]["my_bid"], "35800")
         self.assertEqual(rows["a1"]["my_bid"], "13800")
         self.assertEqual(rows["a1"]["max_bid"], ROW["max_bid"])  # 拡張機能の上限額（提示額）は変えない
         self.assertEqual(rows["a1"]["result"], "入札失敗")

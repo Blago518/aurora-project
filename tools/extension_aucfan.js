@@ -13,15 +13,17 @@
   function parseSnipes(root) {
     const out = new Map();
     for (const a of root.querySelectorAll('a[href*="auctions.yahoo.co.jp"]')) {
-      const m = (a.getAttribute("href") || "").match(AID_RE);
+      let href = a.getAttribute("href") || "";
+      try { href = decodeURIComponent(href); } catch (e) { /* そのまま */ }
+      const m = href.match(AID_RE);
       if (!m || out.has(m[1])) continue;
       let box = a;
-      for (let k = 0; k < 8 && box.parentElement; k++) {
+      for (let k = 0; k < 20 && box.parentElement; k++) {
         box = box.parentElement;
         if (/入札設定/.test(box.textContent || "")) break;
       }
       const t = (box.textContent || "").replace(/\s+/g, " ");
-      const bid = t.match(/入札設定\s*([\d,]+)\s*円/);
+      const bid = t.match(/入札設定[^\d]{0,12}([\d,]+)\s*円/);
       if (!bid) continue;
       const cur = t.match(/現在価格[^\d]{0,12}([\d,]+)\s*円/);
       const titleEl = [...box.querySelectorAll("a")].find((x) => (x.textContent || "").trim().length > 8 && !/Yahoo!?オークションで見る/.test(x.textContent));
@@ -88,9 +90,9 @@
     const cols = ["auction_id", "title", "my_bid", "bid_time", "end_time", "fail_code", "fail_text", "seen_at"];
     const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
     const r = await send({ type: "saveFile", name: "aurora_snipes_closed.csv", csv: cols.join(",") + "\n" + rows.map((x) => cols.map((c) => q(x[c])).join(",")).join("\n") });
-    const failed = list.filter((s) => s.fail_code).length;
+    const failed = list.filter((s) => s.fail_code && s.fail_code !== "202" && !/上回る入札/.test(s.fail_text)).length;
     banner(`<b>Aurora</b>: このページの入札 ${list.length}件を記録しました（合計 ${rows.length}件）。` +
-      (failed ? `<br><b>${failed}件に失敗コード</b>が付いています（その入札は入っていません）。` : "") +
+      (failed ? `<br><b>${failed}件が「システムエラー」</b>で、入札が入っていません。` : "") +
       (r && r.error ? `<br>保存できませんでした（${r.error}）` : "") +
       `<br><span style="opacity:.8">ほかのページも開くと、その分も足されます。</span>`, failed ? "#7a2318" : "#0b1728");
   }

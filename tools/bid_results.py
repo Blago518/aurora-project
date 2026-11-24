@@ -143,7 +143,7 @@ def _merge_closed_snipes(rows: dict, downloads: Path) -> int:
             added += 1
         if s.get("my_bid"):
             r["my_bid"] = s["my_bid"]
-        if s.get("fail_code"):
+        if s.get("fail_code") and not _outbid(s):
             r["bid_fail"] = s["fail_code"]
             if r.get("result") in ("負け", "確認待ち", "落札(見込み)"):
                 r["result"] = FAILED
@@ -151,6 +151,13 @@ def _merge_closed_snipes(rows: dict, downloads: Path) -> int:
 
 
 FAILED = "入札失敗"
+
+
+def _outbid(s: dict) -> bool:
+    """失敗コードのうち「あなたの入札価格を上回る入札が行われました」（202）は、入札は入って競り負けた物. 入札失敗にしない.
+
+    2026-11-24 にオーナーの一覧で見た2種類: 202＝上回る入札（負け）／900010010＝システムエラー。入札が適切に処理されませんでした（入っていない）."""
+    return str(s.get("fail_code") or "").strip() == "202" or "上回る入札" in str(s.get("fail_text") or "")
 
 
 def _num(v) -> float | None:
