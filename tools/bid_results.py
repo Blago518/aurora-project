@@ -179,8 +179,15 @@ def _item_state(page: str) -> dict:
     props = json.loads(m.group(1)).get("props") or {}
     st = (props.get("pageProps") or {}).get("initialState") or props.get("initialState") or {}
     it = ((st.get("item") or {}).get("detail") or {}).get("item") or {}
-    return {"status": it.get("status"), "price": it.get("price"), "taxin": it.get("taxinPrice"),
-            "bids": it.get("bids"), "end": it.get("endTime")}
+    out = {"status": it.get("status"), "price": it.get("price"), "taxin": it.get("taxinPrice"),
+           "bids": it.get("bids"), "end": it.get("endTime")}
+    # 2026-11-25: 終わった出品のページは、ログインしていないと最終価格を見せず「現在」に開始価格を出す
+    # （1円開始・入札26件で price=1）。入札2件以上で価格が開始価格のままなら、最終価格は分からないとする
+    # （入札1件なら開始価格で落札されるので、そのまま最終価格）
+    init, price, bids = _num(it.get("initPrice")), _num(it.get("price")), _num(it.get("bids")) or 0
+    if str(it.get("status")) == "closed" and bids >= 2 and init is not None and price is not None and price <= init:
+        out.update(price=None, taxin=None, hidden=True)
+    return out
 
 
 def load_won_ids(paths: list[Path] | None = None) -> set[str] | None:
@@ -235,6 +242,11 @@ def judge_result(row: dict, state: dict, cfg: dict, fx: float, won_ids: set[str]
         return {"result": "流れた", "final_price": ""}  # 入札0件で終わった（自分も入札していない）
     final = _num(state.get("price"))
     max_bid = _num(row.get("max_bid"))
+    if final is None and state.get("hidden") and won_ids is not None:
+        # 最終価格は読めない（ログインが要る）。落札かどうかは今までどおり古物台帳で決める
+        if str(row.get("auction_id") or "").lower() in won_ids:
+            return {"result": "落札", "final_price": ""}
+        return {"result": "確認待ち" if days is None or days < wait_days(cfg) else "負け", "final_price": ""}
     if final is None:
         return None
     if won_ids is None:
@@ -282,6 +294,10 @@ def check_results(cfg: dict, fx: float, delay: float = 1.5, rows: list[dict] | N
     now = datetime.now(timezone.utc)
     n = 0
     for r in rows:
+        if 0 < (_num(r.get("final_price")) or 0) <= 1000 and r.get("result") != "落札":
+            # 2026-11-25 より前に、隠された最終価格（開始価格の1円・1,000円。入札22〜41件）を記録した物。
+            # 自分の入札は上限額＝数千円以上なので、1,000円以下で負けた記録は読み違い（入札1件・1,000円の落札は本物なので残す）
+            r.update(final_price="", profit_final="")
         res0 = r.get("result") or ""
         if res0 == "確認待ち" or (won_ids is not None and res0 == "落札(見込み)"):
             # 最終価格は読み済み。台帳に載ったら落札、待つ日数を過ぎたら負け（以前の見込みも台帳で確かめる）
