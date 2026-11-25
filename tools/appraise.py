@@ -1067,6 +1067,17 @@ def series_of(tokens: set[str], lens: bool) -> set[str]:
         s -= {"digital", "m.zuiko"}
     return s
 PREMIUM_VARIANTS = {"gold", "titanium", "titan", "limited", "限定", "whiteface", "af"}
+# 全部がチタン外装の機種は「チタン」の語で相場を分けない（2026-11-25 オーナー決定。CONTAX T2 は銀も黒もチタン。
+# 語の有無で分けると、同じ銀の T2 に相場が当たらなかった。ヤフオクの落札でも語の有無で差は出ていない）
+ALL_TITANIUM = [("contax", "t2")]
+
+
+def premium_of(tokens: set[str]) -> set[str]:
+    """相場を分ける型の語（限定・チタン・ゴールド等）."""
+    s = set(tokens) & PREMIUM_VARIANTS
+    if any(set(m) <= set(tokens) for m in ALL_TITANIUM):
+        s -= {"titanium", "titan"}
+    return s
 
 def variants_conflict(qt: set, rt: set) -> bool:
     """型が違う（または strict のグループで片方にだけ型がある）なら True."""
@@ -1508,7 +1519,7 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         if ACCESSORY_RE.search(row.get("title", "")) and not ACCESSORY_RE.search(query):
             continue
         # 限定・チタン・ゴールド等は相場が別物なので、片方にだけあれば除外
-        if (qt & PREMIUM_VARIANTS) != (rt & PREMIUM_VARIANTS):
+        if premium_of(qt) != premium_of(rt):
             continue
         # 非Ai と Ai/Ai-S は相場が違う
         if ("nonai" in qt and rt & {"ai", "ai-s"}) or ("nonai" in rt and qt & {"ai", "ai-s"}):

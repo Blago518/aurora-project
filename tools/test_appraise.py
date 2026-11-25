@@ -166,6 +166,19 @@ class MatchingRules(unittest.TestCase):
         self.assertEqual([x["_price"] for x in m], [139.99])
 
 
+class AllTitanium(unittest.TestCase):
+    """CONTAX T2 は全部チタン外装なので「チタン」の語で相場を分けない（2026-11-25 オーナー決定）。ほかの機種は今までどおり."""
+
+    def test_t2(self):
+        sales = [{"title": t, "source": "自分の販売実績", "_price": p, "_tokens": ba._tokens(t)}
+                 for t, p in [("Contax T2", 1140.0), ("Nikon F3 Body", 330.0)]]
+        for q in ["【1円】 コンタックス CONTAX T2 チタンブラック フィルム コンパクト", "CONTAX T2 Titanium Silver",
+                  "★超極上品★ CONTAX T2 コンパクトフィルムカメラ コンタックス #0134 Dlv5"]:
+            self.assertEqual([m["title"] for m in ba.match_sales(q, sales)], ["Contax T2"], q)
+        self.assertEqual(ba.match_sales("Nikon F3 チタン ボディ", sales), [])  # F3/T（チタン）は別物のまま
+        self.assertEqual(ba.match_sales("CONTAX T2 Gold Limited", sales), [])  # ゴールド・限定は別物のまま
+
+
 class UserscriptParity(unittest.TestCase):
     """ユーザースクリプト（JS）が Python と同じ判定をすることを確認（node が無ければスキップ）."""
 
@@ -176,14 +189,17 @@ class UserscriptParity(unittest.TestCase):
             self.skipTest("node がありません")
         titles = ["【美品】ニコン Nikon FM2 ブラック ボディ", "キヤノン Canon FD 28mm f2・8 良品",
                   "7Artisans 50mm F1.2 マイクロフォーサーズ オリンパス", "Contax TVS III",
-                  "OLYMPUS OM-SYSTEM G.ZUIKO AUTO-W 35mm F2.8", "Pentax 645 ボディキャップ"]
+                  "OLYMPUS OM-SYSTEM G.ZUIKO AUTO-W 35mm F2.8", "Pentax 645 ボディキャップ",
+                  "【1円】 コンタックス CONTAX T2 チタンブラック フィルム コンパクト", "Nikon F3 チタン ボディ"]
         sales = [{"title": t, "source": src, "_price": pr, "_tokens": ba._tokens(t)}
                  for t, src, pr in [("Olympus G.Zuiko 35mm f/2.8", "自分の販売実績", 119.99),
                                     ("Nikon FM2 Black", "自分の販売実績", 250.0),
                                     ("Canon FD 28mm f/2.8 S.C.", "自分の販売実績", 79.0),
                                     ("OLYMPUS ZUIKO AUTO-S 50mm 1.2", "頒布会リスト", 469.99),
                                     ("Contax TVS", "Chatwork販売実績", 399.99),
-                                    ("Pentax 645 本体", "自分の販売実績", 398.1)]]
+                                    ("Pentax 645 本体", "自分の販売実績", 398.1),
+                                    ("Contax T2", "自分の販売実績", 1140.0),
+                                    ("Nikon F3 Body", "自分の販売実績", 330.0)]]
         items = [ba.Item(url=f"u{i}", auction_id=f"x{i}", title=t, current_price_jpy=5000,
                          domestic_shipping_jpy=800, prefilled=True) for i, t in enumerate(titles)]
         ba.analyze(items, sales, CFG, 150.0, True, 0, [])
