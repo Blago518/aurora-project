@@ -294,7 +294,9 @@ def check_results(cfg: dict, fx: float, delay: float = 1.5, rows: list[dict] | N
     now = datetime.now(timezone.utc)
     n = 0
     for r in rows:
-        if str(r.get("final_price") or "").strip() == "1":  # 2026-11-25 より前に、隠された最終価格（1円開始の開始価格）を記録した物
+        if 0 < (_num(r.get("final_price")) or 0) <= 1000 and r.get("result") != "落札":
+            # 2026-11-25 より前に、隠された最終価格（開始価格の1円・1,000円。入札22〜41件）を記録した物。
+            # 自分の入札は上限額＝数千円以上なので、1,000円以下で負けた記録は読み違い（入札1件・1,000円の落札は本物なので残す）
             r.update(final_price="", profit_final="")
         res0 = r.get("result") or ""
         if res0 == "確認待ち" or (won_ids is not None and res0 == "落札(見込み)"):

@@ -157,9 +157,18 @@ class Check(unittest.TestCase):
             r["model_key"] = "nikon fm2"
         self.assertEqual(yr.model_stats(rows, 90, NOW)["nikon fm2"]["unsold"], 0)
         # 以前に 1円 で記録した物は直す
-        old = [dict(by["a2"], auction_id="a9", final_price="1", bids="20", status="落札された")]
+        old = [dict(by["a2"], auction_id="a9", final_price="1", bids="20", status="落札された"),
+               dict(by["a2"], auction_id="a8", final_price="1000", bids="37", status="落札された"),
+               dict(by["a2"], auction_id="a7", final_price="1000", bids="1", status="落札された")]  # 入札1件は本物
         yr.check_watch(old, 300, 0, lambda u: "", NOW)
-        self.assertEqual((old[0]["status"], old[0]["final_price"]), ("落札額不明", ""))
+        self.assertEqual([(r["status"], r["final_price"]) for r in old],
+                         [("落札額不明", ""), ("落札額不明", ""), ("落札された", "1000")])
+        log = [{"auction_id": "b1", "final_price": "1000", "result": "負け", "profit_final": "-5"},
+               {"auction_id": "b2", "final_price": "1000", "result": "落札", "profit_final": "9000"}]
+        from unittest import mock
+        with mock.patch.object(br, "_write"):
+            br.check_results(CFG, 150.0, 0, log, lambda u: "", None, {})
+        self.assertEqual([r["final_price"] for r in log], ["", "1000"])
         # 入札の結果: 落札かどうかは台帳で決め、最終価格は空
         st = br._item_state(page("closed", 1, 26, "2026-11-01T21:00:00+09:00", init=1))
         self.assertEqual(br.judge_result({"auction_id": "zzz", "max_bid": "30000", "end": "2026-11-01T21:00:00+09:00"},

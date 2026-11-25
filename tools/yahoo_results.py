@@ -210,8 +210,8 @@ def check_watch(rows: list[dict], max_checks: int = 300, delay: float = 1.5, fet
     import bid_results as br
     fetch = fetch or ba.http_get
     now = now or datetime.now(timezone.utc)
-    for r in rows:  # 2026-11-25 より前に、隠された最終価格（開始価格の1円）を落札額として記録した物
-        if r.get("status") == "落札された" and int(_num(r.get("bids")) or 0) >= 2 and (_num(r.get("final_price")) or 0) <= 1:
+    for r in rows:  # 2026-11-25 より前に、隠された最終価格（開始価格の1円・1,000円）を落札額として記録した物
+        if r.get("status") == "落札された" and int(_num(r.get("bids")) or 0) >= 2 and (_num(r.get("final_price")) or 0) <= 1000:
             r.update(status="落札額不明", final_price="")
     todo = [r for r in rows if not r.get("checked_at") and (_when(r.get("end")) or now) <= now]
     todo.sort(key=lambda r: str(r.get("end") or ""))
