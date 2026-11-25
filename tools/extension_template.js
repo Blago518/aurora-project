@@ -302,6 +302,11 @@
     return modelWordsQ(titleToQuery(title, 20).split(" ").filter(Boolean)).join(" ");
   }
   const pick = (set, pool) => [...set].filter((x) => pool.has(x)).sort().join("|");
+  const ALL_TI = C.allTitanium || [];
+  const premOf = (t) => {
+    const ti = ALL_TI.some((m) => m.every((w) => t.has(w)));
+    return [...t].filter((x) => PREMIUM.has(x) && !(ti && (x === "titanium" || x === "titan"))).sort().join("|");
+  };
 
   function detectFlags(title) {
     return FLAG_RES.filter(([, re]) => re.test(title)).map(([n]) => n);
@@ -322,7 +327,7 @@
       if (rb.length && !rb.some((t) => qt.has(t))) continue;
       if (qmm !== lensy(rt)) continue;
       if (r.acc && !qAcc) continue;
-      if (pick(qt, PREMIUM) !== pick(rt, PREMIUM)) continue;
+      if (premOf(qt) !== premOf(rt)) continue;  // appraise.premium_of（CONTAX T2 は「チタン」の語で分けない）
       if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
       if (seriesOf(qt, qmm) !== seriesOf(rt, lensy(rt))) continue;

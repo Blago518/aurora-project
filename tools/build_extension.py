@@ -103,7 +103,7 @@ def build_data(cfg: dict, fx: float) -> dict:
             "filmFormatAfter": ba.FILM_FORMAT_AFTER.pattern,
             "lensLines": ba.LENS_LINES, "lensMakers": sorted(ba.LENS_MAKERS), "noise": sorted(ba.NOISE_TOKENS), "thirdParty": sorted(ba.THIRD_PARTY),
             "colors": sorted(ba.COLOR_WORDS), "generations": sorted(ba.GENERATIONS), "series": sorted(ba.SERIES), "mounts": ba.MOUNT_WORDS, "formats": ba.FORMAT_WORDS,
-            "premium": sorted(ba.PREMIUM_VARIANTS), "accessoryRe": ba.ACCESSORY_RE.pattern,
+            "premium": sorted(ba.PREMIUM_VARIANTS), "allTitanium": [list(m) for m in ba.ALL_TITANIUM], "accessoryRe": ba.ACCESSORY_RE.pattern,
             "flagRules": [[n, p] for n, p in ba.FLAG_RULES],
             "condRules": [[p, o] for p, o in ba.COND_RULES], "condRank": ba.COND_RANK,
             "listingCondRules": [[p, r] for p, r in ba.LISTING_COND_RULES], "listingDefaultRank": ba.LISTING_DEFAULT_RANK,
