@@ -94,6 +94,13 @@ class MoveEvidence(unittest.TestCase):
             self.assertTrue((root / "2026" / "ヤフオク" / png.name).exists())
             (home / "Desktop" / "税理（旧）").mkdir()                          # 税理のフォルダが2つ → 動かさない
             self.assertIsNone(tf.tax_root(home))
+            self.assertIn("2つある", tf.move_evidence(dl, home)["why"])
+            # 理由を分けて書く（2026-11-25「1つに決まらない」だけでは分からなかった）
+            empty = home / "e"
+            (empty / "Desktop").mkdir(parents=True)
+            self.assertIn("フォルダが無い", tf.why_no_root(empty))
+            with mock.patch("tax_folder.os.listdir", side_effect=PermissionError):
+                self.assertIn("見えない", tf.why_no_root(home))
 
     def test_run_reports_places_and_folder_names(self):
         """振り分けの結果（行き先・件数・フォルダ名だけの並び）を「Mac_税理フォルダ」へ。輸出許可書は移した先を数える."""

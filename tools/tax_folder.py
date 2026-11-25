@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import os
 import csv
 import io
 import shutil
@@ -32,8 +33,26 @@ PERMIT_DEST = ""
 def tax_root(home: Path | None = None) -> Path | None:
     """デスクトップの「税理」で始まるフォルダ（税理・税理士 など）. 無い・2つ以上あるときは None（当てずっぽうで選ばない）."""
     desk = (home or Path.home()) / "Desktop"
-    found = sorted(p for p in desk.glob("税理*") if p.is_dir()) if desk.is_dir() else []
+    try:
+        found = sorted(p for p in desk.glob("税理*") if p.is_dir()) if desk.is_dir() else []
+    except OSError:  # 自動実行からは macOS がデスクトップを見せないことがある（iCloud と同じ）
+        return None
     return found[0] if len(found) == 1 else None
+
+
+def why_no_root(home: Path | None = None) -> str:
+    """税理のフォルダが決まらない理由（2026-11-25: 「1つに決まらない」だけでは、無いのか・2つあるのか・見えないのか分からなかった）."""
+    desk = (home or Path.home()) / "Desktop"
+    try:
+        names = list(os.listdir(desk))
+    except FileNotFoundError:
+        return "デスクトップのフォルダが無い"
+    except OSError:
+        return "Mac の自動実行からデスクトップが見えない（macOS の許可が無い）"
+    found = sorted(n for n in names if n.startswith("税理") and (desk / n).is_dir())
+    if not found:
+        return f"デスクトップに「税理」で始まるフォルダが無い（デスクトップのフォルダ {sum(1 for n in names if (desk / n).is_dir())}個）"
+    return f"デスクトップに「税理」で始まるフォルダが{len(found)}つある（{'・'.join(found)}）"
 
 
 def find_subs(root: Path, word: str, depth: int = 3) -> list[Path]:
@@ -95,7 +114,9 @@ def move_file(p: Path, to: Path) -> bool:
 
 def move_evidence(downloads: Path, home: Path | None = None) -> dict:
     """ヤフオクの仕入れ証跡の PNG を税理のフォルダへ. {dest, why, moved, total, left}（dest が None＝動かさなかった。why に理由）."""
-    to, why = dest(tax_root(home), EVIDENCE_WORD, EVIDENCE_DEST)
+    root = tax_root(home)
+    to, why = dest(root, EVIDENCE_WORD, EVIDENCE_DEST)
+    why = why_no_root(home) if root is None else why
     files = [p for sub in EVIDENCE_SUBS for p in (sorted((downloads / sub).glob("*.png")) if (downloads / sub).is_dir() else [])]
     moved = 0
     if to is not None:
@@ -107,7 +128,9 @@ def move_evidence(downloads: Path, home: Path | None = None) -> dict:
 
 def permit_base(home: Path | None = None, fallback: Path | None = None) -> tuple[Path | None, str]:
     """輸出許可書の置き場所（この下に FedEx・DHL）と、税理のフォルダに決まらなかった理由. 決まらなければ fallback."""
-    to, why = dest(tax_root(home), PERMIT_WORD, PERMIT_DEST)
+    root = tax_root(home)
+    to, why = dest(root, PERMIT_WORD, PERMIT_DEST)
+    why = why_no_root(home) if root is None else why
     return (to, "") if to is not None else (fallback, why)
 
 
