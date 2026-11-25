@@ -193,6 +193,10 @@ def record(row: dict, state: dict, now: datetime) -> bool:
         return False
     bids = int(_num(state.get("bids")) or 0)
     price = _num(state.get("price"))
+    if bids > 0 and price is None and state.get("hidden"):
+        # 最終価格をページが見せない（ログインが要る。bid_results._item_state）。落札額の中央値・答え合わせには使わない
+        row.update(bids=bids, final_price="", status="落札額不明", checked_at=now.strftime("%Y-%m-%d %H:%M"))
+        return True
     if bids > 0 and price is None:
         return False
     row.update(bids=bids, final_price=int(price) if bids > 0 else "", status="落札された" if bids > 0 else "流れた",
@@ -206,6 +210,9 @@ def check_watch(rows: list[dict], max_checks: int = 300, delay: float = 1.5, fet
     import bid_results as br
     fetch = fetch or ba.http_get
     now = now or datetime.now(timezone.utc)
+    for r in rows:  # 2026-11-25 より前に、隠された最終価格（開始価格の1円）を落札額として記録した物
+        if r.get("status") == "落札された" and int(_num(r.get("bids")) or 0) >= 2 and (_num(r.get("final_price")) or 0) <= 1:
+            r.update(status="落札額不明", final_price="")
     todo = [r for r in rows if not r.get("checked_at") and (_when(r.get("end")) or now) <= now]
     todo.sort(key=lambda r: str(r.get("end") or ""))
     out = {"due": len(todo), "read": 0, "sold": 0, "unsold": 0, "gave_up": 0}
@@ -217,7 +224,7 @@ def check_watch(rows: list[dict], max_checks: int = 300, delay: float = 1.5, fet
             state = {}
         out["read"] += 1
         if state and record(r, state, now):
-            out["sold" if r["status"] == "落札された" else "unsold"] += 1
+            out["unsold" if r["status"] == "流れた" else "sold"] += 1
         elif not state and (_when(r.get("end")) or now) < now - timedelta(days=GIVE_UP_DAYS):
             r.update(status="読めず", checked_at=now.strftime("%Y-%m-%d %H:%M"))  # 削除・取り消しなど
             out["gave_up"] += 1
@@ -244,7 +251,7 @@ def model_stats(rows: list[dict], days: int = 90, now: datetime | None = None) -
     groups: dict[str, dict] = {}
     for r in rows:
         key, end = r.get("model_key") or "", _when(r.get("end"))
-        if not key or not r.get("checked_at") or end is None or end < since or r.get("status") == "読めず":
+        if not key or not r.get("checked_at") or end is None or end < since or r.get("status") in ("読めず", "落札額不明"):
             continue
         g = groups.setdefault(key, {"label": r.get("model") or "", "prices": [], "unsold": 0})
         p = _num(r.get("final_price"))
