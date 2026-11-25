@@ -400,6 +400,22 @@ class StoreCodesAndTripods(unittest.TestCase):
         self.assertNotIn("7771C-1", ba.title_to_query("OLYMPUS 単焦点レンズ M.ZUIKO DIGITAL 45mm f1.8 7771C-1", 20))
         self.assertIn("X-T2", ba.title_to_query("富士フイルム FUJIFILM X-T2 ボディ", 20))  # 本物の型番は残す
 
+    def test_accessories_20261125(self):
+        """2026-11-25 予約リスト・答え合わせに本体の相場で ◎ に出ていた付属品（実際の商品名）."""
+        acc = ["コンタックス　T2　TVS　ロングストラップ　少スレ有り", "テストフラッシュにて発光確認済！ニコン Nikon SB-16A F3用 /管2611120",
+               "Nikon DW-4 6x High Magnification Finder for F3 #66806 L4", "ペンタックス ワインダーLX", "ニコン Nikon DF-GR1 Grip DF 7698#J 美品",
+               "12 / F3 アクセサリー　Nikon MD-4 モータードライブ",
+               "管F4040 未使用保管品 シリアル一致 ニコン Nikon EEコントロールユニット DS-12 F2 フォトミックAS用 カメラアクセサリー 箱 取説付",
+               "未開封 未使用品 Minolta XD XG-E ディスプレイスタンド カメラ展示台 パックパネル組み立て 裏・表 ミノルタ",
+               "Nikon ニコン SPEEDLIGHT SB-17 スピードライト ストロボ フラッシュ F3用 TTL フィルムカメラ アクセサリー 動作確認済"]
+        for t in acc:
+            self.assertIn("付属品のみ?", ba.detect_flags(t), t)
+        body = ["Nikon F3 HP MD-4付き", "Nikon F3 + MD-4 モータードライブ付", "【美品】Olympus XA2 Point & Shoot 35mm Film Camera A11 Flash オリンパス　９９",
+                "★超極上品★　CONTAX T2 コンパクトフィルムカメラ コンタックス　#0134 Dlv5", "Contax T2 ネックストラップ付き", "Nikon S3 Range Finder Camera",
+                "◎Nikon ニコン F2 フォトミック A DP-11 ボディ ブラック ", "Nikon Df ボディ グリップ付き", "Canon EOS 5D 背面モニター傷あり"]
+        for t in body:
+            self.assertNotIn("付属品のみ?", ba.detect_flags(t), t)
+
     def test_tripods_are_accessories(self):
         for t in ["Manfrotto マンフロット MVTTWINMC + MVH608AH カーボンツインビデオ三脚 雲台 ケース付き ¶ 7774A-1",
                   "GITZO ジッツオ GM4552L カーボン一脚 5段", "リーベック Libec ビデオ雲台 H45 ヘッド"]:
