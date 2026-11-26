@@ -311,6 +311,7 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_sheet_memo(url, key, dry_run)
     sync_candidates(url, key, dry_run)   # ゼニガメの下調べ → 店舗アプリの仮の相場
     sync_phone_bids(url, key, dry_run)   # スマホの入札タブで予約した物 → 入札の結果の集計
+    sync_phone_seen(url, key, dry_run)   # スマホの入札タブで確認済みにした物 → 見送りの学習（Mac_見送り）
     sync_trivia(url, key, dry_run)       # 機種の豆知識 → 店舗アプリ
     sync_practice(url, key, dry_run)     # 自動入札の練習の3品 → 拡張機能の鑑定画面の一番上
     sync_item_target(url, key, dry_run)  # 1件の利益の目安 → 仕入れの成績の「目安以上」
@@ -643,6 +644,49 @@ def sync_phone_bids(url: str, key: str, dry_run: bool = False) -> int | None:
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=PHONE_BID_FIELDS)
+        w.writeheader(); w.writerows(rows)
+    return len(rows)
+
+
+PHONE_SEEN_FIELDS = ["auction_id", "title", "end", "mark", "max_bid", "store_tax", "seen_at", "seller", "checked_at"]  # yahoo_results.SKIP_FIELDS と同じ
+
+
+def phone_seen_rows(text: str) -> list[dict]:
+    """「共有_店舗」の 種類＝確認済み・確認済み取消 の行（スマホの入札タブの［確認済み］。2026-11-26 オーナー）→ aurora_seen.csv と同じ形."""
+    import re
+    out = {}
+    for r in pick_columns(text, ["日時", "種類", "商品名", "判定", "上限（税込・円）", "メモ"]) or []:
+        kind = (r.get("種類") or "").strip()
+        if kind not in ("確認済み", "確認済み取消"):
+            continue
+        m = re.search(r"ID\s*([A-Za-z0-9]+)", r.get("メモ") or "")
+        if not m:
+            continue
+        if kind == "確認済み取消":
+            out.pop(m.group(1), None)
+            continue
+        end = re.search(r"終了\s*([^／]+)", r.get("メモ") or "")
+        out[m.group(1)] = {"auction_id": m.group(1), "title": r.get("商品名", ""), "end": end.group(1).strip() if end else "",
+                           "mark": r.get("判定", ""), "max_bid": r.get("上限（税込・円）", ""), "store_tax": "", "seen_at": r.get("日時", ""),
+                           "seller": "", "checked_at": r.get("日時", "")}
+    return list(out.values())
+
+
+def sync_phone_seen(url: str, key: str, dry_run: bool = False) -> int | None:
+    """古物台帳「共有_店舗」の「確認済み」→ data/phone_seen.csv（yahoo_results.upload_skipped が見送りに使う）."""
+    try:
+        text = fetch(url, key, "共有_店舗")
+    except (urllib.error.URLError, OSError):
+        return None
+    if text.startswith("NO_SHEET:"):
+        return None
+    rows = phone_seen_rows(text)
+    if dry_run:
+        return len(rows)
+    out = DATA / "phone_seen.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=PHONE_SEEN_FIELDS)
         w.writeheader(); w.writerows(rows)
     return len(rows)
 
