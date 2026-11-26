@@ -64,8 +64,38 @@ def search_dirs(home: Path) -> list[Path]:
     return [home / "Downloads" / EVIDENCE_DIR, home / "Downloads" / "yahoo_evidence"] + sorted((home / "Desktop").glob("税理*"))
 
 
-def open_and_wait(aid: str, home: Path, wait: float = 20.0) -> bool:
-    subprocess.run(["open", "-a", "Google Chrome", NAVI_URL.format(id=aid)], check=False)
+def history_urls(home: Path) -> dict[str, tuple[str, str]]:
+    """Chrome の閲覧履歴にある取引ナビの URL（オークションID → (いちばん新しい URL, プロファイル名)）.
+
+    2026-11-26 aid だけの URL（/buyer/top?aid=）は /trade/top に飛んで「取引ナビにアクセスできません」になった。
+    落札した物は支払いで取引ナビを開いているので、そのとき開いた URL（出品者・落札者の引数付き）を履歴から使う。
+    履歴は読むだけ（写しを作って読む。Chrome が開いていると元のファイルは鍵がかかっている）."""
+    import shutil
+    import sqlite3
+    import tempfile
+    out: dict[str, tuple[str, str, int]] = {}
+    base = home / "Library" / "Application Support" / "Google" / "Chrome"
+    for hist in sorted(base.glob("*/History")):
+        prof = hist.parent.name
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                cp = Path(td) / "h"
+                shutil.copy2(hist, cp)
+                con = sqlite3.connect(str(cp))
+                rows = con.execute("select url, last_visit_time from urls where url like '%contact.auctions.yahoo.co.jp%aid=%'").fetchall()
+                con.close()
+        except Exception as e:  # noqa: BLE001
+            print(f"  （Chrome の履歴 {prof} は読めませんでした: {e}）")
+            continue
+        for url, t in rows:
+            m = re.search(r"[?&]aid=([a-z]?\d{8,12})", url.lower())
+            if m and (m.group(1) not in out or t > out[m.group(1)][2]):
+                out[m.group(1)] = (url, prof, t)
+    return {k: (v[0], v[1]) for k, v in out.items()}
+
+
+def open_and_wait(aid: str, home: Path, wait: float = 20.0, url: str = "") -> bool:
+    subprocess.run(["open", "-a", "Google Chrome", url or NAVI_URL.format(id=aid)], check=False)
     end = time.time() + wait
     while time.time() < end:
         time.sleep(1)
@@ -94,6 +124,14 @@ def main(argv: list[str] | None = None) -> int:
     if a.max:
         need = need[:a.max]
     print(f"台帳のオークションID {len(ids)}件 / 証跡あり {len(ids) - len([i for i in ids if i not in have])}件 / これから開く {len(need)}件")
+    hist = history_urls(home)
+    found = [i for i in need if i in hist]
+    profs = sorted({hist[i][1] for i in found})
+    print(f"Chrome の履歴に取引ナビの URL がある {len(found)}件（プロファイル: {', '.join(profs) or 'なし'}）")
+    if found:
+        u = hist[found[0]][0]
+        print("  URL の形の例:", re.sub(r"=[^&]+", "=…", u))
+    need = found + [i for i in need if i not in hist]   # 履歴の URL がある物から開く
     if a.list or not need:
         for i in need:
             print("  ", i)
@@ -102,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     ok, ng = [], []
     for n, aid in enumerate(need, 1):
-        good = open_and_wait(aid, home)
+        good = open_and_wait(aid, home, url=hist.get(aid, ("", ""))[0])
         print(f"  [{n}/{len(need)}] {aid} … {'保存できた' if good else '保存できなかった'}")
         if good:
             ok.append(aid)
@@ -112,6 +150,8 @@ def main(argv: list[str] | None = None) -> int:
             if not ok:
                 print("\n最初の1件が保存できなかったので止めました。前に出ている Chrome の画面を見てください:\n"
                       "  ・ヤフオクのログイン画面 → ログインしてから、もう一度同じコマンド\n"
+                      "  ・「取引ナビにアクセスできません」→ 落札したときと違う Yahoo! ID か、違う Chrome のプロファイルで開いています。\n"
+                      "    上の「プロファイル」が今の Chrome と違えば、Chrome の右上の顔のアイコンでそのプロファイルに切り替えてから、もう一度\n"
                       "  ・取引ナビの中身が出ている → chrome://extensions で aurora の ↻ を押してから、もう一度\n"
                       "  ・「ページが見つからない」など → この画面のまま、サトシに「開けない」と伝えてください")
                 return 1
