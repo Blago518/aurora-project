@@ -314,7 +314,9 @@ class AccessoryOnly(unittest.TestCase):
              "CONTAX T2 電池蓋付き 美品": False, "Nikon FM2 ボディ": False,
              # 同じ種類の残り（オーキドの指摘で探した）: 底蓋・電池室の蓋・フィルムインサート。グリップ付きの本体は付属品ではない
              "Leica M6 底蓋": True, "Canon EOS 5D 電池室 蓋": True, "CONTAX T3 用 電池室カバー": True, "Pentax 645 フィルムインサート": True,
-             "Nikon D750 バッテリーグリップ付き": False, "Canon バッテリーグリップ BG-E14": True}
+             "Nikon D750 バッテリーグリップ付き": False, "Canon バッテリーグリップ BG-E14": True,
+             # 2026-11-26 オーナーの画面: 長音を横棒で書いた「ケ-ス」が付属品と読めず、T2 の相場で OK 115,000円になっていた
+             "Contax CC-17 ケ-ス(Contax T2用)": True, "Nikon レンズフ-ド HB-7": True, "Nikon F3 ケ-ス付き": False}
 
     def test_python(self):
         for t, acc in self.CASES.items():

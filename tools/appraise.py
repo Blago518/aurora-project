@@ -727,8 +727,13 @@ def condition_step_pct(cfg: dict, rows: list[dict]) -> float:
     return estimate_condition_step_pct(rows, base)[0]
 
 
+CHOON_RE = re.compile(r"(?<=[ァ-ヶ])[-‐‑–—−－ｰ](?=[ァ-ヶ])")
+
+
 def detect_flags(title: str) -> list[str]:
-    return [name for name, pat in FLAG_RULES if re.search(pat, title, re.I)]
+    # カタカナの間の横棒は長音（「ケ-ス」「フ-ド」。2026-11-26「Contax CC-17 ケ-ス(Contax T2用)」が付属品と読めず、T2 の相場で OK になっていた）
+    t = CHOON_RE.sub("ー", str(title or ""))
+    return [name for name, pat in FLAG_RULES if re.search(pat, t, re.I)]
 
 
 # ---- 出品者の管理番号（Tj036・Ft644461・NA77401・IT120751・【L256】・OL4709 など）を検索語から外す

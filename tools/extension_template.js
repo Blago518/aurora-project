@@ -320,8 +320,10 @@
     return [...t].filter((x) => PREMIUM.has(x) && !(ti && (x === "titanium" || x === "titan"))).sort().join("|");
   };
 
+  // カタカナの間の横棒は長音（「ケ-ス」。appraise.detect_flags と同じ。2026-11-26）
   function detectFlags(title) {
-    return FLAG_RES.filter(([, re]) => re.test(title)).map(([n]) => n);
+    const t = String(title || "").replace(/(?<=[ァ-ヶ])[-‐‑–—−－ｰ](?=[ァ-ヶ])/g, "ー");
+    return FLAG_RES.filter(([, re]) => re.test(t)).map(([n]) => n);
   }
 
   // 焦点距離（50mm・5cm）があればレンズ
