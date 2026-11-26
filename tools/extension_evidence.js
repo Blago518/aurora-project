@@ -82,8 +82,17 @@ function orderInfo(text, id, now) {
     if (!info && isOrder) {
       const id = expect || ((location.href.match(/[?&][a-z_]*(?:aid|auction)[a-z_]*=([a-z]?\d{8,12})/i) || [])[1]) || ((body.match(/(?:オークションID|商品ID)\s*[:：]?\s*([a-z]\d{8,12})/i) || [])[1]) || "";
       const o = orderInfo(body, id);
-      // 中身が出るのを少し待ってから（最大5秒）、見つかった物だけで保存する（オークションIDさえあれば写す）
-      if (o && (o.ymd && o.price || tries >= 10)) info = o;
+      // 2026-11-26「システムでエラーが発生しました」の画面まで、IDだけで写していた → 日付と金額が読めた時だけ写す。
+      // エラーの画面は1回だけ読み直し、それでもだめなら写さずに「保存できず」として次へ（記録に残る）
+      if (/システムでエラーが発生|再度お試しください|ページが見つかりません|表示できません/.test(body)) {
+        const key = "aurora_reload_" + id;
+        let done = false;
+        try { done = sessionStorage.getItem(key) === "1"; if (!done) sessionStorage.setItem(key, "1"); } catch (e) { done = true; }
+        if (!done) { setTimeout(() => location.reload(), 3000); return; }
+        chrome.runtime.sendMessage({ type: "evidenceNone", note: "注文の画面がエラー（読み直してもだめ）: " + body.replace(/\s+/g, " ").slice(0, 60) }, () => void chrome.runtime.lastError);
+        return;
+      }
+      if (o && o.ymd && o.price) info = o;
     }
     if (!info || !info.ymd && !info.found || !info.price && !info.found) {   // 中身が出るまで待つ（最大10秒）。出なければ、まとめて保存の順番待ちに次へ進むよう知らせる
       if (++tries < 20) setTimeout(go, 500); else chrome.runtime.sendMessage({ type: "evidenceNone", note: (location.pathname + " 「" + document.title + "」 " + body.replace(/\s+/g, " ").slice(0, 80)) }, () => void chrome.runtime.lastError);
