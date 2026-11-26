@@ -88,9 +88,39 @@ class Skipped(unittest.TestCase):
             (dl / "aurora_snipes.csv").write_text("auction_id,title,max_bid,current,seen_at\nx1000000002,レンズB,7000,,\n", encoding="utf-8")
             sent = []
             with mock.patch.object(ledger_sync, "post_sheet", lambda sheet, body, post=None: sent.append(body) or True):
-                n = yr.upload_skipped([], downloads=dl, log=dl / "none.csv")
+                n = yr.upload_skipped([], downloads=dl, log=dl / "none.csv", phone_seen=dl / "none2.csv")
             self.assertEqual(n, 1)
             self.assertIn("カメラA", sent[0]); self.assertNotIn("レンズB", sent[0])
+
+    def test_phone_seen(self):
+        """スマホの入札タブの［確認済み］も見送りに使う（2026-11-26 オーナー「スマホアプリの入札タブでも、確認済みボタンほしいね」）."""
+        import tempfile
+        from unittest import mock
+        import ledger_sync
+        import yahoo_results as yr
+        sheet = ("日時,種類,商品名,値札（税込・円）,判定,上限（税込・円）,想定$（送料別）,店,メモ,版\n"
+                 "2026-01-02 10:00,確認済み,カメラA,9000,◎,10000,100,ヤフオク,ID x1000000001／終了 2026-01-03 21:00,v\n"
+                 "2026-01-02 10:01,確認済み,レンズB,9000,○,8000,100,ヤフオク,ID x1000000002／終了 ,v\n"
+                 "2026-01-02 10:02,確認済み取消,レンズB,,,,,ヤフオク,ID x1000000002／終了 ,v\n"
+                 "2026-01-02 10:03,入札予約,カメラC,,,,,ヤフオク,ID x1000000003／終了 ,v\n")
+        rows = ledger_sync.phone_seen_rows(sheet)
+        self.assertEqual([r["auction_id"] for r in rows], ["x1000000001"])   # 取り消した物・予約は入らない
+        self.assertEqual((rows[0]["mark"], rows[0]["max_bid"], rows[0]["checked_at"]), ("◎", "10000", "2026-01-02 10:00"))
+        with tempfile.TemporaryDirectory() as d:
+            dl = Path(d)
+            ps = dl / "phone_seen.csv"
+            with mock.patch.object(ledger_sync, "fetch", lambda u, k, sh=None: sheet), mock.patch.object(ledger_sync, "DATA", dl):
+                self.assertEqual(ledger_sync.sync_phone_seen("u", "k"), 1)
+            sent = []
+            with mock.patch.object(ledger_sync, "post_sheet", lambda sh, b, post=None: sent.append(b) or True):
+                n = yr.upload_skipped([], downloads=dl, log=dl / "none.csv", phone_seen=ps)   # パソコンの記録が無くても動く
+            self.assertEqual(n, 1)
+            self.assertIn("カメラA", sent[0])
+
+    def test_store_has_seen_button(self):
+        t = (Path(__file__).resolve().parents[1] / "store" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('data-seen="', t)
+        self.assertIn('"確認済み")', t)
 
     def test_extension_exports_checked_at(self):
         t = (Path(__file__).parent / "extension_template.js").read_text(encoding="utf-8")

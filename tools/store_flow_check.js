@@ -102,6 +102,18 @@ function checkCards(cards, when) {
     await p.reload(); await p.waitForTimeout(500); await p.click('nav [data-tab="bid"]'); await p.click('#bidChips [data-f="check"]'); await p.waitForTimeout(200);
     const x1r = (await cardTexts(p)).find((c) => c.id === "x1");
     if (!x1r || !x1r.tags.some((t) => /確認済み/.test(t))) bad(`${lab}: 開き直すと確認済みが消える`);
+    // ［確認済み］（2026-11-26 オーナー「スマホアプリの入札タブでも、確認済みボタンほしいね」）: 押すと印が付き、記録され、開き直しても残る。もう1回で外れる
+    { await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(150);
+      await p.click('[data-seen="d1"]'); await p.waitForTimeout(200);
+      const on = await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed") + b.textContent);
+      if (!/^true✓ 確認済み/.test(on)) bad(`${lab}: ［確認済み］を押しても印が付かない: ${on}`);
+      if (!/確認済み/.test((await p.evaluate(() => localStorage.getItem("storeOutbox"))) || "")) bad(`${lab}: ［確認済み］が記録されない`);
+      if (process.env.STORE_SHOT) await p.screenshot({ path: process.env.STORE_SHOT + "_seen_" + lab.replace(/\W/g, "") + ".png" });
+      await p.reload(); await p.waitForTimeout(500); await p.click('nav [data-tab="bid"]'); await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(200);
+      if ((await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed"))) !== "true") bad(`${lab}: 開き直すと確認済みが消える（入札タブのボタン）`);
+      await p.click('[data-seen="d1"]'); await p.waitForTimeout(200);
+      if ((await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed"))) !== "false") bad(`${lab}: もう1回押しても確認済みが外れない`);
+      if (!/確認済み取消/.test((await p.evaluate(() => localStorage.getItem("storeOutbox"))) || "")) bad(`${lab}: 確認済みを外したことが記録されない`); }
     // 予約できる出品: 帯に上限額 →［予約した］で記録
     await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(150);
     await p.evaluate(() => { const a = document.querySelector('[data-snipe="d1"]'); if (a) { a.removeAttribute("target"); a.addEventListener("click", (e) => e.preventDefault()); } });

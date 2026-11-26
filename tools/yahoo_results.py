@@ -321,14 +321,17 @@ def skipped_csv(seen: list[dict], bids: list[dict], results: list[dict] | None =
     return buf.getvalue()
 
 
-def upload_skipped(results: list[dict], downloads: Path | None = None, log: Path | None = None, post=None) -> int | None:
+def upload_skipped(results: list[dict], downloads: Path | None = None, log: Path | None = None, post=None,
+                   phone_seen: Path | None = None) -> int | None:
     """見送り → 古物台帳「Mac_見送り」（まるごと置き換え）. 送った行数. 確認済みの記録が無ければ None."""
     import ledger_sync
     downloads = downloads or Path.home() / "Downloads"
     files = sorted(downloads.glob("aurora_seen*.csv"), key=lambda p: p.stat().st_mtime) if downloads.exists() else []
-    if not files:
-        return None
-    seen = [{k: r.get(k, "") for k in SKIP_FIELDS} for r in _read(files[-1])]
+    seen = [{k: r.get(k, "") for k in SKIP_FIELDS} for r in _read(files[-1])] if files else []
+    # スマホの入札タブの［確認済み］（2026-11-26 オーナー。ledger_sync.sync_phone_seen → data/phone_seen.csv）も足す。同じ出品はパソコンの記録が先
+    have = {_aid(r.get("auction_id", "")) for r in seen}
+    seen += [{k: r.get(k, "") for k in SKIP_FIELDS} for r in _read(phone_seen or DATA / "phone_seen.csv")
+             if _aid(r.get("auction_id", "")) not in have]
     if not any(r.get("checked_at") for r in seen):
         return None
     # 入札したかは、オークファンの予約（予約中 aurora_snipes.csv・入札完了 aurora_snipes_closed.csv）も見る。
