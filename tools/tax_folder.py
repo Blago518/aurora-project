@@ -152,8 +152,16 @@ def evidence_ids(downloads: Path, home: Path | None = None) -> set[str]:
     return out
 
 
+def is_bad_shot(f: Path) -> bool:
+    """日付で始まらない証跡（拡張機能が注文の状況のエラーの画面を「注文_ID」の名前で写した物。2026-11-26）.
+    オーナーが撮った物・拡張機能の正しい物は、どれも 終了日（8桁）で始まる."""
+    return not re.match(r"\d{8}_", f.name) and bool(re.search(r"_[a-z]?\d{8,12}(\s*\(\d+\))?\.png$", f.name.lower()))
+
+
 def ids_of(f: Path) -> set[str]:
-    """証跡の名前のオークションID（まとめて取引は全部）. Chrome が付ける「 (1)」は外して読む."""
+    """証跡の名前のオークションID（まとめて取引は全部）. Chrome が付ける「 (1)」は外して読む. 日付で始まらない物（エラーの画面）は数えない."""
+    if is_bad_shot(f):
+        return set()
     stem = re.sub(r"\s*\(\d+\)$", "", f.stem.lower())
     return {m.group(1) for m in re.finditer(r"_([a-z]?\d{8,12})(?=_|$)", stem)}
 
@@ -189,7 +197,17 @@ def move_evidence(downloads: Path, home: Path | None = None) -> dict:
     to, why = dest(root, EVIDENCE_WORD, EVIDENCE_DEST)
     why = why_no_root(home) if root is None else why
     files = [p for sub in EVIDENCE_SUBS for p in (sorted((downloads / sub).glob("*.png")) if (downloads / sub).is_dir() else [])]
-    moved, dup, notes = 0, 0, []
+    moved, dup, notes, bad = 0, 0, [], 0
+    # エラーの画面を写した物（日付で始まらない）は、ダウンロードからも税理のフォルダからもゴミ箱へ（元に戻せる）。次に一覧を開くと取り直す
+    trash = Path.home() / ".Trash"
+    for p in files + (sorted(to.rglob("*.png")) if to is not None and to.is_dir() else []):
+        if is_bad_shot(p) and p.exists():
+            try:
+                shutil.move(str(p), str(trash / p.name)) if trash.is_dir() else p.unlink()
+                bad += 1
+            except OSError as e:
+                notes.append(f"{p.name}: エラーの画面をゴミ箱に移せない（{e}）")
+    files = [p for p in files if p.exists()]
     if to is not None:
         have: set[str] = set()
         for f in (to.rglob("*.png") if to.is_dir() else []):
@@ -213,7 +231,7 @@ def move_evidence(downloads: Path, home: Path | None = None) -> dict:
                 notes.append(f"{p.name}: 同じ名前の別の画像が移し先にある")
     left = sum(1 for p in files if p.exists())
     total = len(list(to.glob("*.png"))) if to is not None and to.is_dir() else 0
-    return {"dest": to, "why": why, "moved": moved, "total": total, "left": left, "dup": dup, "notes": notes}
+    return {"dest": to, "why": why, "moved": moved, "total": total, "left": left, "dup": dup, "notes": notes, "bad": bad}
 
 
 def permit_base(home: Path | None = None, fallback: Path | None = None) -> tuple[Path | None, str]:
@@ -238,7 +256,7 @@ def run(downloads: Path | None = None, home: Path | None = None, post=None, uplo
     rows.append(["ヤフオクの仕入れ証跡", str(ev["dest"] or "ダウンロード/ヤフオク仕入証跡（動かしていない）"), ev["moved"], ev["total"], ev["left"], ev["why"]])
     for c in ("FedEx", "DHL"):
         rows.append([f"輸出許可書 {c}", str(pbase / c), pmoved if c == "FedEx" else "", count[c], "", pwhy])
-    print(f"  ヤフオクの仕入れ証跡: {ev['dest'] or '動かしていない（' + ev['why'] + '）'}（今回 {ev['moved']}件・重複でゴミ箱へ {ev.get('dup', 0)}件・フォルダの中 {ev['total']}件・ダウンロードに残り {ev['left']}件）")
+    print(f"  ヤフオクの仕入れ証跡: {ev['dest'] or '動かしていない（' + ev['why'] + '）'}（今回 {ev['moved']}件・重複でゴミ箱へ {ev.get('dup', 0)}件・エラーの画面でゴミ箱へ {ev.get('bad', 0)}件・フォルダの中 {ev['total']}件・ダウンロードに残り {ev['left']}件）")
     for n in ev.get("notes", [])[:30]:
         print(f"    残った: {n}")
     print(f"  輸出許可書: {pbase}（FedEx {count['FedEx']}件・DHL {count['DHL']}件。今回 {pmoved}件）" + (f" ※税理のフォルダには入れていない（{pwhy}）" if pwhy else ""))

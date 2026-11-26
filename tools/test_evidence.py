@@ -287,3 +287,25 @@ class OrderStatusPage(unittest.TestCase):
         src = (HERE / "build_extension.py").read_text(encoding="utf-8")
         self.assertIn("https://buy.auctions.yahoo.co.jp/order/*", src)
         self.assertIn("buy\\.auctions\\.yahoo\\.co\\.jp\\/order", (HERE / "extension_evidence_list.js").read_text(encoding="utf-8"))
+
+
+class BadShots(unittest.TestCase):
+    def test_error_screens_are_not_evidence(self):
+        """2026-11-26 注文の状況の「システムでエラーが発生しました」を「注文_ID.png」で写していた → 数えず、ゴミ箱へ."""
+        import tax_folder
+        with tempfile.TemporaryDirectory() as d:
+            home, dl = Path(d), Path(d) / "Downloads"
+            (dl / "ヤフオク仕入証跡").mkdir(parents=True)
+            (home / ".Trash").mkdir()
+            dest = home / "Desktop" / "税理士提出書類" / "8. 仕入証跡" / "ヤフオク"
+            dest.mkdir(parents=True)
+            (dest / "注文_b1000000001.png").write_bytes(b"err")
+            (dest / "20261013_店A_33658_c1000000002.png").write_bytes(b"ok")
+            self.assertTrue(tax_folder.is_bad_shot(dest / "注文_b1000000001.png"))
+            self.assertFalse(tax_folder.is_bad_shot(dest / "20261013_店A_33658_c1000000002.png"))
+            with mock.patch.object(Path, "home", return_value=home):
+                r = tax_folder.move_evidence(dl, home)
+                have = tax_folder.evidence_ids(dl, home)
+            self.assertEqual(r["bad"], 1)
+            self.assertEqual(have, {"c1000000002"})
+            self.assertTrue((home / ".Trash" / "注文_b1000000001.png").exists())

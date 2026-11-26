@@ -160,7 +160,7 @@ async function evRun() {
       tab = await chrome.tabs.create({ url: item.url, active: true });
       res = await new Promise((resolve) => {
         evWait = { tabId: tab.id, id: item.id, resolve: (v) => resolve(v) };
-        setTimeout(() => evDone(tab.id, false, "20秒待っても画面が読めなかった"), 20000);   // 中身が読めない画面は evidence.js が先に知らせる
+        setTimeout(() => evDone(tab.id, false, "30秒待っても画面が読めなかった"), 30000);   // 中身が読めない画面は evidence.js が先に知らせる
       });
     } catch (e) { res = { ok: false, note: "タブを開けなかった: " + String((e && e.message) || e) }; }
     if (res.ok) evStat.saved += 1; else evStat.failed.push(item.id);
