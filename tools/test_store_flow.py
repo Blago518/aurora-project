@@ -88,7 +88,7 @@ def fixture() -> dict:
         # 2026-11-22 オーナー: Sold・Now に管理番号（E66）が入っていた／F2.8 の別物を「-2.8」で外したい
         it("o1", "OLYMPUS オリンパス ZUIKO AUTO-W 24mm/F2 OMマウント 単焦点 広角レンズ 大口径 前後キャップ/レンズフード付 E66", 15000, 25000, 9000, False),
         it("s1", "ZENZA BRONICA ZENZANON 250mm/f5.6 レンズ レンズ", 11000, 20000, 14408, False,
-           taxNote="ストア: このまま入札。支払いは税込22,000円"),
+           taxNote="ストア: このまま入札。支払いは税込22,000円", caution="良い評価 98.0%（99.5% 未満）"),
     ]
     # 仕入れの実績（作り物）: XA1 は売れた2件・利益の目安以上1件・平均7,000円（目安は作り物の1万円）
     d["history"] = {"sellers": {}, "models": {ba.model_key(items[0]["title"])[1]: {"n": 2, "hit": 1, "sum": 14000, "conds": {}}}, "target": 10000}
