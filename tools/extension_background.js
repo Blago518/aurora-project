@@ -116,6 +116,20 @@ function evDone(tabId, ok, note) {
 function evTell(extra) {
   if (evStat.from != null) chrome.tabs.sendMessage(evStat.from, Object.assign({ type: "evidenceProgress" }, evStat, extra), () => void chrome.runtime.lastError);
 }
+// 保存済みか: Mac にある証跡（evidence_have.json。build_extension.py が作る）が正。拡張機能の中の印は、その後に保存した物だけ信じる
+let evHave = null;
+async function evSaved(keys) {
+  if (!evHave) evHave = await fetch(chrome.runtime.getURL("evidence_have.json")).then((x) => x.json()).catch(() => null) || { t: 0, ids: [] };
+  if (Array.isArray(evHave)) evHave = { t: 0, ids: evHave };
+  const r = await chrome.storage.local.get(keys);
+  const ids = new Set(evHave.ids || []);
+  const out = {};
+  for (const k of keys) {
+    const id = k.replace(/^evidence_/, "");
+    out[k] = ids.has(id) || (r[k] && (!evHave.t || r[k] > evHave.t)) ? 1 : 0;
+  }
+  return out;
+}
 async function evLog(entries) {   // entries: {id: [結果, 理由]}
   const r = await chrome.storage.local.get("evlog");
   const log = r.evlog || {};
@@ -138,7 +152,7 @@ async function evRun() {
   while (evQueue.length) {
     const item = evQueue.shift();
     evStat.n += 1;
-    const had = await chrome.storage.local.get("evidence_" + item.id);
+    const had = await evSaved(["evidence_" + item.id]);
     if (had["evidence_" + item.id]) { evStat.saved += 1; continue; }   // まとめて取引の1枚で済んだ物は開かない
     evTell({ done: false });
     let tab = null, res = { ok: false, note: "" };
@@ -198,7 +212,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   if (msg && msg.type === "evidenceBatch" && Array.isArray(msg.links) && _sender && _sender.tab) {
     const links = msg.links.filter((l) => l && /^[a-z]?\d{8,12}$/i.test(l.id || "") && /^https:\/\/contact\.auctions\.yahoo\.co\.jp\//.test(l.url || ""));
     const ask = links.map((l) => "evidence_" + l.id).concat((msg.noSeller || []).map((id) => "evidence_" + String(id).toLowerCase()));
-    chrome.storage.local.get(ask).then((r) => {
+    evSaved(ask).then((r) => {
       const todo = links.filter((l) => !r["evidence_" + l.id] && !evQueue.some((q) => q.id === l.id));
       todo.forEach((l) => evQueue.push(Object.assign({ from: _sender.tab.id }, l)));
       send({ queued: todo.length, already: links.length - todo.length });
@@ -217,7 +231,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
     const ids = (Array.isArray(msg.ids) ? msg.ids : [msg.id]).filter((i) => /^[a-z]?\d{8,12}$/i.test(i)).map((i) => String(i).toLowerCase());
     if (!ids.includes(String(msg.id).toLowerCase())) ids.push(String(msg.id).toLowerCase());
     const keys = Array.from(new Set([key].concat(ids.map((i) => "evidence_" + i))));
-    chrome.storage.local.get(keys).then((r) => {
+    evSaved(keys).then((r) => {
       if (keys.some((k) => r[k])) { evDone(_sender.tab.id, true); return send({ already: true }); }
       return chrome.tabs.captureVisibleTab(_sender.tab.windowId, { format: "png" })
         .then((url) => quietDownload({ url, filename: "ヤフオク仕入証跡/" + String(msg.name).slice(0, 120) + ".png", conflictAction: "uniquify", saveAs: false })
