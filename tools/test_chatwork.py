@@ -36,6 +36,13 @@ class Parse(unittest.TestCase):
                          ("169", 11000, "https://www.ebay.com/itm/377577821275", "Chatwork販売実績(キタムラ)"))
         self.assertEqual((b["purchase_jpy"], b["source"]), (30000, "Chatwork販売実績(ゴーゴー商会・赤字)"))
 
+    def test_no_item_code(self):
+        """管理番号 [00104] の無い報告も1件として読む（2026-11-26。前は黙って飛ばしていた）."""
+        body = "[info][title]販売通知[/title]Nikon F3 HP ボディ\n[販売価格] $250.00 (eBay)\nhttps://www.ebay.com/itm/100000000001\n[仕入価格] 20,000円\n[仕入先] カメラ店A[/info]"
+        rows = cs.parse_sales(body, "2026-11-26")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["title"], rows[0]["sold_price_usd"], rows[0]["purchase_jpy"]), ("Nikon F3 HP ボディ", "250", 20000))
+
     def test_no_price_is_skipped(self):
         self.assertEqual(cs.parse_sales("[00200] Nikon F3\n[仕入価格] 5000円", "2026-11-06"), [])
 

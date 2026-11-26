@@ -205,6 +205,32 @@ def record(row: dict, state: dict, now: datetime) -> bool:
     return True
 
 
+def closed_state(row: dict, fetch, cache: dict, delay: float = 0.0) -> dict:
+    """終わった出品の検索（/closedsearch/closedsearch?p=。robots.txt の Allow の形）で、そのオークションIDの最終価格・入札数を探す.
+    2026-11-26: 終わった出品のページ（/jp/auction/<ID>）がログインしていないと 404 を返すようになり、毎朝の記録が全部「読めませんでした」になった。
+    同じ検索語は1回の更新で1回だけ読む（cache）。見つからなければ空."""
+    import urllib.parse
+    import robots
+    q = ba.title_to_query(row.get("title") or "")
+    if not q:
+        return {}
+    if q not in cache:
+        url = "https://auctions.yahoo.co.jp/closedsearch/closedsearch?p=" + urllib.parse.quote(q)
+        cache[q] = {}
+        if robots.allowed(url):
+            try:
+                items, _ = ba.parse_listing_page(fetch(url))
+                cache[q] = {it.auction_id: it for it in items}
+            except Exception:  # noqa: BLE001  読めなければ次の朝
+                pass
+            if delay:
+                time.sleep(delay)
+    it = cache[q].get(row.get("auction_id"))
+    if not it:
+        return {}
+    return {"status": "closed", "price": it.current_price_jpy, "bids": it.bids or 0, "end": it.end_time, "via": "closedsearch"}
+
+
 def check_watch(rows: list[dict], max_checks: int = 300, delay: float = 1.5, fetch=None,
                 now: datetime | None = None) -> dict:
     """終了時刻を過ぎた見張りの出品ページを読み、最終価格・入札数を記録する（古い順に max_checks 件まで）."""
@@ -216,13 +242,19 @@ def check_watch(rows: list[dict], max_checks: int = 300, delay: float = 1.5, fet
             r.update(status="落札額不明", final_price="")
     todo = [r for r in rows if not r.get("checked_at") and (_when(r.get("end")) or now) <= now]
     todo.sort(key=lambda r: str(r.get("end") or ""))
-    out = {"due": len(todo), "read": 0, "sold": 0, "unsold": 0, "gave_up": 0}
+    out = {"due": len(todo), "read": 0, "sold": 0, "unsold": 0, "gave_up": 0, "via_closed": 0, "missing": 0}
+    cache: dict = {}
     for r in todo[:max(0, max_checks)]:
         try:
             state = br._item_state(fetch(f"https://auctions.yahoo.co.jp/jp/auction/{r['auction_id']}"))
-        except Exception as e:  # noqa: BLE001  読めなければ次の朝
-            print(f"  落札相場: 読めませんでした {r['auction_id']}（{e}）", file=sys.stderr)
+        except Exception:  # noqa: BLE001  404 など。終わった出品の検索で探す（1件ずつの「読めませんでした」は出さない）
             state = {}
+        if not state:
+            state = closed_state(r, fetch, cache, delay)
+            if state:
+                out["via_closed"] += 1
+            else:
+                out["missing"] += 1
         out["read"] += 1
         if state and record(r, state, now):
             out["unsold" if r["status"] == "流れた" else "sold"] += 1
@@ -428,9 +460,15 @@ def run(cfg: dict | None = None, downloads: Path | None = None, fetch=None, post
     _write(rows)
     stats = model_stats(rows, st["days"])
     left = res["due"] - res["read"]
-    print(f"落札相場: 見張り +{added}件・記録 落札{res['sold']}件／流れた{res['unsold']}件"
-          f"{f'・残り{left}件は次の朝' if left > 0 else ''} ／ 直近{st['days']}日 {len(stats)}機種 → data/yahoo_results.csv",
-          file=sys.stderr)
+    extra = ""
+    if res.get("via_closed"):
+        extra += "・終わった出品の検索で見つけた%d件" % res["via_closed"]
+    if res.get("missing"):
+        extra += "・見つからず%d件（次の朝にまた探す）" % res["missing"]
+    if left > 0:
+        extra += "・残り%d件は次の朝" % left
+    print(f"落札相場: 見張り +{added}件・記録 落札{res['sold']}件／流れた{res['unsold']}件{extra}"
+          f" ／ 直近{st['days']}日 {len(stats)}機種 → data/yahoo_results.csv", file=sys.stderr)
     sent = upload(rows, st["days"], post=post)
     if sent is not None:
         print(f"落札相場: {sent}行 → 古物台帳「{SHEET}」", file=sys.stderr)

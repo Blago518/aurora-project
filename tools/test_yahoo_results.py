@@ -140,6 +140,27 @@ class Check(unittest.TestCase):
         yr.check_watch(rows, 300, 0, fetch, NOW)
         self.assertEqual(seen, [])
 
+    def test_closedsearch_fallback(self):
+        """2026-11-26: 終わった出品のページが 404 になった。終わった出品の検索から最終価格・入札数を読む."""
+        rows = [dict(self.rows()[0], title="Nikon F3 HP ボディ")]
+        aid = rows[0]["auction_id"]
+        listing = {"props": {"pageProps": {"initialState": {"search": {"items": {"listing": {"totalResultsAvailable": 2, "items": [
+            {"auctionId": "x1000000001", "title": "Nikon F3", "price": 9000, "bidCount": 3, "endTime": "2026-11-18T20:00:00+09:00"},
+            {"auctionId": aid, "title": "Nikon F3 HP", "price": 21000, "bidCount": 7, "endTime": "2026-11-18T21:00:00+09:00"}]}}}}}}}
+        cs_page = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(listing) + "</script>"
+        seen = []
+
+        def fetch(u):
+            seen.append(u)
+            if "/closedsearch/closedsearch?p=" in u:
+                return cs_page
+            raise OSError("HTTP Error 404: Not Found")
+        res = yr.check_watch(rows, 300, 0, fetch, NOW)
+        self.assertEqual((rows[0]["final_price"], rows[0]["bids"], rows[0]["status"]), (21000, 7, "落札された"))
+        self.assertEqual((res["sold"], res["via_closed"], res["missing"]), (1, 1, 0))
+        self.assertTrue(any("closedsearch?p=Nikon" in u for u in seen))
+        self.assertFalse(any("n=" in u or "s1=" in u for u in seen))  # robots.txt の Disallow の引数は付けない
+
     def test_hidden_final_price(self):
         # 2026-11-25: 終わった出品はログインしないと最終価格が見えず、開始価格（1円）が出る。入札26件で 1円 を落札額にしていた
         import bid_results as br
