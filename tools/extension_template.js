@@ -437,10 +437,15 @@
     }
     return out;
   }
+  // 出品者の種類（appraise.junk_seller_kind と同じ。2026-11-26 オーナー「全商品のうち、50%以上がカメラの場合は、専門業者とみなします」
+  // 「専門業者のジャンクには入札しませんが、完動品や綺麗なものには積極的に入札します」）。Mac が出品者のページで数えた data/seller_kind.csv
+  function junkSellerKind(sellerId) { return ((DATA.sellerKinds || {})[String(sellerId || "")]) || ""; }
   function judge(it) {
     const c = it.calc;
     if (!c) return ["要確認", "相場なし"];
-    let pre = it.flags.includes("ジャンク") ? "ジャンク・" : "";
+    const kind = junkSellerKind(it.sellerId), junk = it.flags.includes("ジャンク");
+    let pre = junk && kind === "専門店" ? "カメラ専門店のジャンク・" : junk && kind ? "★ ジャンクは狙い目（総合業者・個人）・" : junk ? "ジャンク・"
+      : kind === "専門店" ? "★ カメラ専門店（完動・美品が多い）・" : "";
     const isSet = !!(it.setParts && it.setParts.length >= 2);  // まとめ売りで中身を2点以上当てたもの
     if (it.flags.includes("アダプター等") || (!isSet && it.flags.some((f) => f === "付属品のみ?" || f === "セット品")))
       return ["要確認", pre + it.flags.filter((f) => f !== "ジャンク").join("・") + "の可能性"];
@@ -451,6 +456,7 @@
     if (opt.length) return ["×", pre + "光学難（" + opt.join("・") + "）は見送り"];
     if (it.flags.includes("光学難あり") && OTHER_DEFECT_RE.test(it.title || "")) return ["要確認", pre + "難あり（方針では避ける）"];
     if (c.maxBid <= 0) return ["×", pre + "基準を満たす入札額なし"];
+    if (junk && kind === "専門店") return ["×", pre + "専門店のジャンクは入札しない"];
     if (it.price == null) return ["要確認", pre + "現在価格不明"];
     if (c.bidNow <= c.maxBid * 0.8) return ["◎", pre + "余裕あり"];
     if (c.bidNow <= c.maxBid) return ["○", pre + "上限に近い"];
@@ -1499,7 +1505,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { meterOk, cautionLine, historyNote, normSeller, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, queryForTitle, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
+    module.exports = { meterOk, cautionLine, historyNote, normSeller, junkSellerKind, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, queryForTitle, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 

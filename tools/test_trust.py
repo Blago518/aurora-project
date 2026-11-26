@@ -962,3 +962,80 @@ class History(unittest.TestCase):
         js = ("const h=" + json.dumps(h, ensure_ascii=False) + ";console.log(JSON.stringify(" +
               json.dumps(cases, ensure_ascii=False) + ".map(c=>m.historyNote(h,c[0],c[1]))))")
         self.assertEqual(run_js(data, js), [ba.history_note(h, a, b) for a, b in cases])
+
+
+class JunkSeller(unittest.TestCase):
+    """ジャンクは出品者で分ける（2026-11-26 オーナー「専門業者のジャンクはジャンク。総合業者や個人のジャンクは動作する可能性が高い」
+    「全商品のうち、50%以上がカメラの場合は、専門業者」「専門業者のジャンクには入札しませんが、完動品や綺麗なものには積極的に入札」）."""
+    KINDS = {"s1": {"kind": "専門店"}, "s2": {"kind": "総合・個人"}}
+    CASES = [  # (商品名, 出品者ID, 期待)
+        ("Nikon Ai 50mm F1.4 ジャンク", "s1", "×"),
+        ("Nikon Ai 50mm F1.4 ジャンク", "s2", "狙い目"),
+        ("Nikon Ai 50mm F1.4 ジャンク", "s9", "ふつう"),      # まだ数えていない出品者は今までどおり
+        ("Nikon Ai 50mm F1.4 美品", "s1", "専門店"),           # 専門店の完動・美品は印
+        ("Nikon Ai 50mm F1.4 美品", "s2", "ふつう"),
+    ]
+
+    def setUp(self):
+        self._old = ba._SELLER_KINDS
+        ba._SELLER_KINDS = self.KINDS
+
+    def tearDown(self):
+        ba._SELLER_KINDS = self._old
+
+    @staticmethod
+    def _kind(mark, reason):
+        if mark == "×" and "専門店のジャンク" in reason:
+            return "×"
+        if mark in ("◎", "○") and "ジャンクは狙い目" in reason:
+            return "狙い目"
+        if mark in ("◎", "○") and "★ カメラ専門店" in reason:
+            return "専門店"
+        return "ふつう" if mark in ("◎", "○") else mark
+
+    def test_python(self):
+        for t, sid, want in self.CASES:
+            it = ba.Item(url="u", auction_id="a1", title=t, current_price_jpy=1000, expected_price_usd=400.0, seller_id=sid)
+            it.flags = ba.detect_flags(t)
+            it.calc = ba.calculate(it, CFG, 150.0)
+            self.assertEqual(self._kind(*ba.judge(it)), want, (t, sid))
+
+    def test_ratio(self):
+        self.assertEqual(ba.kind_of_counts(100, 50), "専門店")
+        self.assertEqual(ba.kind_of_counts(8085, 967), "総合・個人")   # 釣り具なども出すストア（2026-11-26 実際の出品者ページで数えた形）
+        self.assertEqual(ba.kind_of_counts(0, 0), "総合・個人")
+
+    def test_check_sellers(self):
+        import tempfile
+        from datetime import date
+        it = ba.Item(url="u", auction_id="a1", title="Nikon ジャンク", current_price_jpy=1000, seller_id="sX")
+        it.flags = ba.detect_flags(it.title)
+        urls = []
+
+        def total(u):
+            urls.append(u)
+            return 30 if "auccat=23636" in u else 40
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "seller_kind.csv"
+            self.assertEqual(ba.check_junk_sellers([it], 0, path=p, today=date(2026, 11, 26), get_total=total), 1)
+            self.assertEqual(ba.load_seller_kinds(p)["sX"]["kind"], "専門店")       # 30/40 = 75%
+            self.assertEqual(ba.check_junk_sellers([it], 0, path=p, today=date(2026, 12, 1), get_total=total), 0)  # 30日はそのまま
+        self.assertTrue(all(u.startswith("https://auctions.yahoo.co.jp/seller/sX") for u in urls))
+        import robots
+        self.assertTrue(all(robots.allowed(u) for u in urls))
+
+    def test_junk_search_urls(self):
+        import robots
+        urls = ba.junk_search_urls()
+        self.assertEqual(len(urls), len(ba.JUNK_SEARCH_WORDS))
+        self.assertTrue(all(robots.allowed(u) and not robots.removed_params(u) for u, _ in urls))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        data["sellerKinds"] = {k: v["kind"] for k, v in self.KINDS.items()}
+        js = ("console.log(JSON.stringify(" + json.dumps(self.CASES, ensure_ascii=False) +
+              ".map(c=>{const it={title:c[0],sellerId:c[1],flags:m.detectFlags(c[0]),calc:{maxBid:100000,bidNow:1000},price:1000};return m.judge(it);})))")
+        self.assertEqual([self._kind(*r) for r in run_js(data, js)], [c[2] for c in self.CASES])

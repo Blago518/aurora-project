@@ -87,6 +87,8 @@ def build_data(cfg: dict, fx: float) -> dict:
         # robots.txt で Disallow の引数（［続けて鑑定］で続きのページを読むとき外す）[パスの正規表現, 引数の末尾]
         "robotsParams": _robots_params(),
         "memoHist": ba.load_memo_history(),  # 相場メモの履歴（拡張機能の「相場の動き」。data/price_memo_history.csv）  # 落札見込み（data/bid_log.csv の結果から。bid_results.win_stats）
+        # 出品者の種類（data/seller_kind.csv。全出品のうちカメラが半分以上なら専門店。2026-11-26 オーナー）{userId: "専門店"|"総合・個人"}
+        "sellerKinds": {k: v.get("kind", "") for k, v in ba.load_seller_kinds().items()},
         "caution": {"sellers": list((cfg.get("caution") or {}).get("sellers", [])), "note": str((cfg.get("caution") or {}).get("note", ""))},  # 注意を出す出品者（表示だけ）
         "cfg": {
             "fx": round(fx, 2), "convLossPct": cfg["fx"]["conversion_loss_pct"],

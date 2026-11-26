@@ -1390,6 +1390,20 @@ def meter_search_urls() -> list[tuple[str, str]]:
     return out
 
 
+# ジャンクを名指しで探す（2026-11-26 オーナー「総合業者や個人、コレクターのジャンクは、動作する可能性が高いです。それらのジャンクは狙います」）。
+# 出品者は読んだ後に数え（check_junk_sellers）、専門店のジャンクは ×、総合業者・個人のジャンクは「★ ジャンクは狙い目」
+JUNK_SEARCH_WORDS = ("ジャンク レンズ", "ジャンク フィルムカメラ", "ジャンク 一眼レフ", "ジャンク 中判")
+
+
+def junk_search_urls() -> list[tuple[str, str]]:
+    """ジャンクを名指しで探す検索URL（カメラのカテゴリ。robots.txt の Allow の形。meter_search_urls と同じ形）."""
+    out = []
+    for w in JUNK_SEARCH_WORDS:
+        q = urllib.parse.urlencode({"p": w, "auccat": "23636", "aucminprice": "3000"})
+        out.append((f"https://auctions.yahoo.co.jp/search/search?{q}", f"{w}（総合・個人なら狙い目）"))
+    return out
+
+
 def _model_url(brand: str, word: str) -> str:
     ja = [j for j, en in BRANDS_JA if en == brand]
     # 並べ替え（s1・o1）・件数（n）は robots.txt で Disallow → 付けない（終了が近い順は Mac の中で並べる。2026-11-19）
@@ -1822,12 +1836,112 @@ def optical_skip_words(title: str, hits: list[dict] | None = None) -> list[str]:
     return out
 
 
+# ジャンクは出品者で分ける（2026-11-26 オーナー「カメラのみを扱っている専門業者のジャンクはジャンクです。カメラ以外も扱っている
+# 総合業者や個人、コレクターのジャンクは、動作する可能性が高いです。それらのジャンクは狙います」「専門業者かどうかの判断は、全商品のうち、
+# 50%以上がカメラの場合は、専門業者とみなします」「専門業者のジャンクには入札しませんが、完動品や綺麗なものには積極的に入札します」）.
+# 出品者の全出品数と、そのうちカテゴリ「カメラ、光学機器」（auccat=23636）の数を出品者のページ（/seller/<userId>。robots.txt の Allow の形）
+# で数え、data/seller_kind.csv に30日ためる（check_junk_sellers）。検索結果の出品者名は伏せ字なので、名前では分けない。
+# 専門店のジャンク → ×。総合業者・個人のジャンク → ◎○ のまま「★ ジャンクは狙い目」。専門店のジャンクでない物 → ◎○ のまま「★ 専門店」の印。
+# 上限入札額・想定の売値は変えない。拡張機能の junkSellerKind と同じ（テストは test_trust.JunkSeller）
+SELLER_KIND_FILE = DATA / "seller_kind.csv"
+SELLER_KIND_FIELDS = ["user_id", "total", "camera", "ratio", "kind", "checked"]
+CAMERA_CATEGORY = "23636"   # ヤフオクのカテゴリ「カメラ、光学機器」
+SPECIALIST_RATIO = 0.5
+_SELLER_KINDS: dict | None = None
+
+
+def load_seller_kinds(path: Path | None = None) -> dict[str, dict]:
+    path = path or SELLER_KIND_FILE
+    if not path.exists():
+        return {}
+    return {r["user_id"]: r for r in csv.DictReader(path.read_text(encoding="utf-8-sig").splitlines()) if r.get("user_id")}
+
+
+def seller_kinds() -> dict[str, dict]:
+    global _SELLER_KINDS
+    if _SELLER_KINDS is None:
+        _SELLER_KINDS = load_seller_kinds()
+    return _SELLER_KINDS
+
+
+def kind_of_counts(total: int, camera: int) -> str:
+    return "専門店" if total and camera / total >= SPECIALIST_RATIO else "総合・個人"
+
+
+def junk_seller_kind(seller_id: str, kinds: dict | None = None) -> str:
+    """「専門店」「総合・個人」、まだ数えていなければ空."""
+    r = (kinds if kinds is not None else seller_kinds()).get(str(seller_id or ""))
+    return (r or {}).get("kind", "")
+
+
+def _seller_total(url: str) -> int | None:
+    import robots
+    if not robots.allowed(url):
+        return None
+    m = re.search(r'"totalResultsAvailable":\s*(\d+)', http_get(url))
+    return int(m.group(1)) if m else None
+
+
+def check_junk_sellers(items: list, delay: float, max_new: int = 60, path: Path | None = None, today: date | None = None,
+                       get_total=None) -> int:
+    """ジャンクの出品の出品者（と ◎○ の出品者）のうち、まだ数えていない・30日より古い物を数えて data/seller_kind.csv に足す. 数えた人数."""
+    from datetime import date
+    global _SELLER_KINDS
+    path = path or SELLER_KIND_FILE
+    today = today or date.today()
+    get_total = get_total or _seller_total
+    kinds = load_seller_kinds(path)
+    junk, good = [], []   # ジャンクの出品者を先に数える
+    for it in items:
+        sid = getattr(it, "seller_id", "")
+        if not sid or sid in junk or sid in good:
+            continue
+        old = kinds.get(sid)
+        if old and (today - date.fromisoformat(old.get("checked") or "2000-01-01")).days < 30:
+            continue
+        if "ジャンク" in it.flags:
+            junk.append(sid)
+        elif it.calc and judge(it)[0] in ("◎", "○"):
+            good.append(sid)
+    want = junk + good
+    n = 0
+    for sid in want[:max_new]:
+        base = f"https://auctions.yahoo.co.jp/seller/{urllib.parse.quote(sid)}"
+        try:
+            total = get_total(base)
+            time.sleep(delay)
+            camera = get_total(f"{base}?auccat={CAMERA_CATEGORY}")
+            time.sleep(delay)
+        except Exception:  # noqa: BLE001  読めない出品者は飛ばす（次の日にまた数える）
+            continue
+        if not total or camera is None:
+            continue
+        kinds[sid] = {"user_id": sid, "total": total, "camera": camera, "ratio": round(camera / total, 3),
+                      "kind": kind_of_counts(total, camera), "checked": today.isoformat()}
+        n += 1
+    if n:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=SELLER_KIND_FIELDS, extrasaction="ignore")
+            w.writeheader(); w.writerows(kinds.values())
+        _SELLER_KINDS = kinds
+    return n
+
+
 def judge(item: Item) -> tuple[str, str]:
     c = item.calc
     if not c:
         return "要確認", "eBay相場が取れていません（ebay_price_usd を手入力してください）"
-    if "ジャンク" in item.flags:
+    kind = junk_seller_kind(item.seller_id)
+    junk = "ジャンク" in item.flags
+    if junk and kind == "専門店":
+        prefix = "カメラ専門店のジャンク（本当に動かないことが多い）。"
+    elif junk and kind:
+        prefix = "★ ジャンクは狙い目（総合業者・個人のジャンクは動く物が多い）。"
+    elif junk:
         prefix = "ジャンク品: 動作・状態リスクあり。"
+    elif kind == "専門店":
+        prefix = "★ カメラ専門店（完動・美品が多い）。"
     else:
         prefix = ""
     now = item.current_price_jpy
@@ -1848,6 +1962,8 @@ def judge(item: Item) -> tuple[str, str]:
         return "要確認", prefix + "難あり（方針では避ける）。写真で程度を確認してください"
     if c["max_bid_jpy"] <= 0:
         return "×", prefix + "基準を満たす入札額がありません"
+    if junk and kind == "専門店":
+        return "×", prefix + "専門店のジャンクは入札しない"
     now = c.get("bid_now")
     lim = f"{c['max_bid_jpy']:,}円" + (
         f"（このまま入札。ストアなので支払いは税込{round(c['max_bid_jpy'] * 1.1):,}円）" if c.get("tax_excl_bid") else "")
@@ -2945,6 +3061,9 @@ def main(argv: list[str] | None = None) -> int:
             meters = meter_search_urls()
             print(f"露出計不良（狙い目）の検索: {len(meters)}本", file=sys.stderr)
             searches += [(u, 100) for u, _ in meters]
+            junks = junk_search_urls()
+            print(f"ジャンク（総合業者・個人なら狙い目）の検索: {len(junks)}本", file=sys.stderr)
+            searches += [(u, 100) for u, _ in junks]
         import robots
         fixed = [(su, robots.removed_params(su)) for su, _ in searches]
         fixed = [(su, ps) for su, ps in fixed if ps]
@@ -2993,6 +3112,8 @@ def main(argv: list[str] | None = None) -> int:
         CONFIG_SHIP_USD = float(cfg["shipping"].get("deduction_usd", 0))
         n = check_descriptions(items, args.delay, cfg, fx)
         print(f"説明文チェック: ◎○ {n}件を確認（カビ・クモリ等があれば要確認に）", file=sys.stderr)
+        ns = check_junk_sellers(items, args.delay)
+        print(f"出品者の種類: 新しく {ns}人を数えた（全出品のうちカメラが半分以上なら専門店。data/seller_kind.csv）", file=sys.stderr)
         import tentative  # 相場が無い出品を eBay 出品中の価格（公式 Browse API）で仮に判定
         t = tentative.add_tentative(items, cfg, fx)
         print(f"仮◎○: {t}件（sold を見て、拡張機能で［登録］すると ◎○ に）", file=sys.stderr)
