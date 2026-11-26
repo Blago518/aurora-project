@@ -46,21 +46,52 @@ function bundleInfo(text, url, hrefs, now) {
   const ymd = `${y}${String(m[2]).padStart(2, "0")}${String(m[3]).padStart(2, "0")}`;
   return { id: ids[0], ids, price: total, ymd, name: [ymd, "まとめて取引", total].concat(ids).join("_") };
 }
+
+// 注文の状況の画面（buy.auctions.yahoo.co.jp/order/status。2026-11-26 落札分の一覧の34件は［取引連絡］がここに飛んでいた）。
+// 書き方が取引ナビと違うので、見つかった物だけで名前を作る。オークションIDは開いた側（順番待ち）が知っている ID を使う
+function orderInfo(text, id, now) {
+  if (!id) return null;
+  const t = String(text || "").replace(/\u00a0/g, " ");
+  const pick = (re) => ((t.match(re) || [])[1] || "");
+  const seller = pick(/(?:出品者|ストア名|販売者|ストア)\s*[:：]?\s*\n?\s*([^\n（(]{1,40})/).trim().replace(/\s+/g, " ");
+  const price = pick(/(?:落札価格|商品金額（税込）|商品金額|商品代金|小計|合計金額|お支払い金額|支払い金額|お支払金額)\s*[:：]?\s*\n?\s*([\d,]+)\s*円/).replace(/,/g, "");
+  const m = t.match(/(?:終了日時|落札日時|落札日|注文日時|注文日|購入日時|購入日)\s*[:：]?\s*\n?\s*(?:(\d{4})[年/])?\s*(\d{1,2})[月/]\s*(\d{1,2})/) || t.match(/(\d{4})[年/](\d{1,2})[月/](\d{1,2})/);
+  let ymd = "";
+  if (m) {
+    const n = now || new Date();
+    let y = m[1] ? +m[1] : n.getFullYear();
+    if (!m[1] && +m[2] > n.getMonth() + 1) y -= 1;
+    ymd = `${y}${String(m[2]).padStart(2, "0")}${String(m[3]).padStart(2, "0")}`;
+  }
+  const safe = (s) => s.replace(/[\\/:*?"<>|\n\r\t]/g, "").trim();
+  return { id: String(id).toLowerCase(), ymd, price, seller, name: [ymd, safe(seller) || "注文", price, String(id).toLowerCase()].filter(Boolean).join("_"),
+           found: ["日付:" + (ymd || "なし"), "出品者:" + (seller ? "あり" : "なし"), "金額:" + (price || "なし")].join(" ") };
+}
 // @evidence-end
 
 (function () {
   if (typeof document === "undefined" || typeof chrome === "undefined" || !chrome.runtime) return;
-  let tries = 0;
+  let tries = 0, expect = "";
+  const isOrder = location.hostname === "buy.auctions.yahoo.co.jp";
+  if (isOrder) {   // 開いた側（まとめて保存の順番待ち）が知っているオークションID。自分で開いたときは URL・画面の文字から
+    chrome.runtime.sendMessage({ type: "evidenceExpect" }, (r) => { expect = (!chrome.runtime.lastError && r && r.id) || ""; });
+  }
   const go = () => {
     const body = document.body ? document.body.innerText : "";
-    const info = evidenceInfo(body) || bundleInfo(body, location.href, Array.from(document.querySelectorAll("a[href]"), (a) => a.href));
-    if (!info || !info.ymd || !info.price) {   // 中身が出るまで待つ（最大10秒）。出なければ、まとめて保存の順番待ちに次へ進むよう知らせる
+    let info = evidenceInfo(body) || bundleInfo(body, location.href, Array.from(document.querySelectorAll("a[href]"), (a) => a.href));
+    if (!info && isOrder) {
+      const id = expect || ((location.href.match(/[?&][a-z_]*(?:aid|auction)[a-z_]*=([a-z]?\d{8,12})/i) || [])[1]) || ((body.match(/(?:オークションID|商品ID)\s*[:：]?\s*([a-z]\d{8,12})/i) || [])[1]) || "";
+      const o = orderInfo(body, id);
+      // 中身が出るのを少し待ってから（最大5秒）、見つかった物だけで保存する（オークションIDさえあれば写す）
+      if (o && (o.ymd && o.price || tries >= 10)) info = o;
+    }
+    if (!info || !info.ymd && !info.found || !info.price && !info.found) {   // 中身が出るまで待つ（最大10秒）。出なければ、まとめて保存の順番待ちに次へ進むよう知らせる
       if (++tries < 20) setTimeout(go, 500); else chrome.runtime.sendMessage({ type: "evidenceNone", note: (location.pathname + " 「" + document.title + "」 " + body.replace(/\s+/g, " ").slice(0, 80)) }, () => void chrome.runtime.lastError);
       return;
     }
     window.scrollTo(0, 0);
     setTimeout(() => {
-      chrome.runtime.sendMessage({ type: "evidenceShot", id: info.id, ids: info.ids || [info.id], name: info.name }, (r) => {
+      chrome.runtime.sendMessage({ type: "evidenceShot", id: info.id, ids: info.ids || [info.id], name: info.name, found: info.found ? info.found + " ／画面: " + body.replace(/\s+/g, " ").slice(0, 120) : "" }, (r) => {
         if (chrome.runtime.lastError || !r) return;
         const tag = document.createElement("div");
         tag.textContent = r.saved ? "✓ 仕入れ証跡を保存しました" : r.already ? "✓ 仕入れ証跡は保存済み" : "仕入れ証跡を保存できませんでした: " + (r.error || "");

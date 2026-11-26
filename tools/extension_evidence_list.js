@@ -89,6 +89,9 @@ function planLinks(rows, pageHrefs) {
     if (!id || seen.has(id)) continue;
     const own = navLinks(r.hrefs);
     if (own.length) { out.push(own[0]); seen.add(id); continue; }
+    // 注文の状況の画面（buy.auctions.yahoo.co.jp/order/status。2026-11-26 実物の［取引連絡］の行き先）→ そのまま開く
+    const order = (r.hrefs || []).find((h) => /^https:\/\/buy\.auctions\.yahoo\.co\.jp\/order\//.test(String(h)));
+    if (order) { out.push({ id, url: String(order), made: true }); seen.add(id); continue; }
     // 行の中の取引ナビのリンクにオークションIDが無い → その行の商品IDを足して開く
     const bare = (r.hrefs || []).find((h) => NAVI_RE.test(String(h)));
     if (bare) {
