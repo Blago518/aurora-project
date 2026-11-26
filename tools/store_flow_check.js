@@ -31,7 +31,7 @@ function checkCards(cards, when) {
     if (c.badge === "NO" && /まで入札/.test(c.max)) bad(`${when} ${c.id}: NO なのに「まで入札」: ${c.max}`);
     if (c.badge === "NO" && !c.snipeOff && !c.tags.some((t) => /予約済み/.test(t))) bad(`${when} ${c.id}: NO なのに予約が押せる`);
     // 確かめる前の出品に OK を出さない（2026-11-22）
-    if (c.badge === "OK" && c.tags.some((t) => /Sold で確かめて|同じ機種の Sold/.test(t))) bad(`${when} ${c.id}: 確かめる前なのに OK: ${c.tags}`);
+    if (c.badge === "OK" && c.tags.some((t) => /相場確認|同じ機種の Sold/.test(t))) bad(`${when} ${c.id}: 確かめる前なのに OK: ${c.tags}`);
     // 朝の価格を「現在」と書かない（2026-11-22）
     if (/現在/.test(c.max)) bad(`${when} ${c.id}: 朝の価格を「現在」と書いている: ${c.max}`);
     for (const [t, h] of c.links) {
@@ -58,7 +58,15 @@ function checkCards(cards, when) {
     await p.click('nav [data-tab="set"]'); await p.setInputFiles("#dataFile", dataPath); await p.waitForTimeout(400);
     await p.click('nav [data-tab="bid"]'); await p.waitForTimeout(200);
     const chips = await p.$$eval("#bidChips button", (bs) => bs.map((x) => x.textContent));
-    if (/今日の予約 0/.test(chips[0])) bad(`${lab}: 今日の予約に出品があるのに 0 と出る`);
+    if (/予約 0/.test(chips[0])) bad(`${lab}: 予約に出品があるのに 0 と出る`);
+    // 切り替えのボタンは短い名前で1行に収める（2026-11-26 オーナー「予約・確認不要・相場確認にしてなるべく1行に」）
+    { const tops = await p.$$eval("#bidChips .chip", (cs) => cs.map((c) => [c.getBoundingClientRect().top, c.getBoundingClientRect().right, c.parentElement.getBoundingClientRect().right]));
+      if (new Set(tops.map((t) => Math.round(t[0]))).size > 1 || tops.some((t) => t[1] > t[2] + 1)) bad(`${lab}: 入札タブの切り替えボタンが1行に収まらない`);
+      const names = await p.$$eval("#bidChips .chip", (cs) => cs.map((c) => c.textContent.replace(/\s*\d+$/, "")).join("/"));
+      if (names !== "予約/確認不要/相場確認") bad(`${lab}: 切り替えボタンの名前が違う: ${names}`); }
+    // 金額の横の言葉: 入れ子のかっこ・個人の税の話・「この価格なら」を出さない（同日「文言のセンス、みやすい構成づくり」）
+    { const maxes = await p.$$eval("#bidList .max .s", (ss) => ss.map((x) => x.textContent));
+      for (const m of maxes) if (/（[^）]*（|個人|このまま入札|この価格なら/.test(m)) bad(`${lab}: 金額の横の言葉が長い・入れ子: ${m}`); }
     for (const f of ["reserve", "sure", "check"]) {
       const chip = await p.$(`#bidChips [data-f="${f}"]`); if (!chip) continue;
       await chip.click(); await p.waitForTimeout(150); checkCards(await cardTexts(p), `${lab} ${f}`);
@@ -106,11 +114,11 @@ function checkCards(cards, when) {
     { await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(150);
       await p.click('[data-seen="d1"]'); await p.waitForTimeout(200);
       if (!/確認済み/.test((await p.evaluate(() => localStorage.getItem("storeOutbox"))) || "")) bad(`${lab}: ［確認済み］が記録されない`);
-      // 確認済みは下の1行にまとめてたたむ（2026-11-26 オーナー「確認済みは1行に折り畳んでほしい。かさばってスクロールが面倒」）
+      // 確認済みは一覧の上の1行にまとめてたたむ（2026-11-26 オーナー「確認済みは1行に折り畳んでほしい」「畳んだ1行は上に移動」）
       const fold = async () => p.$eval("[data-fold]", (b) => b.textContent).catch(() => "");
       if (await p.$('[data-card="d1"]')) bad(`${lab}: 確認済みにしてもカードが一覧に残る（1行にまとまらない）`);
       if (!/確認済み 1件/.test(await fold())) bad(`${lab}: 確認済みの1行が出ない: ${await fold()}`);
-      { const last = await p.$eval("#bidList", (l) => [...l.children].pop().matches("[data-fold]")); if (!last) bad(`${lab}: 確認済みの1行が一覧のいちばん下にない`); }
+      { const first = await p.$eval("#bidList", (l) => l.children[0].matches("[data-fold]")); if (!first) bad(`${lab}: 確認済みの1行が一覧のいちばん上にない`); }
       await p.click("[data-fold]"); await p.waitForTimeout(150);
       if (!(await p.$('[data-card="d1"]'))) bad(`${lab}: 確認済みの1行を開いてもカードが出ない`);
       { const on = await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed") + b.textContent).catch(() => "（カードが無い）");
