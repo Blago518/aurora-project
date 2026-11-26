@@ -159,7 +159,7 @@ async function evRun() {
     try {
       tab = await chrome.tabs.create({ url: item.url, active: true });
       res = await new Promise((resolve) => {
-        evWait = { tabId: tab.id, resolve: (v) => resolve(v) };
+        evWait = { tabId: tab.id, id: item.id, resolve: (v) => resolve(v) };
         setTimeout(() => evDone(tab.id, false, "20秒待っても画面が読めなかった"), 20000);   // 中身が読めない画面は evidence.js が先に知らせる
       });
     } catch (e) { res = { ok: false, note: "タブを開けなかった: " + String((e && e.message) || e) }; }
@@ -210,7 +210,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   }
   // 仕入れ証跡をまとめて: ヤフオクのページにあった取引ナビのリンクを、まだ証跡の無い物だけ1件ずつ開く（extension_evidence_list.js）
   if (msg && msg.type === "evidenceBatch" && Array.isArray(msg.links) && _sender && _sender.tab) {
-    const links = msg.links.filter((l) => l && /^[a-z]?\d{8,12}$/i.test(l.id || "") && /^https:\/\/contact\.auctions\.yahoo\.co\.jp\//.test(l.url || ""));
+    const links = msg.links.filter((l) => l && /^[a-z]?\d{8,12}$/i.test(l.id || "") && /^https:\/\/(contact\.auctions\.yahoo\.co\.jp\/|buy\.auctions\.yahoo\.co\.jp\/order\/)/.test(l.url || ""));
     const ask = links.map((l) => "evidence_" + l.id).concat((msg.noSeller || []).map((id) => "evidence_" + String(id).toLowerCase()));
     evSaved(ask).then((r) => {
       const todo = links.filter((l) => !r["evidence_" + l.id] && !evQueue.some((q) => q.id === l.id));
@@ -223,6 +223,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
     });
     return true;
   }
+  // 注文の状況の画面: 今開いているのはどのオークションIDか（順番待ちが開いたタブだけ答える）
+  if (msg && msg.type === "evidenceExpect" && _sender && _sender.tab) { send({ id: evWait && evWait.tabId === _sender.tab.id ? evWait.id : "" }); return false; }
   // 取引ナビの画面にオークションID・金額が出なかった（まとめて取引・エラーの画面）→ 待たずに次へ
   if (msg && msg.type === "evidenceNone" && _sender && _sender.tab) { evDone(_sender.tab.id, false, "画面にオークションID・金額が出なかった: " + String(msg.note || "")); send({ ok: true }); return false; }
   // ヤフオクの仕入れ証跡: 取引ナビの見えている画面を PNG で ダウンロード/ヤフオク仕入証跡/ に保存（同じオークションIDは1回だけ。extension_evidence.js）
@@ -238,7 +240,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
         .then((url) => quietDownload({ url, filename: "ヤフオク仕入証跡/" + String(msg.name).slice(0, 120) + ".png", conflictAction: "uniquify", saveAs: false })
           // 日本語の名前を受け付けない環境だけ、英数字の名前（終了日_金額_オークションID）で保存する
           .catch(() => quietDownload({ url, filename: "yahoo_evidence/" + String(msg.name).replace(/[^\w.-]+/g, "_").replace(/_+/g, "_") + ".png", conflictAction: "uniquify", saveAs: false })))
-        .then(() => { keys.forEach((k) => evSession.add(k.replace(/^evidence_/, ""))); return chrome.storage.local.set(Object.fromEntries(keys.map((k) => [k, Date.now()]))); })
+        .then(() => { if (msg.found) evLog({ [String(msg.id).toLowerCase()]: ["保存（注文の画面）", msg.found] }); keys.forEach((k) => evSession.add(k.replace(/^evidence_/, ""))); return chrome.storage.local.set(Object.fromEntries(keys.map((k) => [k, Date.now()]))); })
         .then(() => { evDone(_sender.tab.id, true); send({ saved: true }); });
     }).catch((e) => { evDone(_sender.tab.id, false, "画面を写せなかった: " + String((e && e.message) || e)); send({ error: String((e && e.message) || e) }); });
     return true;

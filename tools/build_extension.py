@@ -189,7 +189,8 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
             "run_at": "document_idle",
         }, {
             # ヤフオクの取引ナビ: 開いたら仕入れ証跡（画面の PNG）を自動で保存（extension_evidence.js。2026-11-23 オーナー依頼）
-            "matches": ["https://contact.auctions.yahoo.co.jp/*"],
+            # 注文の状況（buy.auctions.yahoo.co.jp/order/status。2026-11-26 新しい取引は［取引連絡］がここに飛ぶ）も同じく保存
+            "matches": ["https://contact.auctions.yahoo.co.jp/*", "https://buy.auctions.yahoo.co.jp/order/*"],
             "js": ["evidence.js"],
             "run_at": "document_idle",
         }, {

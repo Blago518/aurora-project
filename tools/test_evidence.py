@@ -267,3 +267,23 @@ class DuplicateToTrash(unittest.TestCase):
             self.assertEqual((r["moved"], r["dup"], r["left"]), (1, 1, 0))
             self.assertTrue((home / ".Trash" / "20260731_店A_1_p1000000001.png").exists())
             self.assertEqual((dest / "20260731_店A_1_p1000000001.png").read_bytes(), b"old-shot")
+
+
+class OrderStatusPage(unittest.TestCase):
+    def test_order_page_name(self):
+        """2026-11-26 落札分の一覧の34件は［取引連絡］が buy.auctions.yahoo.co.jp/order/status に飛ぶ → その画面も証跡に（文字は作り物）."""
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        src = (HERE / "extension_evidence.js").read_text(encoding="utf-8")
+        body = src[src.index("// @evidence-start"):src.index("// @evidence-end")]
+        text = "注文詳細\n出品者\nカメラ店E\n落札価格\n12,000円\n落札日時\n2026年11月20日 21:00"
+        js = body + "\nconsole.log(JSON.stringify(orderInfo(%s, 'J1000000002')));" % json.dumps(text, ensure_ascii=False)
+        o = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(o["name"], "20261120_カメラ店E_12000_j1000000002")
+        js2 = body + "\nconsole.log(orderInfo('読み込み中', 'j1000000002').name);"
+        self.assertEqual(subprocess.run(["node", "-e", js2], capture_output=True, text=True, check=True).stdout.strip(), "注文_j1000000002")
+
+    def test_list_takes_order_links(self):
+        src = (HERE / "build_extension.py").read_text(encoding="utf-8")
+        self.assertIn("https://buy.auctions.yahoo.co.jp/order/*", src)
+        self.assertIn("buy\\.auctions\\.yahoo\\.co\\.jp\\/order", (HERE / "extension_evidence_list.js").read_text(encoding="utf-8"))
