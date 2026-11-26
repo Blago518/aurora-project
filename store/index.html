@@ -479,6 +479,13 @@ function triviaOf(name) {
   }
   return best ? best.t : "";
 }
+// 仕入れの実績（毎朝 Mac が古物台帳「Mac_仕入れ成績」から作る。2026-11-26 オーナー「どの出品者からどの商品をどの状態までなら、利益がでる
+// 仕入れができるか」→「実績を表示」。拡張機能の historyNote と同じ数え方）。表示だけで判定・上限額には使わない
+function historyOf(name) {
+  const h = DATA && DATA.history, g = h && h.models && h.models[core.modelKey(name || "")[1]];
+  if (!g || !g.n) return "";
+  return `売れた${g.n}件` + (h.target ? `・${+(h.target / 10000).toFixed(4)}万円以上${g.hit}件` : "") + `・平均利益${Math.round(g.sum / g.n).toLocaleString("ja-JP")}円`;
+}
 function renderResult(name, price, r) {
   const el = $("result");
   if (!name.trim()) { el.hidden = true; return; }
@@ -500,11 +507,11 @@ function renderResult(name, price, r) {
     : price == null ? "値札を入れると利益を出します"
     : `値札 ${yen(price)} では基準（利益${DATA.cfg.minMarginPct}%・${c.minProfit.toLocaleString()}円）に届かない`;
   const head = !c ? (need ? `$${need.toLocaleString()}〜` : "相場なし") : price != null ? sign(c.profit) : canPay(c, ok) ? yen(c.maxBid) + "まで" : "";
-  const tv = triviaOf(name);
+  const tv = triviaOf(name), hs = historyOf(name);
   { const bar = lsGet(LS_BIDBAR, null), cm = ctxMax(name, c);
     if (bar && bidCtx && bar.id === bidCtx.id && cm > 0 && bar.maxBid !== cm) { lsSet(LS_BIDBAR, Object.assign({}, bar, { maxBid: cm, redo: true })); setTimeout(renderBidBar, 0); } }
   let h = `${sw ? `<div class="sweet" title="${esc(sw)}">★ 狙い目スペック</div>` : ""}
-    <div class="hero ${cls}${c ? "" : " small"}">${!c ? "" : !head ? yn(false).replace('class="yn ', 'class="yn solo ') : price != null ? yn(ok) : ""}${esc(head)}</div><div class="why">${esc(why)}</div>${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
+    <div class="hero ${cls}${c ? "" : " small"}">${!c ? "" : !head ? yn(false).replace('class="yn ', 'class="yn solo ') : price != null ? yn(ok) : ""}${esc(head)}</div><div class="why">${esc(why)}</div>${hs ? `<div class="tv hs">📈 実績 ${esc(hs)}</div>` : ""}${tv ? `<div class="tv">💡 ${esc(tv)}</div>` : ""}${ctxMax(name, c) > 0 ? `<a class="btn mt" style="display:block;text-align:center" href="${esc(toChrome(SNIPE_URL))}" target="_blank" rel="noopener" data-ctxsnipe="1">この出品を ${yen(ctxMax(name, c))} で予約</a>` : ""}`;
   const sold = r.refs[0] && r.refs[0].sold, m = r.atMax;
   // 「◯円まで出せる」（右に Sold の額と状態の入力欄。入れるとその額で出し直す。2026-11-21 ユーザー指示）
   $("capText").innerHTML = !c ? `<span class="s">Sold で調べた額を右に入れると、出せる額を出します</span>`

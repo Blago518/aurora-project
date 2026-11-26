@@ -77,6 +77,10 @@ function checkCards(cards, when) {
     await p.click('#bidChips [data-f="check"]'); await p.waitForTimeout(150);
     const before = (await cardTexts(p)).find((c) => c.id === "x1");
     await p.click('[data-blook="x1"]'); await p.waitForTimeout(250);
+    // 仕入れの実績（2026-11-26 オーナー「どの出品者からどの商品をどの状態までなら、利益がでる仕入れができるか」→「実績を表示」）
+    { const top = await p.$eval("#resTop", (e) => e.textContent);
+      if (!/実績 売れた2件・1万円以上1件・平均利益7,000円/.test(top)) bad(`${lab}: 調べる画面に仕入れの実績が出ない: 「${top.slice(0, 120)}」`);
+      if (process.env.STORE_SHOT) await p.screenshot({ path: process.env.STORE_SHOT + "_" + lab.replace(/\W/g, "") + ".png" }); }
     await p.fill("#soldUsd", "90"); await p.selectOption("#soldCond", "Near MINT"); await p.dispatchEvent("#soldCond", "change"); await p.waitForTimeout(200);
     await p.click("#soldReg"); await p.waitForTimeout(500);
     const tab = await p.$eval('nav [aria-selected="true"]', (x) => x.dataset.tab);
