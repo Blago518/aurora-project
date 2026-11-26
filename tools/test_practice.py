@@ -57,3 +57,35 @@ class PracticeItems(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Skipped(unittest.TestCase):
+    """確認済みにして入札しなかった候補（2026-11-26 オーナー「確認済にチェックをいれて入札しなかったものには、入札しなかった意図があります」）."""
+
+    def test_checked_and_not_bid(self):
+        import yahoo_results as yr
+        seen = [
+            {"auction_id": "x1000000001", "title": "カメラA ジャンク", "mark": "◎", "max_bid": "10000", "seller": "カメラ店A / s1", "checked_at": "2026-01-02T10:00:00Z", "end": ""},
+            {"auction_id": "x1000000002", "title": "レンズB", "mark": "○", "max_bid": "8000", "seller": "", "checked_at": "2026-01-02T11:00:00Z", "end": ""},
+            {"auction_id": "x1000000003", "title": "見ていない物", "mark": "◎", "max_bid": "9000", "seller": "", "checked_at": "", "end": ""},
+        ]
+        bids = [{"auction_id": "x1000000002"}]
+        out = yr.skipped_csv(seen, bids, [{"auction_id": "x1000000001", "final_price": "12000"}])
+        lines = out.strip().splitlines()
+        self.assertEqual(len(lines), 2)   # 見出し＋見送り1件（入札した物・確認していない物は出さない）
+        self.assertIn("カメラA ジャンク", lines[1]); self.assertIn("カメラ店A / s1", lines[1]); self.assertIn("12000", lines[1])
+
+    def test_extension_exports_checked_at(self):
+        t = (Path(__file__).parent / "extension_template.js").read_text(encoding="utf-8")
+        self.assertIn('"seller", "checked_at"]', t)
+        self.assertIn("w.checked_at = box.checked", t)
+
+
+class YahooListingTemplate(unittest.TestCase):
+    """ヤフオク流しの説明文の型（2026-11-26 オーナー「商品名の箇所は1つでいいからね。2箇所にしていたせいで、誤表示して出品しています」）."""
+
+    def test_product_name_once(self):
+        t = (Path(__file__).parent / "yahoo_listing_template.html").read_text(encoding="utf-8")
+        body = t.split("-->", 1)[1]   # 先頭の説明のコメントは除く
+        self.assertEqual(body.count("{{商品名"), 1)
+        self.assertNotIn("<script", body.lower())

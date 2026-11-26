@@ -57,6 +57,7 @@ GitHub 上のリポジトリ名は `aurora-project`（**公開**）。事業の�
 | `export_permit.py` | 輸出許可通知書: FedEx の依頼用 Excel に、まだもらっていない運送状番号を自動で入れる → `reports/fedex_export_permit_*.xlsx`。`--dhl` で DHL のフォームに貼る番号の一覧（手順は `.claude/skills/export-permit`） |
 | `bid_results.py` | 入札の結果: ［入札した］の記録の落札率・負けた差。落札かどうかは古物台帳にそのオークションIDがあるかで決める（無ければ終了から10日は「確認待ち」→「負け」） |
 | `ebay_listing_template.html` | eBayStock の説明文テンプレートのデザイン案（濃いネイビー×ゴールド。2026-11-22）。**まだ使っていない**（オーナー「まだ実装しないが、いつか変更するかもしれないので覚えておいて」）。今 eBayStock で使っているのは `ebay_listing_template_current.html`。差し込み・分岐は同じ。英語の文は、上の店名の行と下の「Shipped from Japan」を足した以外は同じ |
+| `yahoo_listing_template.html` | **ヤフオク流し**（eBay で売らない物を国内で売る）の説明文の型。オーナーの今のデザイン（濃いネイビー）に、参考の出品の項目（外観・光学／機能／発送・支払い／ご入札前にお読みください）を合わせた。**商品名は一番上の1か所だけ**（2026-11-26 オーナー「2箇所にしていたせいで、誤表示して出品しています」）。{{…}} を書き換えて貼る |
 | `make_icons.py` | 拡張機能のアイコン（tools/icons/） |
 | `config.toml` | 手数料・送料・為替・判定基準・ジャンク評価率 |
 | `test_*.py` | テスト（Python と拡張機能・店舗アプリの判定一致も確認） |

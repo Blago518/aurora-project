@@ -287,7 +287,7 @@ class Extension(unittest.TestCase):
         code = ('const L=[1,2,3].map((n)=>({i:{id:"x"+n,title:"Nikon FM"+n,end:"2099-01-01T00:00:00+09:00",tax:n===1},mark:"◎",maxBid:1000*n}));'
                 'console.log(JSON.stringify([m.watchAdd(L), m.watchCsv().split("\\n")[0]]))')
         out = run_js(data, code)
-        self.assertEqual(out, [2, ",".join(yr.SEEN_FIELDS)])  # 上限2件。CSV の列は Mac の取り込みと同じ
+        self.assertEqual(out, [2, ",".join(yr.SKIP_FIELDS)])  # 上限2件。CSV の列は Mac の取り込みと同じ
 
 
 if __name__ == "__main__":

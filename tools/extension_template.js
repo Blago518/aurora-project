@@ -1051,7 +1051,8 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   // ---- 落札相場の見張り: ◎○・仮◎○・確認してから に出た出品 → ダウンロード/aurora_seen.csv（全件）→ Mac の yahoo_results.py が
   //      終了後に出品ページで最終価格を記録する。1日に足すのは DATA.cfg.seenMaxPerDay 件まで。終了から7日たった分は消す
   const LS_WATCH = "yhkWatchV1";
-  const WATCH_FIELDS = ["auction_id", "title", "end", "mark", "max_bid", "store_tax", "seen_at"];
+  // seller・checked_at（2026-11-26 オーナー「確認済にチェックをいれて入札しなかったものには、入札しなかった意図があります。それもあなたに理解していってもらいたい」）
+  const WATCH_FIELDS = ["auction_id", "title", "end", "mark", "max_bid", "store_tax", "seen_at", "seller", "checked_at"];
   function watchAdd(list, now) {
     now = now || new Date();
     const all = load(LS_WATCH, {}), day = now.toISOString().slice(0, 10), old = now.getTime() - 7 * 86400000;
@@ -1062,7 +1063,8 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     for (const x of list) {
       if (!x.i || !x.i.id || all[x.i.id] || today >= cap) continue;
       all[x.i.id] = { auction_id: x.i.id, title: x.i.title, end: x.i.end || "", mark: x.mark, max_bid: x.maxBid ?? "",
-        store_tax: x.i.tax ? 1 : 0, seen_at: now.toISOString() };
+        store_tax: x.i.tax ? 1 : 0, seen_at: now.toISOString(), seller: [x.i.sellerName, x.i.sellerId].filter(Boolean).join(" / "),
+        checked_at: seenOf(x.i.id) ? new Date(load(LS_SEEN, {})[x.i.id]).toISOString() : "" };
       today++; added++;
     }
     if (added || pruned) save(LS_WATCH, all);
@@ -1583,6 +1585,11 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
     const m = seenAll();
     if (box.checked) m[box.dataset.seen] = Date.now(); else delete m[box.dataset.seen];
     save(LS_SEEN, m);
+    // 見張りの行にも「確認済みにした時刻」を残し、ダウンロード/aurora_seen.csv を書き直す（Mac が入札の記録と照らして「見送り」を数える）
+    const wa = load(LS_WATCH, {}), w = wa[box.dataset.seen];
+    if (w) { w.checked_at = box.checked ? new Date().toISOString() : ""; save(LS_WATCH, wa);
+      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id)
+        try { chrome.runtime.sendMessage({ type: "saveFile", name: "aurora_seen.csv", csv: watchCsv() }, () => void chrome.runtime.lastError); } catch (e) {} }
     const tr = box.closest("tr");
     if (tr) tr.classList.toggle("seen", box.checked);  // 並びは変えない（消さない）
   });
