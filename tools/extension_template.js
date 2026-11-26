@@ -43,11 +43,11 @@
   const seriesOf = (ts, lens) => { const s = new Set([...ts].filter((t) => SERIES.has(t))); if (canonL(ts)) s.add("l"); if (s.has("m.zuiko")) s.add("digital");
     if (!lens) { s.delete("digital"); s.delete("m.zuiko"); } return [...s].sort().join(","); };
   // マウント（appraise.mount_of と同じ）: レンズはマウントの組が両方で同じときだけ相場を当てる
-  const MOUNTS = C.mounts || {}, MOUNT_TOKENS = new Set(Object.values(MOUNTS).flatMap((d) => Object.keys(d)));
+  const MOUNTS = C.mounts || {}, MOUNT_TOKENS = new Set(Object.entries(MOUNTS).flatMap(([b, d]) => Object.keys(d).filter((t) => !(b === "leica" && t.length === 1))));
   // フィルムの判（appraise.format_of と同じ）: 「Pentax 645 200mm F4」「PENTAX-110 50mm F2.8」に 35mm 判の同じ焦点距離の相場を当てない
   const FORMATS = C.formats || {};
   const formatOf = (ts) => [...new Set([...ts].filter((t) => FORMATS[t]).map((t) => FORMATS[t]))].sort().join(",");
-  const mountOf = (ts) => { const out = new Set(); for (const [b, w] of Object.entries(MOUNTS)) if (ts.has(b) || (b === "fujifilm" && ts.has("fuji"))) for (const t of ts) if (w[t]) out.add(w[t]); return [...out].sort().join(","); };
+  const mountOf = (ts) => { const out = new Set(); for (const [b, w] of Object.entries(MOUNTS)) if (ts.has(b) || (b === "fujifilm" && ts.has("fuji")) || (b === "leica" && ts.has("leitz"))) for (const t of ts) if (w[t]) out.add(w[t]); return [...out].sort().join(","); };
   const ACCESSORY_RE = new RegExp(C.accessoryRe, "i");
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
   const KANTEI = DATA.kantei.map((r) => ({ ...r, re: r.patterns.map((p) => { try { return new RegExp(p, "i"); } catch (e) { return null; } }) }));

@@ -586,6 +586,12 @@ FLAG_RULES = [
                    r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|ディスプレイスタンド|展示台|(?:ロング|ネック|ハンド|リスト|ショルダー)ストラップ(?![\s　]?(?:付|あり|有|セット))|"
                    # 電池蓋（2026-11-26「CONTAX T2 用電池蓋(ブラック)」に T2 本体の Sold が当たり OK で出ていた）
                    r"(?:(?:電池|バッテリー|バッテリ)\s*(?:室\s*)?(?:蓋|ふた|フタ|カバー)|底蓋|フィルムインサート)(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|battery\s*(?:cover|door|lid)|"
+                   # バッテリー・充電器の単品（2026-11-26 ゼニガメの下調べ: 「ペンタックス D-LI90 互換バッテリー」に K-5 本体の相場が当たり ◎ で出ていた）。
+                   # 「バッテリー付き」「付属」の本体は除く。型番の無い「バッテリー」だけの語は本体の説明にも出るので拾わない
+                   r"(?:(?:互換|純正|社外)\s*(?:バッテリー|充電器|チャージャー)|(?:バッテリー|電池)\s*パック|(?:バッテリー|充電器|チャージャー)\s*のみ|"
+                   r"\bbattery\s*(?:pack|charger)\b|(?<![A-Za-z])(?:D-LI\d{2,3}|EN-EL\d{1,2}[a-z]?|LP-E\d{1,2}N?|NP-(?:FW|FZ|BX|FV|FM|W|F)\d{2,3}|"
+                   r"NB-\d{1,2}[A-Z]{0,2}|BL[NSHX]-\d|LI-\d{2}B|DMW-BL[A-Z]\d{2}|MH-\d{2}|LC-E\d{1,2}|BC-W\d{3})(?![A-Za-z0-9]))"
+                   r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|"
                    r"repair\s*parts?|補修\s*用?\s*(?:部品|パーツ)|修理\s*用\s*(?:部品|パーツ)|グリップライン|張り?革のみ|貼り?革のみ|"
                    r"臨時増刊|増刊号|別冊|\bHLD-?\d+[A-Za-z]?(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|"
                    r"用\s*グリップ(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|"
@@ -1070,8 +1076,15 @@ MOUNT_WORDS = {
     "nikon": {"z": "Z", "ai": "F", "ai-s": "F", "af": "F", "af-s": "F", "af-p": "F", "af-i": "F", "nonai": "F"},
     "sony": {"fe": "FE", "e": "E"},
     "fujifilm": {"xf": "X", "xc": "X", "gf": "GF"},
+    # Leica（2026-11-26 予約リストに「Summicron 50mm f/2 R-Only」が M の Summicron の相場で上限 132,000円の ◎ で出ていた。
+    # R・M・L39 はマウントが違い、相場もまったく違う）。Leitz の刻印だけの商品名も Leica として見る
+    "leica": {"summicron-r": "R", "summilux-r": "R", "elmarit-r": "R", "elmar-r": "R", "apo-summicron-r": "R", "apo-telyt-r": "R",
+              "r-only": "R", "rom": "R", "r": "R",
+              "summicron-m": "M", "summilux-m": "M", "elmarit-m": "M", "elmar-m": "M", "apo-summicron-m": "M", "summarit-m": "M",
+              "tele-elmarit-m": "M", "m": "M",
+              "l39": "L39", "ltm": "L39", "l": "L39"},
 }
-MOUNT_TOKENS = {t for d in MOUNT_WORDS.values() for t in d}
+MOUNT_TOKENS = {t for b, d in MOUNT_WORDS.items() for t in d if not (b == "leica" and len(t) == 1)}  # Leica の1字（R・M・L）は Canon の L・Fuji の R と重なるので機種名の並べ替えには使わない
 
 
 FORMAT_WORDS = {"110": "110", "645": "645", "67": "67", "6x7": "67"}  # レンズの判（片方にだけあれば別物）
@@ -1084,7 +1097,7 @@ def format_of(tokens: set[str]) -> set[str]:
 def mount_of(tokens: set[str]) -> set[str]:
     out = set()
     for brand, words in MOUNT_WORDS.items():
-        if brand in tokens or (brand == "fujifilm" and "fuji" in tokens):
+        if brand in tokens or (brand == "fujifilm" and "fuji" in tokens) or (brand == "leica" and "leitz" in tokens):
             out |= {words[t] for t in tokens if t in words}
     return out
 
