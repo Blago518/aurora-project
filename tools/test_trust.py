@@ -894,3 +894,31 @@ class SuggestNet(unittest.TestCase):
         cases = [39.99, 20, 40.5, 41.2, 59.9, 60.5, 139.99]
         got = run_js(data, "console.log(JSON.stringify(" + json.dumps(cases) + ".map((x)=>m.suggestUsd({n:6,min:x,med:120}))))")
         self.assertEqual(got, [tv.suggest_usd({"n": 6, "min": x, "med": 120}, CFG) for x in cases])
+
+
+class LightMold(unittest.TestCase):
+    """軽いカビは × にせず別の枠（2026-11-26 オーナー「小カビも2,3個ならNearMINT」→ 選択式で「軽いカビだけ別の枠」）."""
+    CASES = {"Nikon Ai 50mm F1.4 小カビあり": True, "Canon FD 50mm 点カビ2つ 動作良好": True, "レンズ カビ少しあり": True,
+             "Contax 85mm F1.4 カビ3個": True, "OLYMPUS 28mm 微カビ": True,
+             "Nikon 50mm カビあり": False, "Canon 35mm カビ多め": False, "レンズ 蜘蛛の巣状のカビ": False, "Nikon 105mm 大きなカビ": False,
+             "Pentax 50mm カビ5個": False, "Nikon 50mm 小カビ・クモリあり": False}
+
+    def _mark(self, title):
+        it = ba.Item(url="u", auction_id="a1", title=title, current_price_jpy=1000, expected_price_usd=400.0)
+        it.flags = ba.detect_flags(title)
+        it.calc = ba.calculate(it, CFG, 150.0)
+        return ba.judge(it)
+
+    def test_python(self):
+        for t, light in self.CASES.items():
+            mark, reason = self._mark(t)
+            self.assertEqual(mark != "×" and "軽いカビ" in reason, light, (t, mark, reason))
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        js = ("console.log(JSON.stringify(" + json.dumps(list(self.CASES), ensure_ascii=False) +
+              ".map(t=>{const it={title:t,flags:m.detectFlags(t),calc:{maxBid:100000,bidNow:1000},price:1000};const r=m.judge(it);return r[0]!=='×'&&/軽いカビ/.test(r[1])&&it.lightMold===true;})))")
+        self.assertEqual(run_js(data, js), list(self.CASES.values()))
