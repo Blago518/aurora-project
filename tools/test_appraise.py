@@ -387,7 +387,14 @@ class ModelQuery(unittest.TestCase):
              ("Mamiya RB67 Pro SD ボディ", "Mamiya RB67 Pro SD"),       # 削りすぎない（利益計算.md 11/19）
              ("Canon New F-1 ボディ", "Canon New F-1"),
              ("Canon EF 50mm F1.2L USM 美品", "Canon EF 50mm F1.2 L"),
-             ("Leica M6 TTL 0.85 ブラック", "Leica M6 TTL 0.85")]
+             ("Leica M6 TTL 0.85 ブラック", "Leica M6 TTL 0.85"),
+             # 2026-11-26 オーナーの店舗アプリの画面（実際の出品の商品名）: 漢字の入った括弧の管理番号・「1:5.6 f=250mm」の書き方
+             ("【福C-844】Nikon F5", "Nikon F5"),
+             ("2851 ZENZA BRONICA ZENZANON MC 1:5.6 f=250mm 望遠レンズ 動作確", "Bronica ZENZANON MC 250mm F5.6"),
+             ("ZENZA BRONICA ZENZANON MC 250mm F5.6 中判カメラ用 レンズ 単焦点", "Bronica ZENZANON MC 250mm F5.6"),
+             ("キヤノン　Canon RF24-70mm F2.8L IS USM【動作確認済】#10657 F.Nov.2126", "Canon RF 24-70mm F2.8 L IS"),
+             ("ニコン Nikon AF-S VR-NIKKOR 70-200mm 1:2.8G 動作品　60サイズ", "Nikon AF-S VR-NIKKOR 70-200mm F2.8 G"),
+             ("良品 Nikon P900 め０１６", "Nikon P900")]
 
     def test_python(self):
         import build_store as bs
