@@ -61,7 +61,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .ref{font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);display:flex;gap:8px}.ref span:first-child{flex:1}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{border:1px solid #c3d2dd;background:#fff;color:#284c62;border-radius:99px;padding:8px 12px;font-size:14px;font-weight:700}
-.chip[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}
+#bidChips{flex-wrap:nowrap}.chip[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}
 .chip[aria-pressed=true] .s{color:#d6eaf5}
 .shelf{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.shelf:last-child{border:0}
 .shelf .mk{font-size:22px;font-weight:900;min-width:30px;text-align:center}.shelf .tt{flex:1;min-width:0}.shelf .tt b{display:block;font-size:14px}
@@ -96,7 +96,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .bid .tt{flex:1;min-width:0}.bid .tt a{color:var(--ink);font-weight:700;text-decoration:none;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bid .max{display:flex;align-items:baseline;gap:8px;margin:8px 0 2px}.bid .max strong{cursor:pointer}.bid .max strong{font-size:22px;color:var(--good)}
 .bid .tent .max strong,.bid.tent .max strong{color:var(--warn)}
-.bid.did{opacity:.55}.bid .tt{display:flex;gap:8px;align-items:flex-start}.bid .tt a{flex:1;min-width:0}.seenbtn{flex:none;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid #c6d3de;background:#fff;color:var(--sub);white-space:nowrap}.seenbtn[aria-pressed="true"]{background:#e6f4ea;border-color:#9fd3b0;color:var(--good)}.bid.seen{opacity:.55}.bid.seen.shut>:not(.tt){display:none}.bid.seen.shut{padding:8px 0}.bid.seen.shut .tt a{-webkit-line-clamp:1}.seenfold{display:flex;justify-content:space-between;align-items:center;width:100%;margin:6px 0 0;padding:10px 12px;border:1px solid #9fd3b0;border-radius:10px;background:#e6f4ea;color:var(--good);font-size:14px;font-weight:700}.seenfold span{font-size:12px}.openbtn{flex:none;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid #c6d3de;background:#fff;color:var(--sub);white-space:nowrap}.bid .links.five{grid-template-columns:repeat(5,1fr)}.bid .links.six{grid-template-columns:repeat(6,1fr);gap:4px}.bid .links.six .mini{padding-left:2px;padding-right:2px}.linkbtn{background:none;border:0;color:var(--blue);font-size:12px;padding:0;text-decoration:underline}
+.bid.did{opacity:.55}.bid .tt{display:flex;gap:8px;align-items:flex-start}.bid .tt a{flex:1;min-width:0}.seenbtn{flex:none;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid #c6d3de;background:#fff;color:var(--sub);white-space:nowrap}.seenbtn[aria-pressed="true"]{background:#e6f4ea;border-color:#9fd3b0;color:var(--good)}.bid.seen{opacity:.55}.bid.seen.shut>:not(.tt){display:none}.bid.seen.shut{padding:8px 0}.bid.seen.shut .tt a{-webkit-line-clamp:1}.seenfold{display:flex;justify-content:space-between;align-items:center;width:100%;margin:0 0 6px;padding:10px 12px;border:1px solid #9fd3b0;border-radius:10px;background:#e6f4ea;color:var(--good);font-size:14px;font-weight:700}.seenfold span{font-size:12px}.openbtn{flex:none;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid #c6d3de;background:#fff;color:var(--sub);white-space:nowrap}.bid .links.five{grid-template-columns:repeat(5,1fr)}.bid .links.six{grid-template-columns:repeat(6,1fr);gap:4px}.bid .links.six .mini{padding-left:2px;padding-right:2px}.linkbtn{background:none;border:0;color:var(--blue);font-size:12px;padding:0;text-decoration:underline}
 .bidbar{position:fixed;left:0;right:0;bottom:0;z-index:8;display:flex;gap:8px;align-items:center;background:var(--navy);color:#fff;padding:10px max(12px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 10px) max(12px,env(safe-area-inset-left))}
 .bidbar .bbt{flex:1;min-width:0;display:flex;flex-direction:column}.bidbar b{font-size:22px}.bidbar span{font-size:11px;color:#a9c3d6}.bidbar small{font-size:11px;color:#a9c3d6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bidbar .mini{white-space:nowrap}
@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.26.7";
+  var APP_VERSION = "2026.11.26.8";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -1448,16 +1448,17 @@ function bidCard(i, B, done, now, tag) {
   const r = bidRedo(i), ck = r && r.ck;
   const marks = [tag ? `<span class="tag ok">${esc(tag)}</span>` : "",
     ck ? (ck.own ? `<span class="tag done">✓ Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} 確認済み</span>`
-      : `<span class="tag same">同じ機種の Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} で計算</span>`) : i.check ? `<span class="tag tent">Sold で確かめて</span>` : "",
+      : `<span class="tag same">同じ機種の Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} で計算</span>`) : i.check ? `<span class="tag tent">相場確認</span>` : "",
     i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
   // 印と言葉を同じ向きに（2026-11-22 オーキド: NO の横に「まで入札」を書かない）。Mac の候補も出し直した額も同じ形
   const mx = r ? r.maxBid : i.maxBid, pf = r ? r.profit : i.profit, no = !(mx > 0) || (i.price && i.price > mx);
-  const tax = r ? storeNote(i, mx) : i.taxNote ? "（" + esc(i.taxNote) + "）" : "";
-  const nowTx = i.price && pf != null ? `この価格なら利益 ${signYen(pf)}${no && pf > 0 && r && r.minProfit ? `（基準 ${yen(r.minProfit)}）` : ""}` : "";
+  const paid = String(i.taxNote || "").match(/支払いは?(税込[\d,]+円)/);   // Mac の「ストア: このまま入札。支払いは税込◯円」から支払い額だけ（個人は税の話を出さない）
+  const tax = r ? storeNote(i, mx) : paid ? "支払い" + esc(paid[1]) : "";
+  const nowTx = i.price && pf != null ? `今の価格で利益 ${signYen(pf)}${no && pf > 0 && r && r.minProfit ? `（基準 ${yen(r.minProfit)}）` : ""}` : "";
   const sure = r ? r.ck.own : !i.check;   // OK の緑は、根拠が確認不要の物と ✓確認済みの物だけ（確かめる前は NO だけ出す。2026-11-22 オーキド）
   const maxHtml = `<div class="max${no ? " no" : ""}">${no ? yn(false) : sure ? yn(true) : ""}${!(mx > 0) ? ""
     : no ? `<strong>上限 ${yen(mx)}</strong><span class="s">${[tax, nowTx].filter(Boolean).join("・")}</span>`
-    : `<strong>${yen(mx)}</strong><span class="s">まで入札${tax}${nowTx ? "・" + nowTx : ""}</span>`}</div>`;
+    : `<strong>${yen(mx)}</strong><span class="s">${["まで入札", tax, nowTx].filter(Boolean).join("・")}</span>`}</div>`;
   const seen = !!lsGet(LS_BIDSEEN, {})[i.id], shut = seen && !bidOpen.has(i.id);
   // 確認済みのカードは1行にたたむ（2026-11-26 オーナー「確認済みは閉じれるようにしてほしい」）。［開く］で中身を出し、［閉じる］でまたたたむ
   const ob = seen ? `<button class="openbtn" type="button" data-open="${esc(i.id)}">${shut ? "開く" : "閉じる"}</button>` : "";
@@ -1472,7 +1473,7 @@ function bidCard(i, B, done, now, tag) {
 }
 // 確認済みの Sold で、その出品の上限額と今の価格での利益を出し直す（［調べる］と同じ lookup。国内送料・ストアの税抜も同じ）
 // ストアは入札欄の額が税抜（appraise.py と同じ言い方）。出し直した額で支払い額を出す
-const storeNote = (i, mx) => (/^ストア/.test(i.taxNote || "") && mx > 0 ? `（ストア: このまま入札。支払いは税込${Math.round(mx * (1 + (DATA.cfg.storeTaxPct || 10) / 100)).toLocaleString("ja-JP")}円）` : "");
+const storeNote = (i, mx) => (/^ストア/.test(i.taxNote || "") && mx > 0 ? `支払い税込${Math.round(mx * (1 + (DATA.cfg.storeTaxPct || 10) / 100)).toLocaleString("ja-JP")}円` : "");
 // 登録した Sold があれば、その額で計算する（調べる・入札・おすすめ・棚で同じ）
 function soldOpt(name, o) {
   const ck = checkedFor(name); if (!ck) return o;
@@ -1500,20 +1501,21 @@ function renderBids() {
   const done = lsGet(LS_BIDDONE, {});
   const live = B.items.filter((i) => { const e = endAt(i.end); return e == null || (e > now && e - now < 48 * 3600e3); });
   const byId = Object.fromEntries(live.map((i) => [i.id, i]));
-  const reserve = (B.reserve || []).map((r) => byId[r.id] && Object.assign({}, byId[r.id], { _tag: r.kind === "即決" ? "即決で買える" : "今日の予約" })).filter(Boolean);
+  const reserve = (B.reserve || []).map((r) => byId[r.id] && Object.assign({}, byId[r.id], { _tag: r.kind === "即決" ? "即決で買える" : "予約" })).filter(Boolean);
   const sure = live.filter((i) => !i.check), check = live.filter((i) => i.check);
   if (bidFilter === "reserve" && !reserve.length) bidFilter = "sure";
-  $("bidChips").innerHTML = [["reserve", `今日の予約 ${reserve.length}`], ["sure", `確認不要 ${sure.length}`], ["check", `Sold で確かめる ${check.length}`]]
+  $("bidChips").innerHTML = [["reserve", `予約 ${reserve.length}`], ["sure", `確認不要 ${sure.length}`], ["check", `相場確認 ${check.length}`]]
     .map(([k, t]) => `<button class="chip" data-f="${k}" aria-pressed="${k === bidFilter}">${t}</button>`).join("");
-  $("bidInfo").innerHTML = `${esc(B.built)} 作成（価格はその時点）・<button class="linkbtn" type="button" data-sort="1">${bidSort === "end" ? "Mac の一覧の順に戻す" : "終わる順に並べる"}</button>`;
+  const bt = String(B.built || "").match(/^\d{4}-(\d\d)-(\d\d) (\d\d:\d\d)/);   // 価格の時点はカードごとに「◯時点」と出るので、ここは作った時刻だけ（1行に収める）
+  $("bidInfo").innerHTML = `${bt ? `${+bt[1]}/${+bt[2]} ${bt[3]}` : esc(B.built)} 作成・<button class="linkbtn" type="button" data-sort="1">${bidSort === "end" ? "Mac の一覧の順に戻す" : "終わる順に並べる"}</button>`;
   let list = bidFilter === "reserve" ? reserve : bidFilter === "check" ? check : sure;
   if (bidSort === "end") list = list.slice().sort((a, b) => (endAt(a.end) || 9e15) - (endAt(b.end) || 9e15));
   else if (bidFilter !== "reserve") list = list.slice().sort((a, b) => (a.rank ?? 9e9) - (b.rank ?? 9e9));
-  // 確認済みは下の1行にまとめてたたむ（2026-11-26 オーナー「確認済みは1行に折り畳んでほしい。かさばってスクロールが面倒」）
+  // 確認済みは一覧の上の1行にまとめてたたむ（2026-11-26 オーナー「確認済みは1行に折り畳んでほしい。かさばってスクロールが面倒」「畳んだ1行は上に移動」）
   const seenMap = lsGet(LS_BIDSEEN, {}), todo = list.filter((i) => !seenMap[i.id]), seenList = list.filter((i) => seenMap[i.id]);
   const fold = seenList.length ? `<button class="seenfold" type="button" data-fold="1" aria-expanded="${seenOpen}">✓ 確認済み ${seenList.length}件<span>${seenOpen ? "たたむ ▴" : "開く ▾"}</span></button>` : "";
-  $("bidList").innerHTML = list.length ? todo.map((i) => bidCard(i, B, done, now, i._tag)).join("") + fold + (seenOpen ? seenList.map((i) => bidCard(i, B, done, now, i._tag)).join("") : "")
-    : `<div class="empty">${bidFilter === "check" ? "Sold で確かめる候補はありません" : "いま確認なしで入札できる候補はありません。「Sold で確かめる」も見てください"}</div>`;
+  $("bidList").innerHTML = list.length ? fold + (seenOpen ? seenList.map((i) => bidCard(i, B, done, now, i._tag)).join("") : "") + todo.map((i) => bidCard(i, B, done, now, i._tag)).join("")
+    : `<div class="empty">${bidFilter === "check" ? "相場確認の候補はありません" : "いま確認なしで入札できる候補はありません。［相場確認］も見てください"}</div>`;
 }
 // 画面の下の帯: 予約ページで入れる上限額を出したままにする
 function renderBidBar() {
