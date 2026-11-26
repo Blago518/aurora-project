@@ -79,3 +79,13 @@ class Skipped(unittest.TestCase):
         t = (Path(__file__).parent / "extension_template.js").read_text(encoding="utf-8")
         self.assertIn('"seller", "checked_at"]', t)
         self.assertIn("w.checked_at = box.checked", t)
+
+
+class YahooListingTemplate(unittest.TestCase):
+    """ヤフオク流しの説明文の型（2026-11-26 オーナー「商品名の箇所は1つでいいからね。2箇所にしていたせいで、誤表示して出品しています」）."""
+
+    def test_product_name_once(self):
+        t = (Path(__file__).parent / "yahoo_listing_template.html").read_text(encoding="utf-8")
+        body = t.split("-->", 1)[1]   # 先頭の説明のコメントは除く
+        self.assertEqual(body.count("{{商品名"), 1)
+        self.assertNotIn("<script", body.lower())
