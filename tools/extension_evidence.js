@@ -54,7 +54,7 @@ function orderInfo(text, id, now) {
   const t = String(text || "").replace(/\u00a0/g, " ");
   const pick = (re) => ((t.match(re) || [])[1] || "");
   const seller = pick(/(?:出品者|ストア名|販売者|ストア)\s*[:：]?\s*\n?\s*([^\n（(]{1,40})/).trim().replace(/\s+/g, " ");
-  const price = pick(/(?:落札価格|商品金額（税込）|商品金額|商品代金|小計|合計金額|お支払い金額|支払い金額|お支払金額)\s*[:：]?\s*\n?\s*([\d,]+)\s*円/).replace(/,/g, "");
+  const price = pick(/(?:落札価格|商品金額（税込）|商品金額|商品代金|小計|合計金額|お支払い金額|支払い金額|お支払金額|現在価格|現在|即決価格|即決)\s*[:：]?\s*\n?\s*([\d,]+)\s*円/).replace(/,/g, "");
   const m = t.match(/(?:終了日時|落札日時|落札日|注文日時|注文日|購入日時|購入日)\s*[:：]?\s*\n?\s*(?:(\d{4})[年/])?\s*(\d{1,2})[月/]\s*(\d{1,2})/) || t.match(/(\d{4})[年/](\d{1,2})[月/](\d{1,2})/);
   let ymd = "";
   if (m) {
@@ -72,11 +72,14 @@ function orderInfo(text, id, now) {
 (function () {
   if (typeof document === "undefined" || typeof chrome === "undefined" || !chrome.runtime) return;
   let tries = 0, expect = "";
-  const isOrder = location.hostname === "buy.auctions.yahoo.co.jp";
+  // 出品ページ（jp/auction/ID）は、まとめて保存の順番待ちが開いた時だけ写す（ふだん見ている出品ページでは何もしない）
+  const isAuction = location.hostname === "auctions.yahoo.co.jp" && /^\/jp\/auction\//.test(location.pathname);
+  const isOrder = location.hostname === "buy.auctions.yahoo.co.jp" || isAuction;
   if (isOrder) {   // 開いた側（まとめて保存の順番待ち）が知っているオークションID。自分で開いたときは URL・画面の文字から
     chrome.runtime.sendMessage({ type: "evidenceExpect" }, (r) => { expect = (!chrome.runtime.lastError && r && r.id) || ""; });
   }
   const go = () => {
+    if (isAuction && !expect) { if (++tries < 6) setTimeout(go, 500); return; }   // 順番待ちが開いたのでなければ何もしない
     const body = document.body ? document.body.innerText : "";
     let info = evidenceInfo(body) || bundleInfo(body, location.href, Array.from(document.querySelectorAll("a[href]"), (a) => a.href));
     if (!info && isOrder) {

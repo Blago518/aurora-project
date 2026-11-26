@@ -479,7 +479,8 @@ class NoScraping(unittest.TestCase):
         hosts = set(__import__("re").findall(r"https://([a-z.]+)/", bg))
         # eBay で通信するのは公式 API だけ（tools.aucfan.com は入札予約のタブを開くだけで、読み取りはしない）
         self.assertEqual({h for h in hosts if "ebay" in h}, {"api.ebay.com"})
-        self.assertTrue(hosts <= {"api.ebay.com", "tools.aucfan.com"}, hosts)
+        # auctions.yahoo.co.jp: 仕入れ証跡で、落札分の一覧・出品ページを窓で開くだけ（読みに行かない。2026-11-26）
+        self.assertTrue(hosts <= {"api.ebay.com", "tools.aucfan.com", "auctions.yahoo.co.jp"}, hosts)
 
 
 class ExtensionBrowse(unittest.TestCase):
@@ -504,7 +505,7 @@ class ExtensionBrowse(unittest.TestCase):
         self.assertNotIn("https://api.ebay.com/*", man.get("host_permissions", []))  # キーが無ければ eBay への通信権限は付けない
         # background.js は相場メモの自動保存（ダウンロード/aurora_price_memo.csv）のため常に入る。キーは入らない
         self.assertIn("const APP_ID = null;", bg)
-        self.assertEqual(man["permissions"], ["downloads", "downloads.ui", "storage"])
+        self.assertEqual(man["permissions"], ["downloads", "downloads.ui", "storage", "alarms"])  # alarms: 仕入れ証跡の1日1回の取りに行き・自分で読み直す（2026-11-26）
 
 
 if __name__ == "__main__":

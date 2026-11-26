@@ -190,7 +190,8 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
         }, {
             # ヤフオクの取引ナビ: 開いたら仕入れ証跡（画面の PNG）を自動で保存（extension_evidence.js。2026-11-23 オーナー依頼）
             # 注文の状況（buy.auctions.yahoo.co.jp/order/status。2026-11-26 新しい取引は［取引連絡］がここに飛ぶ）も同じく保存
-            "matches": ["https://contact.auctions.yahoo.co.jp/*", "https://buy.auctions.yahoo.co.jp/order/*"],
+            # 出品ページ（jp/auction/ID）は、まとめて保存の順番待ちが開いた時だけ写す（注文の状況がエラーの物の撮り直し。2026-11-26）
+            "matches": ["https://contact.auctions.yahoo.co.jp/*", "https://buy.auctions.yahoo.co.jp/order/*", "https://auctions.yahoo.co.jp/jp/auction/*"],
             "js": ["evidence.js"],
             "run_at": "document_idle",
         }, {
@@ -214,7 +215,7 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
     # 裏方（background.js）は常に入れる: 相場メモを ダウンロード/aurora_price_memo.csv に保存する（downloads 権限）。
     # eBay のキーがあれば、出品中の相場を公式 Browse API で調べる（通信先は api.ebay.com だけ）
     manifest["background"] = {"service_worker": "background.js"}
-    manifest["permissions"] = ["downloads", "downloads.ui", "storage"]  # downloads.ui: 自動保存の吹き出しを出さない  # storage: オークファンの予約の受け渡し・eBay 出品中の価格の保存
+    manifest["permissions"] = ["downloads", "downloads.ui", "storage", "alarms"]  # downloads.ui: 自動保存の吹き出しを出さない  # storage: オークファンの予約の受け渡し・eBay 出品中の価格の保存
     # 仕入れ証跡: 取引ナビの画面を写す（tabs.captureVisibleTab）。Chrome はサイトだけの許可では写させず、<all_urls> か activeTab（毎回の操作）が要る
     # （2026-11-23 Chromium で確かめた）。写すのは取引ナビの evidence.js が頼んだときだけで、ほかのサイトには何もしない
     manifest["host_permissions"] = ["<all_urls>"] + (["https://api.ebay.com/*"] if keys else [])
@@ -222,11 +223,15 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
     shutil.copy(HERE / "extension_evidence.js", folder / "evidence.js")
     shutil.copy(HERE / "extension_evidence_list.js", folder / "evidence_list.js")
     # 証跡がもう Mac にあるオークションID（ダウンロードと税理のフォルダ）。拡張機能はこれを開かない＝重複して保存しない（2026-11-26）
+    need: list[str] = []
     try:
         import tax_folder
         have = sorted(tax_folder.evidence_ids(Path.home() / "Downloads"))
+        need = tax_folder.missing_evidence(Path.home() / "Downloads")["missing"]
     except Exception:  # noqa: BLE001  見えなくても拡張機能は作る（拡張機能の中の記録で重複は防げる）
         have = []
+    # 証跡が無いID: 拡張機能が1日1回、落札分の一覧を裏の窓で開いて取りに行く（evAutoRun。2026-11-26 オーナー「もう裏で片付けろ」）
+    (folder / "evidence_need.json").write_text(json.dumps({"ids": need}), encoding="utf-8")
     # t: 作った時刻。拡張機能の中の「保存済み」の印のうち、これより前の物は Mac の実物（ids）で上書きする（印だけ残って PNG が無い物を取り直す）
     (folder / "evidence_have.json").write_text(json.dumps({"t": int(datetime.now().timestamp() * 1000), "ids": have}), encoding="utf-8")
     shutil.copy(HERE / "extension_cpass.js", folder / "cpass.js")
