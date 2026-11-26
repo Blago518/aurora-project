@@ -131,3 +131,26 @@ class MoveEvidence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EvidenceList(unittest.TestCase):
+    """ヤフオクのページの取引ナビのリンク → まとめて開く物（extension_evidence_list.js の navLinks）."""
+
+    def test_nav_links(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        src = (HERE / "extension_evidence_list.js").read_text(encoding="utf-8")
+        body = src[src.index("// @evlist-start"):src.index("// @evlist-end")]
+        hrefs = ["https://contact.auctions.yahoo.co.jp/buyer/top?aid=m1000000001&syid=sellerA&bid=buyerB",
+                 "https://contact.auctions.yahoo.co.jp/buyer/top?aid=m1000000001&syid=sellerA&bid=buyerB#x",
+                 "https://auctions.yahoo.co.jp/jp/auction/v1000000002",
+                 "https://contact.auctions.yahoo.co.jp/help",
+                 "https://contact.auctions.yahoo.co.jp/seller/top?aid=V1000000003&bid=c"]
+        out = json.loads(subprocess.run(["node", "-e", body + "\nconsole.log(JSON.stringify(navLinks(%s).map((l) => l.id)));" % json.dumps(hrefs)],
+                                        capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(out, ["m1000000001", "v1000000003"])
+
+    def test_built_into_extension(self):
+        src = (HERE / "build_extension.py").read_text(encoding="utf-8")
+        self.assertIn('"evidence_list.js"', src)
+        self.assertIn("evidenceBatch", (HERE / "extension_background.js").read_text(encoding="utf-8"))
