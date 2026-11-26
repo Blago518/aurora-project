@@ -963,6 +963,9 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
 
     # 出品中（eBay）
     d["listings_date"] = listings_date
+    # 売り切れて在庫0のまま残っている出品（eBay の「在庫切れでも出品を残す」）は出品中に数えない
+    # （2026-11-26 オーナー「出品は40品ですよ？」。売れた8品が出品中に混ざり48品と出ていた）
+    listings = [r for r in (listings or []) if str(r.get("quantity", "")).strip() != "0"]
     if listings:
         uniq: dict[str, dict] = {}
         for r in listings:  # eBay Mag で UK・豪州に複製した出品は1件として数える

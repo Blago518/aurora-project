@@ -61,6 +61,7 @@ LISTINGS = """days_listed,title,site,currency,price,watchers,quantity,sku,ebay_u
 5,Leica M3 TOP MINT,US,USD,1500,8,1,B3,https://www.ebay.com/itm/4
 3,Olympus OM-1 for parts,US,USD,40,1,1,B4,https://www.ebay.com/itm/5
 3,Minolta X-700,US,USD,90,1,1,B5,https://www.ebay.com/itm/6
+21,Pentax MX [MINT],US,USD,200,5,0,B6,https://www.ebay.com/itm/7
 """
 
 
@@ -125,7 +126,7 @@ class TestDashboard(unittest.TestCase):
 
     def test_conditions_dedupe(self):
         d = self.data()
-        self.assertEqual(d["listings_unique"], 5)  # UK の複製は数えない
+        self.assertEqual(d["listings_unique"], 5)  # UK の複製と、売り切れて在庫0の出品（B6）は数えない
         got = {c["label"]: c["count"] for c in d["conditions"]}
         self.assertEqual(got, {"TOP MINT": 1, "Near MINT": 1, "Exc+5": 1, "ジャンク": 1, "表記なし": 1})
 
