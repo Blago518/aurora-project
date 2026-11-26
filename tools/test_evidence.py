@@ -244,3 +244,23 @@ class EvidenceLogReasons(unittest.TestCase):
             (dl / "aurora_evidence_log.csv").write_text("\ufeffid,結果,理由,日時\nk1000000004,保存できず,20秒待っても画面が読めなかった,2026-11-26\ndone,,,2026-11-26\n", encoding="utf-8")
             log = tax_folder.evidence_log(dl)
             self.assertEqual(log, {"k1000000004": ("保存できず", "20秒待っても画面が読めなかった")})
+
+
+class DuplicateToTrash(unittest.TestCase):
+    def test_same_id_in_dest_goes_to_trash(self):
+        """2026-11-26: 移し先に同じ名前（オーナーが前に撮った物）があり、24枚がダウンロードに残った → 重複はゴミ箱へ."""
+        import tax_folder
+        with tempfile.TemporaryDirectory() as d:
+            home, dl = Path(d), Path(d) / "Downloads"
+            (dl / "ヤフオク仕入証跡").mkdir(parents=True)
+            (home / ".Trash").mkdir()
+            dest = home / "Desktop" / "税理士提出書類" / "8. 仕入証跡" / "ヤフオク"
+            dest.mkdir(parents=True)
+            (dest / "20260731_店A_1_p1000000001.png").write_bytes(b"old-shot")
+            (dl / "ヤフオク仕入証跡" / "20260731_店A_1_p1000000001.png").write_bytes(b"new-shot!!")
+            (dl / "ヤフオク仕入証跡" / "20261120_店B_5000_s1000000002.png").write_bytes(b"png")
+            with mock.patch.object(Path, "home", return_value=home):
+                r = tax_folder.move_evidence(dl, home)
+            self.assertEqual((r["moved"], r["dup"], r["left"]), (1, 1, 0))
+            self.assertTrue((home / ".Trash" / "20260731_店A_1_p1000000001.png").exists())
+            self.assertEqual((dest / "20260731_店A_1_p1000000001.png").read_bytes(), b"old-shot")

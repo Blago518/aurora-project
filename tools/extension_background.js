@@ -116,17 +116,17 @@ function evDone(tabId, ok, note) {
 function evTell(extra) {
   if (evStat.from != null) chrome.tabs.sendMessage(evStat.from, Object.assign({ type: "evidenceProgress" }, evStat, extra), () => void chrome.runtime.lastError);
 }
-// 保存済みか: Mac にある証跡（evidence_have.json。build_extension.py が作る）が正。拡張機能の中の印は、その後に保存した物だけ信じる
-let evHave = null;
+// 保存済みか: Mac にある証跡（evidence_have.json。build_extension.py・tax_folder.py --won が書く）と、この起動のあいだに保存した物だけ。
+// 拡張機能の中の古い印は使わない（2026-11-26 印だけ残って画像の無い34件を開かずに飛ばしていた）。ファイルは毎回読み直す（↻ なしで新しい中身）
+const evSession = new Set();
 async function evSaved(keys) {
-  if (!evHave) evHave = await fetch(chrome.runtime.getURL("evidence_have.json")).then((x) => x.json()).catch(() => null) || { t: 0, ids: [] };
-  if (Array.isArray(evHave)) evHave = { t: 0, ids: evHave };
-  const r = await chrome.storage.local.get(keys);
-  const ids = new Set(evHave.ids || []);
+  let have = await fetch(chrome.runtime.getURL("evidence_have.json"), { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+  if (Array.isArray(have)) have = { ids: have };
+  const ids = new Set((have && have.ids) || []);
   const out = {};
   for (const k of keys) {
     const id = k.replace(/^evidence_/, "");
-    out[k] = ids.has(id) || (r[k] && (!evHave.t || r[k] > evHave.t)) ? 1 : 0;
+    out[k] = ids.has(id) ? "Mac に証跡あり" : evSession.has(id) ? "さっき保存した" : 0;
   }
   return out;
 }
@@ -217,6 +217,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
       todo.forEach((l) => evQueue.push(Object.assign({ from: _sender.tab.id }, l)));
       send({ queued: todo.length, already: links.length - todo.length });
       const notes = {};
+      for (const l of links) if (r["evidence_" + l.id]) notes[l.id] = ["飛ばした", r["evidence_" + l.id]];
       for (const id of (msg.noSeller || [])) if (/^[a-z]?\d{8,12}$/i.test(id) && !r["evidence_" + id]) notes[String(id).toLowerCase()] = ["開けず", "落札分の一覧にあるが、取引連絡のリンクが無く、出品者も分からない"];
       (Object.keys(notes).length ? evLog(notes) : Promise.resolve()).then(() => (todo.length ? evRun() : (evBusy ? null : evWriteLog())));
     });
@@ -237,7 +238,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
         .then((url) => quietDownload({ url, filename: "ヤフオク仕入証跡/" + String(msg.name).slice(0, 120) + ".png", conflictAction: "uniquify", saveAs: false })
           // 日本語の名前を受け付けない環境だけ、英数字の名前（終了日_金額_オークションID）で保存する
           .catch(() => quietDownload({ url, filename: "yahoo_evidence/" + String(msg.name).replace(/[^\w.-]+/g, "_").replace(/_+/g, "_") + ".png", conflictAction: "uniquify", saveAs: false })))
-        .then(() => chrome.storage.local.set(Object.fromEntries(keys.map((k) => [k, Date.now()]))))
+        .then(() => { keys.forEach((k) => evSession.add(k.replace(/^evidence_/, ""))); return chrome.storage.local.set(Object.fromEntries(keys.map((k) => [k, Date.now()]))); })
         .then(() => { evDone(_sender.tab.id, true); send({ saved: true }); });
     }).catch((e) => { evDone(_sender.tab.id, false, "画面を写せなかった: " + String((e && e.message) || e)); send({ error: String((e && e.message) || e) }); });
     return true;

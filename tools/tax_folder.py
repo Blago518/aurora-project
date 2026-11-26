@@ -197,7 +197,7 @@ def move_evidence(downloads: Path, home: Path | None = None) -> dict:
         for p in files:
             ids = ids_of(p)
             # 同じオークションIDの証跡がもう移し先にある（オーナーが前に撮った物など）→ 重ねて置かず、ゴミ箱へ（元に戻せる。2026-11-26 オーナー「重複取得しないようにね」）
-            if ids and ids <= have and not (to / p.name).exists():
+            if ids and ids <= have:
                 trash = Path.home() / ".Trash"
                 try:
                     shutil.move(str(p), str(trash / p.name)) if trash.is_dir() else p.unlink()
@@ -280,6 +280,13 @@ def open_won_and_wait(downloads: Path, limit_sec: int = 1800, quiet_sec: int = 3
     import time
     count = lambda: sum(len(list((downloads / sub).glob("*.png"))) for sub in EVIDENCE_SUBS if (downloads / sub).is_dir())  # noqa: E731
     start = n0 = count()
+    # 拡張機能に「Mac にもう証跡があるID」を渡す（拡張機能は毎回このファイルを読み直す。↻ は要らない）
+    ext = Path(__file__).resolve().parent.parent / "extension"
+    if ext.is_dir():
+        import json
+        have = sorted(evidence_ids(downloads))
+        (ext / "evidence_have.json").write_text(json.dumps({"t": int(time.time() * 1000), "ids": have}), encoding="utf-8")
+        print(f"  Mac にある証跡 {len(have)}件のIDを拡張機能に渡しました（これ以外を開いて保存します）")
     subprocess.run(["open", "-a", "Google Chrome", "https://auctions.yahoo.co.jp/my/won"], check=False)
     t0 = last = time.time()
     logp = downloads / EVIDENCE_LOG
