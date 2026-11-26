@@ -316,7 +316,13 @@ class AccessoryOnly(unittest.TestCase):
              "Leica M6 底蓋": True, "Canon EOS 5D 電池室 蓋": True, "CONTAX T3 用 電池室カバー": True, "Pentax 645 フィルムインサート": True,
              "Nikon D750 バッテリーグリップ付き": False, "Canon バッテリーグリップ BG-E14": True,
              # 2026-11-26 オーナーの画面: 長音を横棒で書いた「ケ-ス」が付属品と読めず、T2 の相場で OK 115,000円になっていた
-             "Contax CC-17 ケ-ス(Contax T2用)": True, "Nikon レンズフ-ド HB-7": True, "Nikon F3 ケ-ス付き": False}
+             "Contax CC-17 ケ-ス(Contax T2用)": True, "Nikon レンズフ-ド HB-7": True, "Nikon F3 ケ-ス付き": False,
+             # 2026-11-26 ゼニガメの下調べ: 互換バッテリーに K-5 本体の相場が当たり ◎ で出ていた。本体の「バッテリー付き」「付属」「無し」は本体のまま
+             "ペンタックス D-LI90 互換バッテリー": True, "PENTAX D-LI90 バッテリー 純正": True, "Nikon EN-EL15 互換バッテリー 2個": True,
+             "Canon LP-E6 バッテリー": True, "Nikon MH-25 充電器": True, "Sony NP-FW50 battery": True, "Canon バッテリーパック LP-E17": True,
+             "ペンタックス K-5 バッテリー付き ボディ": False, "Canon EOS 5D Mark II ボディ バッテリー 充電器 付属": False,
+             "Nikon D750 ボディ（バッテリー無し）": False, "Nikon D7100 バッテリーなし ジャンク": False,
+             "Nikon D750 EN-EL15 付属 ボディ": False, "Sony α7 ボディ バッテリー2個付き": False, "Pentax K-5 ボディ": False}
 
     def test_python(self):
         for t, acc in self.CASES.items():
@@ -631,6 +637,15 @@ class MountWords(unittest.TestCase):
         ("SONY FE 50mm F1.8", "SONY E 50mm F1.8 OSS", False),
         ("FUJIFILM XF 35mm F1.4 R", "フジフイルム FUJIFILM XF35mm F1.4 R", True),
         ("Olympus OM Zuiko 50mm f1.4", "オリンパス OM ZUIKO 50mm F1.4", True),   # マウント語の無いメーカーは今までどおり
+        # 2026-11-26 予約リスト: R 用の Summicron が M の相場で上限 132,000円の ◎ になっていた
+        ("Leica Summicron-M 50mm F2", "ライカ Leica Leitz ズミクロン Summicron 50mm f/2 R-Only ya-4557", False),
+        ("Leica Summicron-M 50mm F2", "LEICA SUMMICRON-R 50mm F2", False),
+        ("Leica Summicron-M 50mm F2", "Leica ライカ LEITZ SUMMICRON-M 1:2/50 50mm F2 現状品", True),
+        ("Leica Summicron-M 50mm F2", "Leica Summicron 50mm F2 Mマウント", True),
+        ("Leica Summicron-M 50mm F2", "Leica Summicron 50mm F2 L39 Lマウント", False),
+        # マウントを書いていない側には今までどおり当てる（オーキドの指摘。当てないかはオーナーが選ぶまで変えない）
+        ("Leica Summicron-M 50mm F2", "ライカ ズミクロン 50mm F2 ブラック", True),
+        ("Leica Summilux-R 50mm F1.4", "ライカ SUMMILUX-R 50mm F1.4 3カム", True),
     ]
 
     def _ref(self, title):
