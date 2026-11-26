@@ -194,8 +194,8 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
             "run_at": "document_idle",
         }, {
             # ヤフオクのページ（落札分の一覧など）に取引ナビのリンクがあれば、証跡の無い物を1件ずつ開いて保存（extension_evidence_list.js。2026-11-26）
-            "matches": ["https://auctions.yahoo.co.jp/*", "https://*.auctions.yahoo.co.jp/*"],
-            "exclude_matches": ["https://contact.auctions.yahoo.co.jp/*"],
+            # 落札分の一覧だけ（2026-11-26 オーナー「検索ページとかストアでも画面が上下する」。全部のヤフオクのページで下まで読み込ませていた）
+            "matches": ["https://auctions.yahoo.co.jp/my/won*"],
             "js": ["evidence_list.js"],
             "run_at": "document_idle",
         }, {
