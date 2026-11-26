@@ -723,6 +723,8 @@ class StoreCodeTitles(unittest.TestCase):
         "Nikon 【D750】": "Nikon D750",                    # 括弧の中の型番は消さない
         "Polaroid 【SX-70】 ランドカメラ": "Polaroid SX-70",
         "1円～/Nikon/ニコン/D5100/ボディ/N031": "Nikon D5100",
+        "【福C-844】Nikon F5": "Nikon F5",                  # 漢字の入った括弧の管理番号（2026-11-26 オーナーの画面）
+        "【福B-12】Canon AE-1 ボディ": "Canon AE-1",
     }
 
     def test_python(self):
