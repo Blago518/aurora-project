@@ -350,9 +350,10 @@ def cmd_listings(_args) -> None:
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else ["days_listed"])
         w.writeheader(); w.writerows(rows)
-    old = [r for r in rows if isinstance(r["days_listed"], int) and r["days_listed"] >= 60]
-    print(f"出品中 {len(rows)}件（60日以上: {len(old)}件）→ {out}")
-    for r in rows[:10]:
+    live = [r for r in rows if str(r["quantity"]).strip() != "0"]   # 在庫0のまま残っている出品（売り切れ）は数えない
+    old = [r for r in live if isinstance(r["days_listed"], int) and r["days_listed"] >= 60]
+    print(f"出品中 {len(live)}件（売り切れで残っている物 {len(rows) - len(live)}件は除く）（60日以上: {len(old)}件）→ {out}")
+    for r in live[:10]:
         print(f"  {r['days_listed']:>4}日  {r['price']:>8} {r['currency']:<3} {r['site'][:9]:<9}  ウォッチ{r['watchers']:>3}  {r['title'][:60]}")
 
 
