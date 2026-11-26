@@ -334,6 +334,22 @@ class ReserveList(unittest.TestCase):
         self.assertEqual(table[0]["区分"], "即決（今すぐ買える）")
         self.assertEqual([r["順"] for r in table], list(range(1, 10)))
 
+    def test_light_mold_separate_frame(self):
+        """軽いカビは予約の10本に数えず、消さずに別の枠で下に出す（2026-11-26 オーナー「入札しないわけではないが、枠は分けてほしい」）."""
+        rows = [rrow(1, "2026-11-19T21:00:00+09:00", profit=3000)]
+        mold = rrow(2, "2026-11-19T22:00:00+09:00", profit=9000)
+        mold["理由"] = "軽いカビ（写真で程度を確認）・余裕あり"
+        rows.append(mold)
+        late = rrow(3, "2026-11-25T22:00:00+09:00", profit=9000)
+        late["理由"] = "軽いカビ（写真で程度を確認）"
+        rows.append(late)                                                               # 明後日より後 → 入れない
+        _, picks = ba.reserve_list(rows, self.NOW, target=8)
+        self.assertEqual([r["タイトル"] for r in picks], ["item 1"])
+        m = ba.reserve_mold(rows, self.NOW)
+        self.assertEqual([r["タイトル"] for r in m], ["item 2"])
+        table = ba.reserve_rows([], picks, mold=m)
+        self.assertEqual([r["区分"] for r in table], ["予約", "カビの記載あり（写真で程度を確認）"])
+
     def test_win_rate_times_profit(self):
         rows = [rrow(1, "2026-11-19T21:00:00+09:00", profit=10000, rate=0.05, n=20),   # 期待 500
                 rrow(2, "2026-11-19T22:00:00+09:00", profit=4000, rate=0.5, n=10),     # 期待 2000

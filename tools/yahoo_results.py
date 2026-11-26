@@ -331,7 +331,12 @@ def upload_skipped(results: list[dict], downloads: Path | None = None, log: Path
     seen = [{k: r.get(k, "") for k in SKIP_FIELDS} for r in _read(files[-1])]
     if not any(r.get("checked_at") for r in seen):
         return None
-    body = skipped_csv(seen, _read(log or DATA / "bid_log.csv"), results)
+    # 入札したかは、オークファンの予約（予約中 aurora_snipes.csv・入札完了 aurora_snipes_closed.csv）も見る。
+    # ［入札した］のボタンは押さないこともあり、額も実際の額とは限らない（2026-11-26 オーナー「正確な入札金額は、オークファンの履歴で確認して」）
+    bids = _read(log or DATA / "bid_log.csv")
+    for f in downloads.glob("aurora_snipes*.csv"):
+        bids += [{"auction_id": r.get("auction_id", "")} for r in _read(f)]
+    body = skipped_csv(seen, bids, results)
     if not ledger_sync.post_sheet(SKIP_SHEET, body, post=post):
         return None
     return body.count("\n") - 1
@@ -354,7 +359,8 @@ def reserve_history(reports: Path | None = None) -> tuple[dict[str, str], set[st
         for r in _read(f):
             aid = _aid(r.get("ヤフオク") or "")
             if aid:
-                shown[aid.lower()] = "即決" if str(r.get("区分") or "").startswith("即決") else "予約"
+                k = str(r.get("区分") or "")
+                shown[aid.lower()] = "即決" if k.startswith("即決") else "カビの枠" if k.startswith("カビ") else "予約"
     return shown, days
 
 

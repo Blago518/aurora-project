@@ -900,6 +900,10 @@ class LightMold(unittest.TestCase):
     """軽いカビは × にせず別の枠（2026-11-26 オーナー「小カビも2,3個ならNearMINT」→ 選択式で「軽いカビだけ別の枠」）."""
     CASES = {"Nikon Ai 50mm F1.4 小カビあり": True, "Canon FD 50mm 点カビ2つ 動作良好": True, "レンズ カビ少しあり": True,
              "Contax 85mm F1.4 カビ3個": True, "OLYMPUS 28mm 微カビ": True,
+             "Nikon 50mm カビ2,3個あり": True, "Canon 50mm カビ2〜3個": True, "Pentax 50mm 点カビ2-3ヶ所": True,
+             "Minolta 50mm 小カビ２、３個": True, "Nikon 35mm カビが二、三個": True,
+             "MINOLTA 70-300mm 経年物です、小カビ、多少のホコリ混入あります": True,  # 実際の出品の文（多少 は多いではない）
+             "Nikon 24-120mm 点カビが数か所あります": False,
              "Nikon 50mm カビあり": False, "Canon 35mm カビ多め": False, "レンズ 蜘蛛の巣状のカビ": False, "Nikon 105mm 大きなカビ": False,
              "Pentax 50mm カビ5個": False, "Nikon 50mm 小カビ・クモリあり": False}
 

@@ -75,6 +75,23 @@ class Skipped(unittest.TestCase):
         self.assertEqual(len(lines), 2)   # 見出し＋見送り1件（入札した物・確認していない物は出さない）
         self.assertIn("カメラA ジャンク", lines[1]); self.assertIn("カメラ店A / s1", lines[1]); self.assertIn("12000", lines[1])
 
+    def test_aucfan_snipes_count_as_bid(self):
+        """［入札した］を押していなくても、オークファンに予約がある物は見送りにしない（2026-11-26 オーナー「正確な入札金額は、オークファンの履歴で」）."""
+        import tempfile
+        from unittest import mock
+        import yahoo_results as yr
+        import ledger_sync
+        with tempfile.TemporaryDirectory() as d:
+            dl = Path(d)
+            (dl / "aurora_seen.csv").write_text(",".join(yr.SKIP_FIELDS) + "\n" +
+                "x1000000001,カメラA,,◎,10000,,,,2026-01-02T10:00:00Z\nx1000000002,レンズB,,○,8000,,,,2026-01-02T11:00:00Z\n", encoding="utf-8")
+            (dl / "aurora_snipes.csv").write_text("auction_id,title,max_bid,current,seen_at\nx1000000002,レンズB,7000,,\n", encoding="utf-8")
+            sent = []
+            with mock.patch.object(ledger_sync, "post_sheet", lambda sheet, body, post=None: sent.append(body) or True):
+                n = yr.upload_skipped([], downloads=dl, log=dl / "none.csv")
+            self.assertEqual(n, 1)
+            self.assertIn("カメラA", sent[0]); self.assertNotIn("レンズB", sent[0])
+
     def test_extension_exports_checked_at(self):
         t = (Path(__file__).parent / "extension_template.js").read_text(encoding="utf-8")
         self.assertIn('"seller", "checked_at"]', t)
