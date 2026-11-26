@@ -301,7 +301,12 @@ class AccessoryOnly(unittest.TestCase):
              "SIGMA 70-300mm F4-5.6 キヤノン用": False,
              "G062a【中古美品 元箱のみ】Nikon ニコン NIKKOR Z MC 105mm f2.8 VR S レンズ用元箱 複数在庫あり": True,
              "Nikon FM2 ボディ 元箱付き 美品": False, "Canon AE-1 箱付き": False,
-             "【未使用・レア】Nikon ニコン レンズ型タンブラー ステンレスマグ ★ AF-S 24-70mm f/2.8G ED仕様 ★ 専用ケース付": True}
+             "【未使用・レア】Nikon ニコン レンズ型タンブラー ステンレスマグ ★ AF-S 24-70mm f/2.8G ED仕様 ★ 専用ケース付": True,
+             "【返品保証】 マミヤ Mamiya 645 巻き上げクランク e20142": True,
+             "【返品保証】 キヤノン Canon ivis HF R10 バッテリー付き デジタルビデオカメラ e17565": True,
+             "Mamiya RB67 ワインディングクランク": True, "Hasselblad winding crank": True,
+             "マミヤ Mamiya 645 1000S ボディ 巻き上げクランク付き": False, "Canon EOS R10 ボディ": False,
+             "Mamiya 645 PRO TL 80mm F2.8 ワインディングクランク付き": False}
 
     def test_python(self):
         for t, acc in self.CASES.items():
