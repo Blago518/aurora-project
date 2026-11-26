@@ -148,8 +148,14 @@ def evidence_ids(downloads: Path, home: Path | None = None) -> set[str]:
         except OSError:
             continue
         for f in files:
-            out.update(m.group(1) for m in re.finditer(r"_([a-z]?\d{8,12})(?=_|$)", f.stem.lower()))
+            out.update(ids_of(f))
     return out
+
+
+def ids_of(f: Path) -> set[str]:
+    """証跡の名前のオークションID（まとめて取引は全部）. Chrome が付ける「 (1)」は外して読む."""
+    stem = re.sub(r"\s*\(\d+\)$", "", f.stem.lower())
+    return {m.group(1) for m in re.finditer(r"_([a-z]?\d{8,12})(?=_|$)", stem)}
 
 
 def missing_evidence(downloads: Path, home: Path | None = None, paths: list[Path] | None = None) -> dict:
@@ -183,12 +189,31 @@ def move_evidence(downloads: Path, home: Path | None = None) -> dict:
     to, why = dest(root, EVIDENCE_WORD, EVIDENCE_DEST)
     why = why_no_root(home) if root is None else why
     files = [p for sub in EVIDENCE_SUBS for p in (sorted((downloads / sub).glob("*.png")) if (downloads / sub).is_dir() else [])]
-    moved = 0
+    moved, dup, notes = 0, 0, []
     if to is not None:
-        moved = sum(move_file(p, to / p.name) for p in files)
+        have: set[str] = set()
+        for f in (to.rglob("*.png") if to.is_dir() else []):
+            have |= ids_of(f)
+        for p in files:
+            ids = ids_of(p)
+            # 同じオークションIDの証跡がもう移し先にある（オーナーが前に撮った物など）→ 重ねて置かず、ゴミ箱へ（元に戻せる。2026-11-26 オーナー「重複取得しないようにね」）
+            if ids and ids <= have and not (to / p.name).exists():
+                trash = Path.home() / ".Trash"
+                try:
+                    shutil.move(str(p), str(trash / p.name)) if trash.is_dir() else p.unlink()
+                    dup += 1
+                    continue
+                except OSError as e:
+                    notes.append(f"{p.name}: 重複をゴミ箱に移せない（{e}）")
+                    continue
+            if move_file(p, to / p.name):
+                moved += 1
+                have |= ids
+            elif p.exists():
+                notes.append(f"{p.name}: 同じ名前の別の画像が移し先にある")
     left = sum(1 for p in files if p.exists())
     total = len(list(to.glob("*.png"))) if to is not None and to.is_dir() else 0
-    return {"dest": to, "why": why, "moved": moved, "total": total, "left": left}
+    return {"dest": to, "why": why, "moved": moved, "total": total, "left": left, "dup": dup, "notes": notes}
 
 
 def permit_base(home: Path | None = None, fallback: Path | None = None) -> tuple[Path | None, str]:
@@ -213,11 +238,15 @@ def run(downloads: Path | None = None, home: Path | None = None, post=None, uplo
     rows.append(["ヤフオクの仕入れ証跡", str(ev["dest"] or "ダウンロード/ヤフオク仕入証跡（動かしていない）"), ev["moved"], ev["total"], ev["left"], ev["why"]])
     for c in ("FedEx", "DHL"):
         rows.append([f"輸出許可書 {c}", str(pbase / c), pmoved if c == "FedEx" else "", count[c], "", pwhy])
-    print(f"  ヤフオクの仕入れ証跡: {ev['dest'] or '動かしていない（' + ev['why'] + '）'}（今回 {ev['moved']}件・フォルダの中 {ev['total']}件・ダウンロードに残り {ev['left']}件）")
+    print(f"  ヤフオクの仕入れ証跡: {ev['dest'] or '動かしていない（' + ev['why'] + '）'}（今回 {ev['moved']}件・重複でゴミ箱へ {ev.get('dup', 0)}件・フォルダの中 {ev['total']}件・ダウンロードに残り {ev['left']}件）")
+    for n in ev.get("notes", [])[:30]:
+        print(f"    残った: {n}")
     print(f"  輸出許可書: {pbase}（FedEx {count['FedEx']}件・DHL {count['DHL']}件。今回 {pmoved}件）" + (f" ※税理のフォルダには入れていない（{pwhy}）" if pwhy else ""))
     miss = missing_evidence(downloads, home)
     print(f"  台帳の落札分 {len(miss['ids'])}件のうち、証跡あり {len(miss['have'])}件・無い {len(miss['missing'])}件")
     log = evidence_log(downloads)
+    lp = downloads / EVIDENCE_LOG
+    print(f"  拡張機能の記録: {datetime.fromtimestamp(lp.stat().st_mtime).strftime('%m/%d %H:%M') + ' に書かれた・' + str(len(log)) + '件' if lp.exists() else 'まだ無い'}")
     why = {i: ("：".join(x for x in log[i] if x) if i in log else NOT_IN_LIST) for i in miss["missing"]}
     groups: dict[str, int] = {}
     for i in miss["missing"]:

@@ -220,6 +220,14 @@ def write_chrome_extension(js: str, folder: Path, keys: tuple[str, str] | None =
     shutil.copy(HERE / "extension_aucfan.js", folder / "aucfan.js")
     shutil.copy(HERE / "extension_evidence.js", folder / "evidence.js")
     shutil.copy(HERE / "extension_evidence_list.js", folder / "evidence_list.js")
+    # 証跡がもう Mac にあるオークションID（ダウンロードと税理のフォルダ）。拡張機能はこれを開かない＝重複して保存しない（2026-11-26）
+    try:
+        import tax_folder
+        have = sorted(tax_folder.evidence_ids(Path.home() / "Downloads"))
+    except Exception:  # noqa: BLE001  見えなくても拡張機能は作る（拡張機能の中の記録で重複は防げる）
+        have = []
+    # t: 作った時刻。拡張機能の中の「保存済み」の印のうち、これより前の物は Mac の実物（ids）で上書きする（印だけ残って PNG が無い物を取り直す）
+    (folder / "evidence_have.json").write_text(json.dumps({"t": int(datetime.now().timestamp() * 1000), "ids": have}), encoding="utf-8")
     shutil.copy(HERE / "extension_cpass.js", folder / "cpass.js")
     tpl = (HERE / "extension_background.js").read_text(encoding="utf-8")
     cfg = cfg or ba.load_config(None)
