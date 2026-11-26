@@ -108,11 +108,13 @@ function checkCards(cards, when) {
       const on = await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed") + b.textContent);
       if (!/^true✓ 確認済み/.test(on)) bad(`${lab}: ［確認済み］を押しても印が付かない: ${on}`);
       if (!/確認済み/.test((await p.evaluate(() => localStorage.getItem("storeOutbox"))) || "")) bad(`${lab}: ［確認済み］が記録されない`);
+      { const op = await p.$eval('[data-card="d1"]', (c) => +getComputedStyle(c).opacity); if (!(op < 0.8)) bad(`${lab}: 確認済みにしてもカードが薄くならない（opacity ${op}）`); }
       if (process.env.STORE_SHOT) await p.screenshot({ path: process.env.STORE_SHOT + "_seen_" + lab.replace(/\W/g, "") + ".png" });
       await p.reload(); await p.waitForTimeout(500); await p.click('nav [data-tab="bid"]'); await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(200);
       if ((await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed"))) !== "true") bad(`${lab}: 開き直すと確認済みが消える（入札タブのボタン）`);
       await p.click('[data-seen="d1"]'); await p.waitForTimeout(200);
       if ((await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed"))) !== "false") bad(`${lab}: もう1回押しても確認済みが外れない`);
+      { const op = await p.$eval('[data-card="d1"]', (c) => +getComputedStyle(c).opacity); if (op !== 1) bad(`${lab}: 確認済みを外してもカードが薄いまま（opacity ${op}）`); }
       if (!/確認済み取消/.test((await p.evaluate(() => localStorage.getItem("storeOutbox"))) || "")) bad(`${lab}: 確認済みを外したことが記録されない`); }
     // 予約できる出品: 帯に上限額 →［予約した］で記録
     await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(150);
