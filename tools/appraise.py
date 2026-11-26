@@ -1097,9 +1097,21 @@ def format_of(tokens: set[str]) -> set[str]:
 def mount_of(tokens: set[str]) -> set[str]:
     out = set()
     for brand, words in MOUNT_WORDS.items():
-        if brand in tokens or (brand == "fujifilm" and "fuji" in tokens) or (brand == "leica" and "leitz" in tokens):
+        if brand == "leica":  # Leica は下の leica_mount_of（両方に書いてあって違うときだけ当てない）
+            continue
+        if brand in tokens or (brand == "fujifilm" and "fuji" in tokens):
             out |= {words[t] for t in tokens if t in words}
     return out
+
+
+def leica_mount_of(tokens: set[str]) -> set[str]:
+    """Leica の R・M・L39（2026-11-26）. 両方に書いてあって違うときだけ相場を当てない。
+    片方に書いていないだけなら今までどおり当てる（オーキドの指摘: ヤフオクの M レンズは M を書かない出品が多く、◎ が黙って減る。
+    書いていない側にも当てないかはオーナーが選ぶまで変えない）."""
+    if "leica" not in tokens and "leitz" not in tokens:
+        return set()
+    words = MOUNT_WORDS["leica"]
+    return {words[t] for t in tokens if t in words}
 
 
 def canon_l(tokens: set[str]) -> bool:
@@ -1595,7 +1607,8 @@ def match_sales(query: str, sales: list[dict], threshold: float = 0.6) -> list[d
         if series_of(qt, _lensy(qt)) != series_of(rt, _lensy(rt)):
             continue
         # マウント違い（Canon EF と FD と RF、Nikon Z と F など）。マウントが分からない側があっても当てない
-        if _lensy(qt) and mount_of(qt) != mount_of(rt):
+        lq, lr = leica_mount_of(qt), leica_mount_of(rt)
+        if _lensy(qt) and (mount_of(qt) != mount_of(rt) or (lq and lr and lq != lr)):
             continue
         # フィルムの判（2026-11-19 監査）: 「Pentax 645 200mm F4」「PENTAX-110 50mm F2.8」に 35mm 判の同じ焦点距離の相場を当てない
         if _lensy(qt) and format_of(qt) != format_of(rt):

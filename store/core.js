@@ -17,7 +17,9 @@ function makeCore(DATA) {
   // フィルムの判（appraise.format_of と同じ）: 「Pentax 645 200mm F4」「PENTAX-110 50mm F2.8」に 35mm 判の同じ焦点距離の相場を当てない
   const FORMATS = C.formats || {};
   const formatOf = (ts) => [...new Set([...ts].filter((t) => FORMATS[t]).map((t) => FORMATS[t]))].sort().join(",");
-  const mountOf = (ts) => { const out = new Set(); for (const [b, w] of Object.entries(MOUNTS)) if (ts.has(b) || (b === "fujifilm" && ts.has("fuji")) || (b === "leica" && ts.has("leitz"))) for (const t of ts) if (w[t]) out.add(w[t]); return [...out].sort().join(","); };
+  const mountOf = (ts) => { const out = new Set(); for (const [b, w] of Object.entries(MOUNTS)) if (b !== "leica" && (ts.has(b) || (b === "fujifilm" && ts.has("fuji")))) for (const t of ts) if (w[t]) out.add(w[t]); return [...out].sort().join(","); };
+  // Leica の R・M・L39（2026-11-26）: 両方に書いてあって違うときだけ当てない（appraise.leica_mount_of と同じ）
+  const leicaMountOf = (ts) => { if (!ts.has("leica") && !ts.has("leitz")) return ""; const w = MOUNTS.leica || {}; return [...new Set([...ts].filter((t) => w[t]).map((t) => w[t]))].sort().join(","); };
   const ACCESSORY_RE = new RegExp(C.accessoryRe, "i");
   const FLAG_RES = C.flagRules.map(([name, pat]) => [name, new RegExp(pat, "i")]);
   const KANTEI = DATA.kantei.map((r) => ({ ...r, re: r.patterns.map((p) => { try { return new RegExp(p, "i"); } catch (e) { return null; } }) }));
@@ -315,7 +317,7 @@ function makeCore(DATA) {
       if ((qt.has("nonai") && (rt.has("ai") || rt.has("ai-s"))) || (rt.has("nonai") && (qt.has("ai") || qt.has("ai-s")))) continue;
       if (pick(qt, GENS) !== pick(rt, GENS)) continue;
       if (seriesOf(qt, qmm) !== seriesOf(rt, lensy(rt))) continue;
-      if (qmm && mountOf(qt) !== mountOf(rt)) continue;
+      if (qmm && (mountOf(qt) !== mountOf(rt) || (leicaMountOf(qt) && leicaMountOf(rt) && leicaMountOf(qt) !== leicaMountOf(rt)))) continue;
       if (qmm && formatOf(qt) !== formatOf(rt)) continue;  // 110・645・67 判のレンズと 35mm 判のレンズは別物（appraise.format_of）
       if (variantsConflict(qt, rt)) continue;
       // 実績側の英字の語（メーカー・レンズ銘など）が1つも無ければ別物（YASHICA 35mm 2.8 に ALPA 35mm 2.8 が当たっていた）

@@ -643,6 +643,8 @@ class MountWords(unittest.TestCase):
         ("Leica Summicron-M 50mm F2", "Leica ライカ LEITZ SUMMICRON-M 1:2/50 50mm F2 現状品", True),
         ("Leica Summicron-M 50mm F2", "Leica Summicron 50mm F2 Mマウント", True),
         ("Leica Summicron-M 50mm F2", "Leica Summicron 50mm F2 L39 Lマウント", False),
+        # マウントを書いていない側には今までどおり当てる（オーキドの指摘。当てないかはオーナーが選ぶまで変えない）
+        ("Leica Summicron-M 50mm F2", "ライカ ズミクロン 50mm F2 ブラック", True),
         ("Leica Summilux-R 50mm F1.4", "ライカ SUMMILUX-R 50mm F1.4 3カム", True),
     ]
 
