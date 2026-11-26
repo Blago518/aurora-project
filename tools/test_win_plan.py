@@ -438,10 +438,10 @@ class CautionSellers(unittest.TestCase):
         cfg = {"caution": {"sellers": ["バイセル"], "note": "注意", "min_good_rating": 99.5}}
         self.assertEqual(ba.good_rating("98.0%"), 98.0)
         self.assertIsNone(ba.good_rating(""))
-        self.assertEqual(ba.caution_note("カメラ店A", cfg, good=98.0), "良い評価 98.0%（99.5% 未満）")
+        self.assertEqual(ba.caution_note("カメラ店A", cfg, good=98.0), "評価 98.0%（99.5% 未満）")
         self.assertEqual(ba.caution_note("カメラ店A", cfg, good=99.5), "")
         self.assertEqual(ba.caution_note("カメラ店A", cfg, good=None), "")
-        self.assertEqual(ba.caution_note("バイセル ヤフオク!店", cfg, good=99.2), "注意／良い評価 99.2%（99.5% 未満）")
+        self.assertEqual(ba.caution_note("バイセル ヤフオク!店", cfg, good=99.2), "注意／評価 99.2%（99.5% 未満）")
         # 検索結果の seller.goodRating を読む
         j = {"props": {"pageProps": {"initialState": {"search": {"items": {"listing": {"totalResultsAvailable": 1, "items": [
             {"auctionId": "x1000000001", "title": "Nikon F3", "price": 10000, "endTime": "2026-11-27T20:00:00+09:00",
@@ -467,6 +467,6 @@ class CautionSellers(unittest.TestCase):
         a, b, low, high, g = json.loads(out)
         self.assertIn("注意", a)
         self.assertEqual(b, "")
-        self.assertIn("良い評価 98.0%（99.5% 未満）", low)   # Python の caution_note と同じ文
+        self.assertIn("評価 98.0%（99.5% 未満）", low)   # Python の caution_note と同じ文
         self.assertEqual(high, "")
         self.assertEqual(g, 98.3)

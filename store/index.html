@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.26.8";
+  var APP_VERSION = "2026.11.26.9";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -1449,7 +1449,7 @@ function bidCard(i, B, done, now, tag) {
   const marks = [tag ? `<span class="tag ok">${esc(tag)}</span>` : "",
     ck ? (ck.own ? `<span class="tag done">✓ Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} 確認済み</span>`
       : `<span class="tag same">同じ機種の Sold $${esc(ck.usd)}${ck.cond ? "（" + esc(ck.cond) + "）" : ""} で計算</span>`) : i.check ? `<span class="tag tent">相場確認</span>` : "",
-    i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution)}</span>` : ""].join("");
+    i.win ? `<span class="tag trust">勝ちやすさ ${esc(i.win)}</span>` : "", i.caution ? `<span class="tag">⚠ ${esc(i.caution.replace(/良い評価/g, "評価"))}</span>` : ""].join("");
   // 印と言葉を同じ向きに（2026-11-22 オーキド: NO の横に「まで入札」を書かない）。Mac の候補も出し直した額も同じ形
   const mx = r ? r.maxBid : i.maxBid, pf = r ? r.profit : i.profit, no = !(mx > 0) || (i.price && i.price > mx);
   const paid = String(i.taxNote || "").match(/支払いは?(税込[\d,]+円)/);   // Mac の「ストア: このまま入札。支払いは税込◯円」から支払い額だけ（個人は税の話を出さない）

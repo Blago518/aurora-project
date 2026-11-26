@@ -1100,7 +1100,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const c = DATA.caution || {}, name = String(i.sellerName || ""), out = [];
     if (name && (c.sellers || []).some((w) => w && name.includes(w))) out.push(c.note || "注意する出品者");
     const g = i.sellerGood, low = c.minGood;
-    if (g != null && low != null && g < low) out.push(`良い評価 ${g.toFixed(1)}%（${low}% 未満）`);
+    if (g != null && low != null && g < low) out.push(`評価 ${g.toFixed(1)}%（${low}% 未満）`);
     return out.length ? `<div class="s x" title="${esc(name)}">⚠ ${esc(out.join("／"))}</div>` : "";
   }
   function yahooLine(key) {

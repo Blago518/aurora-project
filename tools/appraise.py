@@ -2501,7 +2501,7 @@ def caution_note(seller_name: str, cfg: dict | None = None, good: float | None =
         out.append(str(c.get("note", "")))
     low = c.get("min_good_rating")
     if good is not None and low is not None and good < float(low):
-        out.append(f"良い評価 {good:.1f}%（{float(low):g}% 未満）")
+        out.append(f"評価 {good:.1f}%（{float(low):g}% 未満）")
     return "／".join(x for x in out if x)
 
 
