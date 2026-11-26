@@ -313,6 +313,7 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_phone_bids(url, key, dry_run)   # スマホの入札タブで予約した物 → 入札の結果の集計
     sync_trivia(url, key, dry_run)       # 機種の豆知識 → 店舗アプリ
     sync_practice(url, key, dry_run)     # 自動入札の練習の3品 → 拡張機能の鑑定画面の一番上
+    sync_item_target(url, key, dry_run)  # 1件の利益の目安 → 仕入れの成績の「目安以上」
     sync_store_memo(url, key, dry_run)   # 店舗で［登録］した相場。同じ機種はチャットの相場メモと日付の新しい方
     sync_knowledge(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
@@ -553,6 +554,30 @@ def sync_practice(url: str, key: str, dry_run: bool = False) -> int | None:
         w = csv.DictWriter(f, fieldnames=PRACTICE_COLS, restval="", extrasaction="ignore")
         w.writeheader(); w.writerows(rows)
     return len(rows)
+
+
+GOAL_SHEET = "共有_目標"  # A項目・B値。「1件の利益の目安(円)」→ data/item_target.txt（仕入れの成績の「目安以上」。額は公開リポジトリに書かない）
+ITEM_TARGET_LABEL = "1件の利益の目安(円)"
+
+
+def sync_item_target(url: str, key: str, dry_run: bool = False) -> float | None:
+    """古物台帳「共有_目標」の「1件の利益の目安(円)」→ data/item_target.txt. クラウドのサトシがオーナーの決めた額を書く（2026-11-26）."""
+    try:
+        text = fetch(url, key, GOAL_SHEET)
+    except (urllib.error.URLError, OSError):
+        return None
+    if text.startswith("NO_SHEET:"):
+        return None
+    for row in csv.reader(text.splitlines()):
+        if len(row) >= 2 and row[0].strip() == ITEM_TARGET_LABEL:
+            try:
+                v = float(row[1].replace(",", "").strip())
+            except ValueError:
+                return None
+            if not dry_run:
+                (DATA / "item_target.txt").write_text(str(v), encoding="utf-8")
+            return v
+    return None
 
 
 TRIVIA_SHEET = "共有_豆知識"  # 機種の豆知識（毎晩クラウドで少しずつ調べる。2026-11-21 オーナー「エピソードがあると機種を覚えやすい」）
@@ -1145,6 +1170,24 @@ def dashboard_csv(data_json: str) -> str:
     for i in range(0, len(data_json), DASH_CHUNK):
         w.writerow(["j:" + data_json[i:i + DASH_CHUNK]])
     return buf.getvalue()
+
+
+PURCHASE_SHEETS = (("purchase_db.csv", "Mac_仕入れ成績"), ("purchase_sellers.csv", "Mac_仕入れ成績_出品者"))
+
+
+def upload_purchase_db(reports: Path | None = None, post=None) -> int:
+    """仕入れの成績（build_dashboard が作る reports/purchase_db.csv・purchase_sellers.csv）→ 古物台帳の2枚（まるごと置き換え）.
+    2026-11-26 オーナー「どの出品者からどの商品をどの状態までなら、利益がでる仕入れができるか、データベースに蓄積していきたい」.
+    送れたシートの数."""
+    reports = reports or ROOT / "reports"
+    n = 0
+    for fname, sheet in PURCHASE_SHEETS:
+        f = reports / fname
+        if f.exists() and post_sheet(sheet, f.read_text(encoding="utf-8-sig"), post=post):
+            n += 1
+    if n:
+        print(f"仕入れの成績: 台帳「{PURCHASE_SHEETS[0][1]}」「{PURCHASE_SHEETS[1][1]}」に送りました", file=sys.stderr)
+    return n
 
 
 def upload_dashboard(path: Path | None = None, post=None) -> int | None:
