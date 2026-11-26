@@ -23,17 +23,44 @@ function evidenceInfo(text, now) {
   const name = [ymd, safe(seller), price, id].filter(Boolean).join("_");
   return { id, seller, price, ymd, name };
 }
+
+// まとめて取引の画面（/trade/bundle。2026-11-26 本物の取引ナビのリンクはこちらに飛ぶ）: オークションID・出品者は出ないが、
+// 商品名・落札価格・終了日時・合計金額は出るので、この画面を証跡にする。名前は 終了日_まとめて取引_合計金額_ID_ID.png（中の商品のID全部）
+function bundleInfo(text, url, hrefs, now) {
+  const t = String(text || "").replace(/\u00a0/g, " ");
+  if (!/まとめて取引/.test(t)) return null;
+  const ids = [];
+  for (const h of hrefs || []) {
+    const m = String(h).match(/\/jp\/auction\/([a-z]?\d{8,12})/i);
+    if (m && !ids.includes(m[1].toLowerCase())) ids.push(m[1].toLowerCase());
+  }
+  const own = ((String(url || "").match(/[?&]aid=([a-z]?\d{8,12})/i) || [])[1] || "").toLowerCase();
+  if (own && !ids.includes(own)) ids.push(own);
+  if (!ids.length) return null;
+  const total = ((t.match(/合計金額\s*[:：]\s*([\d,]+)\s*円/) || [])[1] || "").replace(/,/g, "");
+  const m = t.match(/終了日時\s*[:：]\s*(?:(\d{4})年)?\s*(\d{1,2})月\s*(\d{1,2})日/);
+  if (!m || !total) return null;
+  const n = now || new Date();
+  let y = m[1] ? +m[1] : n.getFullYear();
+  if (!m[1] && +m[2] > n.getMonth() + 1) y -= 1;
+  const ymd = `${y}${String(m[2]).padStart(2, "0")}${String(m[3]).padStart(2, "0")}`;
+  return { id: ids[0], ids, price: total, ymd, name: [ymd, "まとめて取引", total].concat(ids).join("_") };
+}
 // @evidence-end
 
 (function () {
   if (typeof document === "undefined" || typeof chrome === "undefined" || !chrome.runtime) return;
   let tries = 0;
   const go = () => {
-    const info = evidenceInfo(document.body ? document.body.innerText : "");
-    if (!info || !info.ymd || !info.price) { if (++tries < 20) setTimeout(go, 500); return; }   // 中身が出るまで待つ（最大10秒）
+    const body = document.body ? document.body.innerText : "";
+    const info = evidenceInfo(body) || bundleInfo(body, location.href, Array.from(document.querySelectorAll("a[href]"), (a) => a.href));
+    if (!info || !info.ymd || !info.price) {   // 中身が出るまで待つ（最大10秒）。出なければ、まとめて保存の順番待ちに次へ進むよう知らせる
+      if (++tries < 20) setTimeout(go, 500); else chrome.runtime.sendMessage({ type: "evidenceNone" }, () => void chrome.runtime.lastError);
+      return;
+    }
     window.scrollTo(0, 0);
     setTimeout(() => {
-      chrome.runtime.sendMessage({ type: "evidenceShot", id: info.id, name: info.name }, (r) => {
+      chrome.runtime.sendMessage({ type: "evidenceShot", id: info.id, ids: info.ids || [info.id], name: info.name }, (r) => {
         if (chrome.runtime.lastError || !r) return;
         const tag = document.createElement("div");
         tag.textContent = r.saved ? "✓ 仕入れ証跡を保存しました" : r.already ? "✓ 仕入れ証跡は保存済み" : "仕入れ証跡を保存できませんでした: " + (r.error || "");

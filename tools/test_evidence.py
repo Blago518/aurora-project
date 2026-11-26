@@ -37,6 +37,21 @@ class EvidenceName(unittest.TestCase):
         js2 = body + "\nconsole.log(evidenceInfo('商品金額（税込）：1,000円\\n終了日時：12月30日 20時00分\\nオークションID：x1234567890\\n出品者：A', new Date(2027, 0, 5)).ymd);"
         self.assertEqual(subprocess.run(["node", "-e", js2], capture_output=True, text=True, check=True).stdout.strip(), "20261230")
 
+    def test_bundle_page(self):
+        """まとめて取引の画面（2026-11-26 オーナーの写真の文字。名前・金額は作り物）→ 1枚に中の商品のIDを全部付ける."""
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        src = (HERE / "extension_evidence.js").read_text(encoding="utf-8")
+        body = src[src.index("// @evidence-start"):src.index("// @evidence-end")]
+        text = "まとめて取引\nまとめて取引をする商品\n2件 (数量：2)\n合計金額：2,350円\nNikon NIKKOR-Q Auto 135mm F3.5\n数量：1 落札価格：250円\n終了日時：8月16日 21時02分\nCanon Macro FD 50mm F3.5\n数量：1 落札価格：2,100円\n終了日時：8月16日 21時27分"
+        hrefs = ["https://auctions.yahoo.co.jp/jp/auction/p1000000001", "https://auctions.yahoo.co.jp/jp/auction/x1000000002"]
+        url = "https://contact.auctions.yahoo.co.jp/trade/bundle?aid=p1000000001&seller_auc_user_id=S&buyer_auc_user_id=B"
+        js = body + "\nconsole.log(JSON.stringify([evidenceInfo(%s), bundleInfo(%s, %s, %s, new Date(2026, 10, 26))]));" % (json.dumps(text), json.dumps(text), json.dumps(url), json.dumps(hrefs))
+        ev, b = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+        self.assertIsNone(ev)
+        self.assertEqual(b["name"], "20260816_まとめて取引_2350_p1000000001_x1000000002")
+        self.assertEqual(b["ids"], ["p1000000001", "x1000000002"])
+
     def test_no_auction_id_no_save(self):
         if not shutil.which("node"):
             self.skipTest("node がありません")
@@ -168,6 +183,33 @@ class EvidenceList(unittest.TestCase):
         self.assertEqual(plan["links"][1]["url"], "https://contact.auctions.yahoo.co.jp/buyer/top?aid=j1000000002&syid=storeC&bid=buyerB")
         self.assertIn("syid=storeD", plan["links"][2]["url"])
         self.assertEqual((plan["direct"], plan["made"], plan["noSeller"]), (1, 2, 1))
+
+    def test_real_bundle_links(self):
+        """2026-11-26 本物の形: /trade/bundle?aid=&seller_auc_user_id=&buyer_auc_user_id= → /trade/top で開き、型にもする."""
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        src = (HERE / "extension_evidence_list.js").read_text(encoding="utf-8")
+        body = src[src.index("// @evlist-start"):src.index("// @evlist-end")]
+        b = "https://contact.auctions.yahoo.co.jp/trade/bundle?aid=k1000000001&seller_auc_user_id=SELLA&buyer_auc_user_id=BUYB"
+        rows = [{"id": "k1000000001", "hrefs": [b]},
+                {"id": "j1000000002", "hrefs": ["https://auctions.yahoo.co.jp/jp/show/rating?seller_auc_user_id=SELLC&aid=j1000000002"]}]
+        js = body + "\nconsole.log(JSON.stringify(planLinks(%s, [%s])));" % (json.dumps(rows), json.dumps(b))
+        plan = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(plan["links"][0]["url"], b.replace("/trade/bundle", "/trade/top"))
+        self.assertEqual(plan["links"][1]["url"], "https://contact.auctions.yahoo.co.jp/trade/top?aid=j1000000002&seller_auc_user_id=SELLC&buyer_auc_user_id=BUYB")
+
+    def test_raw_html_and_next_page(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        src = (HERE / "extension_evidence_list.js").read_text(encoding="utf-8")
+        body = src[src.index("// @evlist-start"):src.index("// @evlist-end")]
+        html = '<script>{"url":"https:\\/\\/contact.auctions.yahoo.co.jp\\/trade\\/bundle?aid=p1000000005\\u0026seller_auc_user_id=S\\u0026buyer_auc_user_id=B"}</script>'
+        anchors = [{"href": "https://auctions.yahoo.co.jp/my/won?b=1", "text": "1", "rel": ""},
+                   {"href": "https://auctions.yahoo.co.jp/my/won?b=2", "text": " 次へ ", "rel": ""}]
+        js = body + "\nconsole.log(JSON.stringify([naviUrlsIn(%s), nextPageUrl(%s, 'https://auctions.yahoo.co.jp/my/won')]));" % (json.dumps(html), json.dumps(anchors))
+        urls, nxt = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(urls, ["https://contact.auctions.yahoo.co.jp/trade/bundle?aid=p1000000005&seller_auc_user_id=S&buyer_auc_user_id=B"])
+        self.assertEqual(nxt, "https://auctions.yahoo.co.jp/my/won?b=2")
 
     def test_built_into_extension(self):
         src = (HERE / "build_extension.py").read_text(encoding="utf-8")
