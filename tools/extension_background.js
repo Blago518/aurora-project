@@ -131,7 +131,8 @@ async function evRun() {
       });
     } catch (e) { ok = false; }
     if (ok) evStat.saved += 1; else evStat.failed.push(item.id);
-    if (tab && ok) { try { await chrome.tabs.remove(tab.id); } catch (e) { /* 閉じられていても続ける */ } }   // 保存できなかったタブは残す（理由を見られるように）
+    // 保存できなかったタブは、最初の1つだけ理由が見えるように残す（作った URL が合わないとき、何十も残さない）
+    if (tab && (ok || evStat.failed.length > 1)) { try { await chrome.tabs.remove(tab.id); } catch (e) { /* 閉じられていても続ける */ } }
     await new Promise((r) => setTimeout(r, 1500));
   }
   if (evStat.from != null) { try { await chrome.tabs.update(evStat.from, { active: true }); } catch (e) { /* 一覧のタブが閉じられていても */ } }
