@@ -55,7 +55,7 @@ function bundleInfo(text, url, hrefs, now) {
     const body = document.body ? document.body.innerText : "";
     const info = evidenceInfo(body) || bundleInfo(body, location.href, Array.from(document.querySelectorAll("a[href]"), (a) => a.href));
     if (!info || !info.ymd || !info.price) {   // 中身が出るまで待つ（最大10秒）。出なければ、まとめて保存の順番待ちに次へ進むよう知らせる
-      if (++tries < 20) setTimeout(go, 500); else chrome.runtime.sendMessage({ type: "evidenceNone" }, () => void chrome.runtime.lastError);
+      if (++tries < 20) setTimeout(go, 500); else chrome.runtime.sendMessage({ type: "evidenceNone", note: (location.pathname + " 「" + document.title + "」 " + body.replace(/\s+/g, " ").slice(0, 80)) }, () => void chrome.runtime.lastError);
       return;
     }
     window.scrollTo(0, 0);
