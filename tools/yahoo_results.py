@@ -40,6 +40,7 @@ SHEET = "Mac_落札相場"  # 古物台帳に送るシート（クラウドの�
 FIELDS = ["auction_id", "title", "model", "model_key", "end", "final_price", "bids", "store_tax", "status",
           "seen_from", "mark", "max_bid", "seen_at", "checked_at"]
 SEEN_FIELDS = ["auction_id", "title", "end", "mark", "max_bid", "store_tax", "seen_at"]  # 拡張機能の aurora_seen.csv
+SKIP_FIELDS = SEEN_FIELDS + ["seller", "checked_at"]  # 2026-11-26 から: 出品者と「確認済み」にした時刻
 KEEP_DAYS = 400      # これより前に終わった記録は消す（ファイルを大きくしすぎない）
 GIVE_UP_DAYS = 14    # 終了からこの日数たっても読めない出品（削除・取り消し）は「読めず」にして読みに行かない
 JST = timezone(timedelta(hours=9))
@@ -300,6 +301,42 @@ def upload(rows: list[dict], days: int = 90, post=None) -> int | None:
     return body.count("\n") - 1
 
 
+SKIP_SHEET = "Mac_見送り"  # 確認済みにして入札しなかった候補（2026-11-26 オーナー「確認済にチェックをいれて入札しなかったものには、入札しなかった意図があります」）
+
+
+def skipped_csv(seen: list[dict], bids: list[dict], results: list[dict] | None = None) -> str:
+    """aurora_seen.csv の行のうち「確認済み」にしたのに入札の記録が無い物 → CSV（新しい順）. 落札額が分かれば添える.
+    サトシが週1回この表を読み、見送りの型（ストア×語・光学難の書き方）をまとめて、外してよいかをオーナーに選択式で聞く。判定は変えない."""
+    import csv, io
+    bid = {_aid(b.get("auction_id", "")) for b in bids}
+    fin = {r.get("auction_id"): r for r in (results or [])}
+    rows = [r for r in seen if r.get("checked_at") and _aid(r.get("auction_id", "")) not in bid]
+    rows.sort(key=lambda r: r.get("checked_at", ""), reverse=True)
+    buf = io.StringIO(); w = csv.writer(buf)
+    w.writerow(["確認済みにした日時", "判定", "上限額(提示額)", "出品者", "商品名", "終了", "落札額", "ヤフオク"])
+    for r in rows:
+        a = _aid(r.get("auction_id", "")); f = fin.get(a) or {}
+        w.writerow([r.get("checked_at", "")[:16].replace("T", " "), r.get("mark", ""), r.get("max_bid", ""), r.get("seller", ""),
+                    r.get("title", ""), (r.get("end") or "")[:16].replace("T", " "), f.get("final_price", ""), f"https://auctions.yahoo.co.jp/jp/auction/{a}"])
+    return buf.getvalue()
+
+
+def upload_skipped(results: list[dict], downloads: Path | None = None, log: Path | None = None, post=None) -> int | None:
+    """見送り → 古物台帳「Mac_見送り」（まるごと置き換え）. 送った行数. 確認済みの記録が無ければ None."""
+    import ledger_sync
+    downloads = downloads or Path.home() / "Downloads"
+    files = sorted(downloads.glob("aurora_seen*.csv"), key=lambda p: p.stat().st_mtime) if downloads.exists() else []
+    if not files:
+        return None
+    seen = [{k: r.get(k, "") for k in SKIP_FIELDS} for r in _read(files[-1])]
+    if not any(r.get("checked_at") for r in seen):
+        return None
+    body = skipped_csv(seen, _read(log or DATA / "bid_log.csv"), results)
+    if not ledger_sync.post_sheet(SKIP_SHEET, body, post=post):
+        return None
+    return body.count("\n") - 1
+
+
 REVIEW_SHEET = "Mac_答え合わせ"  # 上限入札額以下で終わった候補と、入札の記録・予約リストに出ていたか（2026-11-24 オーナーが選択式で決定）
 REVIEW_MARKS = ("◎", "○", "入札した")
 RESERVE_FILE_RE = re.compile(r"reserve_list_(\d{8})_\d{4}\.csv$")
@@ -394,6 +431,12 @@ def run(cfg: dict | None = None, downloads: Path | None = None, fetch=None, post
             print(f"答え合わせ: 上限額以下で落札された候補 {n}件 → 古物台帳「{REVIEW_SHEET}」", file=sys.stderr)
     except Exception as e:  # noqa: BLE001  答え合わせが作れなくても落札相場はそのまま
         print(f"答え合わせを作れませんでした（{e}）", file=sys.stderr)
+    try:
+        n = upload_skipped(rows, post=post)
+        if n is not None:
+            print(f"見送り: 確認済みにして入札しなかった候補 {n}件 → 古物台帳「{SKIP_SHEET}」", file=sys.stderr)
+    except Exception as e:  # noqa: BLE001
+        print(f"見送りを作れませんでした（{e}）", file=sys.stderr)
     return {"added": added, **res, "models": len(stats)}
 
 
