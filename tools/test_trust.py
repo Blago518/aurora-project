@@ -308,7 +308,13 @@ class AccessoryOnly(unittest.TestCase):
              "マミヤ Mamiya 645 1000S ボディ 巻き上げクランク付き": False, "Canon EOS R10 ボディ": False,
              "Mamiya 645 PRO TL 80mm F2.8 ワインディングクランク付き": False,
              "【01】PENTAX ペンタックス 645用120マガジン フィルムバック 中古 現状品 261015A9971": True,
-             "Mamiya RB67 Pro S 120 フィルムバック": True, "PENTAX 645N ボディ 120フィルムバック付き": False}
+             "Mamiya RB67 Pro S 120 フィルムバック": True, "PENTAX 645N ボディ 120フィルムバック付き": False,
+             # 2026-11-26 オーナーの店舗アプリの画面: 電池蓋に T2 本体の Sold が当たり OK で出ていた
+             "CONTAX T2 用電池蓋(ブラック)": True, "Nikon FM2 電池カバー": True, "Canon AE-1 battery cover": True,
+             "CONTAX T2 電池蓋付き 美品": False, "Nikon FM2 ボディ": False,
+             # 同じ種類の残り（オーキドの指摘で探した）: 底蓋・電池室の蓋・フィルムインサート。グリップ付きの本体は付属品ではない
+             "Leica M6 底蓋": True, "Canon EOS 5D 電池室 蓋": True, "CONTAX T3 用 電池室カバー": True, "Pentax 645 フィルムインサート": True,
+             "Nikon D750 バッテリーグリップ付き": False, "Canon バッテリーグリップ BG-E14": True}
 
     def test_python(self):
         for t, acc in self.CASES.items():
@@ -725,6 +731,8 @@ class StoreCodeTitles(unittest.TestCase):
         "1円～/Nikon/ニコン/D5100/ボディ/N031": "Nikon D5100",
         "【福C-844】Nikon F5": "Nikon F5",                  # 漢字の入った括弧の管理番号（2026-11-26 オーナーの画面）
         "【福B-12】Canon AE-1 ボディ": "Canon AE-1",
+        # 2026-11-26: TVS の出品が後ろの「（T2キャノン…」のせいで T2 として読まれ、T2 の相場が当たる恐れがあった
+        "良品　CONTAX TVS 高級コンパクト　動作確認　カールツァイスバリオゾナー（T2キャノンペンタックスFUJI SONY": "Contax TVS Zeiss",
     }
 
     def test_python(self):
