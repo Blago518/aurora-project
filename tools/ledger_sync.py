@@ -312,6 +312,7 @@ def sync(dry_run: bool = False) -> bool | None:
     sync_candidates(url, key, dry_run)   # ゼニガメの下調べ → 店舗アプリの仮の相場
     sync_phone_bids(url, key, dry_run)   # スマホの入札タブで予約した物 → 入札の結果の集計
     sync_trivia(url, key, dry_run)       # 機種の豆知識 → 店舗アプリ
+    sync_practice(url, key, dry_run)     # 自動入札の練習の3品 → 拡張機能の鑑定画面の一番上
     sync_store_memo(url, key, dry_run)   # 店舗で［登録］した相場。同じ機種はチャットの相場メモと日付の新しい方
     sync_knowledge(url, key, dry_run)
     old = OUT.read_text(encoding="utf-8-sig") if OUT.exists() else None
@@ -527,6 +528,30 @@ def sync_candidates(url: str, key: str, dry_run: bool = False) -> int | None:
         w = csv.DictWriter(f, fieldnames=["機種", "候補$（送料別）", "確度", "日付", "根拠"])
         w.writeheader(); w.writerows(rows)
     print(f"下調べ相場: {len(rows)}件 → data/candidate_prices.csv", file=sys.stderr)
+    return len(rows)
+
+
+PRACTICE_SHEET = "共有_自動入札の練習"  # 毎朝クラウドのサトシが選ぶ3品（2026-11-26 オーナー「鑑定画面のモーダルの一番上に、３つ表示して」）
+PRACTICE_COLS = ["日付", "ヤフオクURL", "商品名", "出品者の良い評価の割合", "サトシの推定ランク", "推定の根拠（説明文の言葉）",
+                 "動作の書き方", "サトシの判断", "オーナーの答え", "オーナーのメモ", "当たり", "あとで届いた実物のランク"]
+
+
+def sync_practice(url: str, key: str, dry_run: bool = False) -> int | None:
+    """古物台帳「共有_自動入札の練習」→ data/practice.csv（まるごと置き換え）. 拡張機能の鑑定画面の一番上に、いちばん新しい日の3品を出す（表示だけ）."""
+    try:
+        text = fetch(url, key, PRACTICE_SHEET)
+    except (urllib.error.URLError, OSError):
+        return None
+    if text.startswith("NO_SHEET:"):
+        return None
+    rows = [r for r in (pick_columns(text, PRACTICE_COLS) or []) if (r.get("ヤフオクURL") or "").strip()]
+    if dry_run:
+        return len(rows)
+    out = DATA / "practice.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=PRACTICE_COLS, restval="", extrasaction="ignore")
+        w.writeheader(); w.writerows(rows)
     return len(rows)
 
 

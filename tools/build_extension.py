@@ -31,6 +31,23 @@ def _model_query_consts() -> dict:
     import build_store  # build_store は build_extension を読み込むので、ここで読む
     return build_store.model_query_consts()
 
+def practice_items(path: Path | None = None) -> list[dict]:
+    """data/practice.csv → いちばん新しい日の行（最大3件）. 2026-11-26 オーナー「鑑定画面のモーダルの一番上に、３つ表示して。どんな検索をしてもどのストアの鑑定でも」."""
+    import csv as _csv
+    p = path or (ROOT / "data" / "practice.csv")
+    if not p.exists():
+        return []
+    with open(p, encoding="utf-8-sig", newline="") as f:
+        rows = [r for r in _csv.DictReader(f) if (r.get("ヤフオクURL") or "").startswith("https://")]
+    if not rows:
+        return []
+    day = lambda r: (r.get("日付") or "")[:10]  # noqa: E731
+    last = max(day(r) for r in rows)
+    keys = [("d", "日付"), ("url", "ヤフオクURL"), ("title", "商品名"), ("rate", "出品者の良い評価の割合"), ("rank", "サトシの推定ランク"),
+            ("why", "推定の根拠（説明文の言葉）"), ("op", "動作の書き方"), ("judge", "サトシの判断"), ("ans", "オーナーの答え")]
+    return [{k: (r.get(c) or "").strip()[:200] for k, c in keys} for r in rows if day(r) == last][-3:]
+
+
 def build_data(cfg: dict, fx: float) -> dict:
     refs, rows = [], []
     for name in SOURCES:
@@ -59,6 +76,8 @@ def build_data(cfg: dict, fx: float) -> dict:
         "refs": refs,
         "kantei": kantei,
         "winStats": _win_stats(),
+        # 自動入札の練習（data/practice.csv。いちばん新しい日の3品）。鑑定画面の一番上に出すだけで、判定・並びには使わない
+        "practice": practice_items(),
         # ヤフオクの落札相場（data/yahoo_results.csv。機種ごとの直近の落札額。表示だけで判定・上限額には使わない）
         "yahooStats": _yahoo_stats(cfg),
         # 勝ちやすさ（data/win_score.csv。機種の比較用キーごと {rate, n}）。1割未満の機種は入札候補の下に回す（判定・上限額には使わない）
