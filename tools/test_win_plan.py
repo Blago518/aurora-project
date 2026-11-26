@@ -433,20 +433,40 @@ class CautionSellers(unittest.TestCase):
         self.assertEqual(ba.caution_note("ハローカメラ", cfg), "")
         self.assertEqual(ba.caution_note("", cfg), "")
 
+    def test_good_rating(self):
+        """良い評価の割合が目安未満なら注意（2026-11-26 オーナーが選択式で「良い評価の割合で印を出す」）. 表示だけ."""
+        cfg = {"caution": {"sellers": ["バイセル"], "note": "注意", "min_good_rating": 99.5}}
+        self.assertEqual(ba.good_rating("98.0%"), 98.0)
+        self.assertIsNone(ba.good_rating(""))
+        self.assertEqual(ba.caution_note("カメラ店A", cfg, good=98.0), "良い評価 98.0%（99.5% 未満）")
+        self.assertEqual(ba.caution_note("カメラ店A", cfg, good=99.5), "")
+        self.assertEqual(ba.caution_note("カメラ店A", cfg, good=None), "")
+        self.assertEqual(ba.caution_note("バイセル ヤフオク!店", cfg, good=99.2), "注意／良い評価 99.2%（99.5% 未満）")
+        # 検索結果の seller.goodRating を読む
+        j = {"props": {"pageProps": {"initialState": {"search": {"items": {"listing": {"totalResultsAvailable": 1, "items": [
+            {"auctionId": "x1000000001", "title": "Nikon F3", "price": 10000, "endTime": "2026-11-27T20:00:00+09:00",
+             "seller": {"userId": "u1", "displayName": "カメラ店A", "goodRating": "98.3%"}}]}}}}}}}
+        page = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(j, ensure_ascii=False) + "</script>"
+        items, _ = ba.parse_listing_page(page)
+        self.assertEqual(items[0].seller_good, 98.3)
+
     def test_js(self):
         import subprocess
         if not shutil.which("node"):
             self.skipTest("node がありません")
         import build_extension as bx
         data = bx.build_data(ba.load_config(None), 150.0)
-        data["caution"] = {"sellers": ["バイセル"], "note": "注意"}
+        data["caution"] = {"sellers": ["バイセル"], "note": "注意", "minGood": 99.5}
         tpl = (Path(ba.__file__).parent / "extension_template.js").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as d:
             js = Path(d) / "u.js"
             js.write_text(tpl.replace("/*__DATA__*/ null", json.dumps(data, ensure_ascii=False)), encoding="utf-8")
             out = subprocess.run(["node", "-e", "global.localStorage={getItem(){return null},setItem(){}};const m=require(" + json.dumps(str(js)) +
-                                  ");console.log(JSON.stringify([m.cautionLine({sellerName:'バイセル ヤフオク!店'}),m.cautionLine({sellerName:'ハローカメラ'})]))"],
+                                  ");console.log(JSON.stringify([m.cautionLine({sellerName:'バイセル ヤフオク!店'}),m.cautionLine({sellerName:'ハローカメラ'}),m.cautionLine({sellerName:'カメラ店A',sellerGood:98}),m.cautionLine({sellerName:'カメラ店A',sellerGood:99.8}),m.goodRating('98.3%')]))"],
                                  capture_output=True, text=True, check=True).stdout
-        a, b = json.loads(out)
+        a, b, low, high, g = json.loads(out)
         self.assertIn("注意", a)
         self.assertEqual(b, "")
+        self.assertIn("良い評価 98.0%（99.5% 未満）", low)   # Python の caution_note と同じ文
+        self.assertEqual(high, "")
+        self.assertEqual(g, 98.3)
