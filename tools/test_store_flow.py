@@ -90,6 +90,8 @@ def fixture() -> dict:
         it("s1", "ZENZA BRONICA ZENZANON 250mm/f5.6 レンズ レンズ", 11000, 20000, 14408, False,
            taxNote="ストア: このまま入札。支払いは税込22,000円"),
     ]
+    # 仕入れの実績（作り物）: XA1 は売れた2件・利益の目安以上1件・平均7,000円（目安は作り物の1万円）
+    d["history"] = {"sellers": {}, "models": {ba.model_key(items[0]["title"])[1]: {"n": 2, "hit": 1, "sum": 14000, "conds": {}}}, "target": 10000}
     d["bids"] = {"built": "2026-11-22 07:21", "items": items, "reserve": [{"id": i["id"], "kind": "即決"} for i in items[5:]]}
     return d
 
