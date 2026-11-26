@@ -415,6 +415,14 @@
     seg = String(seg).replace(/(?:影響|問題|支障)(?:は|が|の|も)?(?:ない|なし|無い|無し|ありません|ございません|なく)/g, "");  // 「薄くもりのみで撮影には影響ない」は くもり あり
     return OPT_NEG_RE.test(seg) && !DOUBLE_NEG_RE.test(seg);
   }
+  // 軽いカビ（appraise.LIGHT_MOLD_RE・HEAVY_MOLD_RE・light_mold と同じ。2026-11-26 オーナーが選択式で「軽いカビだけ別の枠」）
+  const MOLD_RE = /^(カビ|かび|黴)$/;
+  const LIGHT_MOLD_RE = /(?:小|点|微|極小|極少|薄い?|ごく小さな|小さな|わずかな|僅かな)\s*(?:カビ|かび|黴)|(?:カビ|かび|黴)\s*(?:が|は|も)?\s*(?:少し|少々|わずか|僅か|微|小|[1-3１-３一二三](?:\s*[,，、・~〜～\-－]\s*[1-3１-３一二三])?\s*(?:個|点|つ|ヶ所|か所|箇所|カ所))/;
+  const HEAVY_MOLD_RE = /(?:カビ|かび|黴)[^。\n]{0,8}(?:多(?!少)|大き|全体|全面|広範囲|[4-9４-９]\s*(?:個|点|つ)|数か所|数ヶ所|複数)|(?:多数|大きな|大きい|多くの)[^。\n]{0,6}(?:カビ|かび|黴)|蜘蛛|クモの巣|くもの巣/;
+  function lightMold(texts) {
+    const has = texts.filter((t) => /カビ|かび|黴/.test(t || ""));
+    return has.length > 0 && has.every((t) => LIGHT_MOLD_RE.test(t) && !HEAVY_MOLD_RE.test(t));
+  }
   function opticalWords(text) {
     const out = [];
     for (const m of String(text || "").matchAll(OPTICAL_RE)) {
@@ -437,7 +445,9 @@
     if (it.flags.includes("アダプター等") || (!isSet && it.flags.some((f) => f === "付属品のみ?" || f === "セット品")))
       return ["要確認", pre + it.flags.filter((f) => f !== "ジャンク").join("・") + "の可能性"];
     if (isSet) pre += `まとめ売り${it.setParts.length}点・`;
-    const opt = opticalWords(it.title || "");
+    let opt = opticalWords(it.title || "");
+    it.lightMold = false;
+    if (opt.length && opt.every((w) => MOLD_RE.test(w)) && lightMold([it.title || ""])) { opt = []; it.lightMold = true; pre += "軽いカビ（写真で程度を確認）・"; }
     if (opt.length) return ["×", pre + "光学難（" + opt.join("・") + "）は見送り"];
     if (it.flags.includes("光学難あり") && OTHER_DEFECT_RE.test(it.title || "")) return ["要確認", pre + "難あり（方針では避ける）"];
     if (c.maxBid <= 0) return ["×", pre + "基準を満たす入札額なし"];
@@ -1247,10 +1257,15 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     for (const i of items) {
       const d = state.desc[i.id];
       if (d && d.hits && d.hits.length && (i.mark === "◎" || i.mark === "○")) {
-        const opt = d.hits.map((h) => h.word).filter((w) => /^(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)$/.test(w));
+        let opt = d.hits.map((h) => h.word).filter((w) => /^(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)$/.test(w)), rest = d.hits;
+        // 軽いカビだけなら × にせず「カビの記載あり」の枠へ（appraise.py の judge と同じ）
+        if (opt.length && opt.every((w) => MOLD_RE.test(w)) && lightMold([i.title || "", ...d.hits.filter((h) => MOLD_RE.test(h.word)).map((h) => h.snip || "")])) {
+          opt = []; rest = d.hits.filter((h) => !MOLD_RE.test(h.word)); i.lightMold = true;
+          if (!/軽いカビ/.test(i.reason || "")) i.reason = "軽いカビ（写真で程度を確認）・" + (i.reason || "");
+        }
         // 説明文の光学難は見送り（appraise.py の judge と同じ）。それ以外の難（傷・ヤケ・動作未確認など）は要確認
-        if (opt.length) { i.mark = "×"; i.reason = "説明文に光学難（" + opt.join("・") + "）は見送り"; }
-        else { i.mark = "要確認"; i.reason = "説明文に " + d.hits.map((h) => h.word).join("・"); }
+        if (opt.length) { i.mark = "×"; i.reason = "説明文に光学難（" + opt.join("・") + "）は見送り"; i.lightMold = false; }
+        else if (rest.length) { i.mark = "要確認"; i.reason = "説明文に " + rest.map((h) => h.word).join("・"); i.lightMold = false; }
       }
     }
   }
@@ -1258,12 +1273,13 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
   // 出品の本来の欄: good（入札候補）/ weak（確認してから・根拠が弱い）/ check（要確認）/ bad（×）/ wait（仮◎○）/ acc（付属品）
   function naturalSec(i, isAcc, sure) {
     if (isAcc(i)) return "acc";
+    if ((i.mark === "◎" || i.mark === "○") && i.lightMold) return "mold";   // 軽いカビは別の枠（2026-11-26）
     if (i.mark === "◎" || i.mark === "○") return sure(i) ? "good" : "weak";
     if (i.mark === "要確認" && i.calc) return "check";
     if (i.mark === "×") return "bad";
     return state.waitIds && state.waitIds.has(i.id) ? "wait" : "";
   }
-  const SEC_LABEL = { good: "入札候補", weak: "確認してから入札", check: "要確認", bad: "× 見送り", wait: "仮◎○", acc: "付属品など（除外）", "": "相場なし" };
+  const SEC_LABEL = { good: "入札候補", mold: "カビの記載あり", weak: "確認してから入札", check: "要確認", bad: "× 見送り", wait: "仮◎○", acc: "付属品など（除外）", "": "相場なし" };
 
   // 今日の課題（自動入札の練習の3品。2026-11-26 オーナー「鑑定画面のモーダルの一番上に、３つ表示して。どんな検索をしてもどのストアの鑑定でも」）
   // Mac が毎朝 古物台帳「共有_自動入札の練習」から取り込んだ、いちばん新しい日の3品。表示だけで、判定・並び・上限額には使わない
@@ -1294,7 +1310,7 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     // 入札候補の並び（appraise.py の bid_priority と同じ）: 売れ筋・売値$99超を上に、同じ順位の中は終了が近い順
     const byPrio = (a, b) => bidPrio(a) - bidPrio(b) || byEnd(a, b);
     const good = items.filter((i) => secOf(i) === "good").sort(byPrio), weak = items.filter((i) => secOf(i) === "weak").sort(byPrio);
-    const check = items.filter((i) => secOf(i) === "check");
+    const check = items.filter((i) => secOf(i) === "check"), mold = items.filter((i) => secOf(i) === "mold").sort(byPrio);
     // 即決で今すぐ買える出品（2026-11-19 ユーザー「利益商品を本当に落札できない」）: 即決価格が上限額以下なら、競りにならず確実に買える。
     // 判定・上限額は変えない（今の ◎○・確認してから の中から、即決価格 ≦ 上限額 のものを一番上に並べ直すだけ）
     const instant = items.filter((i) => (secOf(i) === "good" || secOf(i) === "weak") && i.buyNow && i.calc && i.calc.maxBid && i.buyNow <= i.calc.maxBid && i.buyNow >= 0.4 * i.calc.maxBid)  // 4割未満は付属品・別物の取り違えが多い（appraise.INSTANT_MIN_RATIO）
@@ -1417,6 +1433,7 @@ ${ALL ? allTable() : `${instant.length ? `<h4 style="margin:10px 0 4px" class="g
 <table>${head}${instant.map((i) => row(i).replace(/(<td class="m[^>]*>)/, `$1<div class="instant-tag" title="即決 ${yen(i.buyNow)}（上限額 ${yen(i.calc.maxBid)} より ${yen(i.calc.maxBid - i.buyNow)} 安い）。ヤフオクのページで［今すぐ落札する］">即決 ${yen(i.buyNow)}</div>`)).join("")}</table>` : ""}
 <h4 style="margin:10px 0 4px">入札候補（終了が近い順）― 上限額をそのまま入札欄へ</h4>
 ${good.length ? `<table>${head}${trustRows(good)}${good.filter((i) => !i.trusted).length ? `<tr><td colspan="6" class="tsep chal">チャレンジ枠（その他の出品者） ${good.filter((i) => !i.trusted).length}件 ― 基準 利益${DATA.cfg.minProfit.toLocaleString()}円以上・利益率${DATA.cfg.minMarginPct}%以上</td></tr>` : ""}${good.filter((i) => !i.trusted).map(row).join("")}</table>` : `<div class="s">このページには、確認なしで入札できる出品はありません（下の「確認してから入札」を見てください）。</div>`}
+${mold.length ? `<h4 style="margin:14px 0 4px">カビの記載あり ${mold.length}件 ― 小カビ・点カビ・数個の書き方（Near MINT の目安）。写真で程度を確かめてから</h4><table>${head}${mold.map(row).join("")}</table>` : ""}
 ${weak.length || waits.length || pinnedWaits.length ? `<h4 style="margin:14px 0 4px">確認してから入札 ${weak.length + waits.length + pinnedWaits.length}件 ― sold を見て、売れた商品代が相場以上なら［直す$］［登録］→ 上の入札候補に上がります</h4>
 <table>${head}${weak.length ? `<tr><td colspan="6" class="tsep">根拠が鑑定表・リサーチ（推定）の ◎○ ${weak.length}件 ― 売れた価格ではないので sold で確認</td></tr>${weak.map(row).join("")}` : ""}${waits.length || pinnedWaits.length ? `<tr><td colspan="6" class="tsep">仮◎○ ${waits.length + pinnedWaits.length}件 ― 相場は未登録。eBay出品中（公式API）の最安値（送料無料は−$30）で仮に計算</td></tr>${pinnedWaits.map(row).join("")}${waits.map(waitRow).join("")}` : ""}</table>` : ""}
 ${canBrowse() && !waits.length ? `<div class="s">${Object.keys(state.browse).length ? "仮◎○はありません" : "eBay出品中の価格を調べています…（仮◎○）"}</div>` : ""}
@@ -1673,7 +1690,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
       const seen = load(LS_SEEN, {});
       // 勝ちやすさ順（2026-11-19）: 1割未満の機種は最後、それ以外は勝ちやすさの高い順（記録が無い機種は目安の割合）→ 今の並び → 終了が近い順
       const wr = (i) => { const w = winOf(i); return w ? w.rate : (DATA.cfg.defaultWinRate ?? 0.2); };
-      const good = state.items.filter((i) => (i.mark === "◎" || i.mark === "○") && !seen[i.id])
+      const good = state.items.filter((i) => (i.mark === "◎" || i.mark === "○") && !seen[i.id] && !i.lightMold)
         .sort((x, y) => isLowWin(x) - isLowWin(y) || wr(y) - wr(x) || bidPrio(x) - bidPrio(y) || (x.end < y.end ? -1 : 1)).slice(0, 10);
       if (!good.length) { btn.textContent = "開く候補がありません"; setTimeout(() => (btn.textContent = "◎○をまとめて開く"), 3000); return; }
       const urls = good.map((i) => `https://auctions.yahoo.co.jp/jp/auction/${i.id}`);

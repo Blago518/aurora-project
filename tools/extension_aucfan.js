@@ -42,16 +42,23 @@
 
   const send = (msg) => new Promise((ok) => { try { chrome.runtime.sendMessage(msg, (r) => ok(r || {})); } catch (e) { ok({}); } });
 
+  // お知らせはクリックで消せる（2026-11-26 オーナー「この赤枠はクリックで消せるようにして」）。
+  // 消したお知らせは、このページを開いている間は同じ文で出し直さない（一覧の読み直しは1.5秒ごとに走るため）
+  const closed = new Set();
   function banner(html, color) {
+    if (closed.has(html)) return;
     let b = document.getElementById("aurora-snipe");
     if (!b) {
       b = document.createElement("div"); b.id = "aurora-snipe";
-      b.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;max-width:420px;padding:14px 16px;border-radius:12px;" +
-        "font:14px/1.5 -apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;box-shadow:0 8px 30px #0005;color:#fff";
+      b.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;max-width:420px;padding:14px 34px 14px 16px;border-radius:12px;" +
+        "font:14px/1.5 -apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;box-shadow:0 8px 30px #0005;color:#fff;cursor:pointer";
+      b.title = "クリックで閉じる";
+      b.addEventListener("click", () => { closed.add(b.dataset.html || ""); b.remove(); });
       document.body.appendChild(b);
     }
     b.style.background = color || "#0b1728";
-    b.innerHTML = html;
+    b.dataset.html = html;
+    b.innerHTML = html + '<span style="position:absolute;top:6px;right:12px;font-size:18px;opacity:.8">×</span>';
   }
 
   // 一覧: 予約を保存・警告

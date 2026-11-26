@@ -385,6 +385,14 @@ function makeCore(DATA) {
     seg = String(seg).replace(/(?:影響|問題|支障)(?:は|が|の|も)?(?:ない|なし|無い|無し|ありません|ございません|なく)/g, "");  // 「薄くもりのみで撮影には影響ない」は くもり あり
     return OPT_NEG_RE.test(seg) && !DOUBLE_NEG_RE.test(seg);
   }
+  // 軽いカビ（appraise.LIGHT_MOLD_RE・HEAVY_MOLD_RE・light_mold と同じ。2026-11-26 オーナーが選択式で「軽いカビだけ別の枠」）
+  const MOLD_RE = /^(カビ|かび|黴)$/;
+  const LIGHT_MOLD_RE = /(?:小|点|微|極小|極少|薄い?|ごく小さな|小さな|わずかな|僅かな)\s*(?:カビ|かび|黴)|(?:カビ|かび|黴)\s*(?:が|は|も)?\s*(?:少し|少々|わずか|僅か|微|小|[1-3１-３一二三](?:\s*[,，、・~〜～\-－]\s*[1-3１-３一二三])?\s*(?:個|点|つ|ヶ所|か所|箇所|カ所))/;
+  const HEAVY_MOLD_RE = /(?:カビ|かび|黴)[^。\n]{0,8}(?:多(?!少)|大き|全体|全面|広範囲|[4-9４-９]\s*(?:個|点|つ)|数か所|数ヶ所|複数)|(?:多数|大きな|大きい|多くの)[^。\n]{0,6}(?:カビ|かび|黴)|蜘蛛|クモの巣|くもの巣/;
+  function lightMold(texts) {
+    const has = texts.filter((t) => /カビ|かび|黴/.test(t || ""));
+    return has.length > 0 && has.every((t) => LIGHT_MOLD_RE.test(t) && !HEAVY_MOLD_RE.test(t));
+  }
   function opticalWords(text) {
     const out = [];
     for (const m of String(text || "").matchAll(OPTICAL_RE)) {
@@ -407,7 +415,9 @@ function makeCore(DATA) {
     if (it.flags.includes("アダプター等") || (!isSet && it.flags.some((f) => f === "付属品のみ?" || f === "セット品")))
       return ["要確認", pre + it.flags.filter((f) => f !== "ジャンク").join("・") + "の可能性"];
     if (isSet) pre += `まとめ売り${it.setParts.length}点・`;
-    const opt = opticalWords(it.title || "");
+    let opt = opticalWords(it.title || "");
+    it.lightMold = false;
+    if (opt.length && opt.every((w) => MOLD_RE.test(w)) && lightMold([it.title || ""])) { opt = []; it.lightMold = true; pre += "軽いカビ（写真で程度を確認）・"; }
     if (opt.length) return ["×", pre + "光学難（" + opt.join("・") + "）は見送り"];
     if (it.flags.includes("光学難あり") && OTHER_DEFECT_RE.test(it.title || "")) return ["要確認", pre + "難あり（方針では避ける）"];
     if (c.maxBid <= 0) return ["×", pre + "基準を満たす入札額なし"];

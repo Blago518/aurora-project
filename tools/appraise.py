@@ -1767,6 +1767,21 @@ def calculate(item: Item, cfg: dict, fx: float, with_realized: bool = True) -> d
 # 「カビ・クモリなし」のような打ち消しは desc_hits の規則で除く。傷・ヤケなどその他の難は今までどおり要確認
 OPTICAL_RE = re.compile(r"(カビ|かび|黴|クモリ|くもり|曇り|白濁|バルサム|分離)")
 OTHER_DEFECT_RE = re.compile(r"ヤケ|傷あり|キズあり|拭き傷")
+# 軽いカビ（2026-11-26 オーナー「小カビも2,3個ならNearMINTなので、入札しないわけではないが、鑑定表示の枠は、カビがないものと分けてほしい」
+# → 選択式で「軽いカビだけ別の枠」）: 小カビ・点カビ・カビ少し・カビ1〜3個 は × にせず、入札候補とは別の「カビの記載あり」の枠に出す。
+# カビ多い・クモの巣状・大きい・程度の書いていない「カビあり」は今までどおり ×。クモリ・バルサムなどほかの光学難も今までどおり ×。
+# 拡張機能の LIGHT_MOLD_RE・HEAVY_MOLD_RE・lightMold と同じ（テストは test_trust.LightMold）
+MOLD_WORDS = {"カビ", "かび", "黴"}
+LIGHT_MOLD_RE = re.compile(r"(?:小|点|微|極小|極少|薄い?|ごく小さな|小さな|わずかな|僅かな)\s*(?:カビ|かび|黴)|"
+                           r"(?:カビ|かび|黴)\s*(?:が|は|も)?\s*(?:少し|少々|わずか|僅か|微|小|[1-3１-３一二三](?:\s*[,，、・~〜～\-－]\s*[1-3１-３一二三])?\s*(?:個|点|つ|ヶ所|か所|箇所|カ所))")
+HEAVY_MOLD_RE = re.compile(r"(?:カビ|かび|黴)[^。\n]{0,8}(?:多(?!少)|大き|全体|全面|広範囲|[4-9４-９]\s*(?:個|点|つ)|数か所|数ヶ所|複数)|"
+                           r"(?:多数|大きな|大きい|多くの)[^。\n]{0,6}(?:カビ|かび|黴)|蜘蛛|クモの巣|くもの巣")
+
+
+def light_mold(texts: list[str]) -> bool:
+    """カビの書いてある文が1つ以上あり、どれも軽い書き方（小カビ・点カビ・カビ少し・1〜3個）で、重い書き方が無い."""
+    has = [t for t in texts if re.search(r"カビ|かび|黴", t or "")]
+    return bool(has) and all(LIGHT_MOLD_RE.search(t) and not HEAVY_MOLD_RE.search(t) for t in has)
 # 二重の打ち消し（2026-11-23 「クモリがないわけではない」を「クモリなし」と読んで ◎ を出した）は、打ち消しではなく「ある」
 DOUBLE_NEG_RE = re.compile(r"(?:ない|無い|なし|無し)(?:という)?(?:わけ|訳)(?:では|じゃ)|(?:なく|無く)は(?:ない|無い|ありません)|少なく(?:は)?(?:ない|ありません)|(?:ない|無い|なし|無し)とは(?:言え|いえ|言い切れ|限り)")
 
@@ -1821,10 +1836,14 @@ def judge(item: Item) -> tuple[str, str]:
     if item.set_parts:
         prefix += f"まとめ売り{len(item.set_parts)}点。"
     opt = optical_skip_words(item.title, item.desc_hits)
+    hits = item.desc_hits
+    if opt and set(opt) <= MOLD_WORDS and light_mold([item.title] + [h.get("snip", "") for h in hits if h["word"] in MOLD_WORDS]):
+        opt, hits = [], [h for h in hits if h["word"] not in MOLD_WORDS]
+        prefix += "軽いカビ（写真で程度を確認）・"
     if opt:  # 光学難は見送り（修理しない方針。実績は平均赤字）
         return "×", prefix + "光学難（" + "・".join(opt) + "）は見送り"
-    if item.desc_hits:  # 説明文に傷・ヤケ等（拡張機能の説明文チェックと同じ規則）
-        return "要確認", prefix + "説明文に " + "・".join(h["word"] for h in item.desc_hits) + "（方針では避ける）"
+    if hits:  # 説明文に傷・ヤケ等（拡張機能の説明文チェックと同じ規則）
+        return "要確認", prefix + "説明文に " + "・".join(h["word"] for h in hits) + "（方針では避ける）"
     if "光学難あり" in item.flags and OTHER_DEFECT_RE.search(item.title or ""):  # 傷あり・ヤケ等。「カビ・クモリなし」は除く
         return "要確認", prefix + "難あり（方針では避ける）。写真で程度を確認してください"
     if c["max_bid_jpy"] <= 0:
@@ -2363,7 +2382,7 @@ def reserve_list(rows: list[dict], now: datetime | None = None, target: int = 8,
     now = (now or datetime.now(jst)).astimezone(jst)
     until = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days)  # 今日〜明日の終わりまで
     cand = [r for r in rows if r["判定"] in ("◎", "○") and r.get("根拠の強さ") == "確認不要" and not _is_acc(r)
-            and r.get("上限入札額")]
+            and r.get("上限入札額") and not is_light_mold_row(r)]  # 軽いカビは別の枠（reserve_mold。2026-11-26）
     # 拡張機能の「即決で今すぐ買える」と同じ。即決が上限額の4割未満のものは、付属品・別物の取り違えが多いので出さない（2026-11-20）
     instant = [r for r in cand if r.get("即決価格") and INSTANT_MIN_RATIO * r["上限入札額"] <= r["即決価格"] <= r["上限入札額"]]
     instant.sort(key=lambda r: -(r["上限入札額"] - r["即決価格"]))
@@ -2381,7 +2400,29 @@ def reserve_list(rows: list[dict], now: datetime | None = None, target: int = 8,
     return instant, picks[:max(0, target)]
 
 
-def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 10.0, sold_stats: dict | None = None) -> list[dict]:
+def is_light_mold_row(r: dict) -> bool:
+    return "軽いカビ" in (r.get("理由") or "")
+
+
+def reserve_mold(rows: list[dict], now: datetime | None = None, days: int = 2) -> list[dict]:
+    """軽いカビ（小カビ・点カビ・1〜3個）の ◎○ で終了が今日〜明日の物。予約の本数（target）には数えず、別の枠で下に出す
+    （2026-11-26 オーナー「入札しないわけではないが、鑑定表示の枠は、カビがないものと分けてほしい」）。並びは利益の大きい順."""
+    from datetime import timedelta, timezone
+    jst = timezone(timedelta(hours=9))
+    now = (now or datetime.now(jst)).astimezone(jst)
+    until = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days)
+    out = []
+    for r in rows:
+        end = _end_dt(r.get("終了") or "")
+        if (r["判定"] in ("◎", "○") and r.get("根拠の強さ") == "確認不要" and not _is_acc(r) and r.get("上限入札額")
+                and is_light_mold_row(r) and end is not None and now < end < until):
+            out.append(r)
+    out.sort(key=lambda r: -(r.get("利益(現在価格)") or 0))
+    return out
+
+
+def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 10.0, sold_stats: dict | None = None,
+                 mold: list[dict] | None = None) -> list[dict]:
     """予約リストの表（CSV・古物台帳「Mac_予約リスト」・レポートの一番上）.
 
     sold_stats: 機種ごとの落札額（yahoo_results.load_model_stats）。行に「落札の中央値」を出すだけで、並び・判定・上限には使わない
@@ -2392,7 +2433,7 @@ def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 
         st = sold_stats.get(model_key(r.get("タイトル") or "")[1])
         return "{:,}円（{}件）".format(st["med"], st["n"]) if st else ""
     out = []
-    for kind, lst in (("即決（今すぐ買える）", instant), ("予約", picks)):
+    for kind, lst in (("即決（今すぐ買える）", instant), ("予約", picks), ("カビの記載あり（写真で程度を確認）", mold or [])):
         for r in lst:
             mb = r["上限入札額"]
             store = str(r.get("入札額の税", "")).startswith("ストア")
@@ -2887,9 +2928,11 @@ def main(argv: list[str] | None = None) -> int:
         sold_stats = yahoo_results.load_model_stats()
     except Exception:  # noqa: BLE001  落札額の記録が無くても予約リストは作る
         sold_stats = {}
-    reserve = reserve_rows(instant, picks, cfg["yahoo"]["store_tax_pct"], sold_stats)
+    mold = reserve_mold(rows, days=int(rs.get("days", 2)))
+    reserve = reserve_rows(instant, picks, cfg["yahoo"]["store_tax_pct"], sold_stats, mold)
     write_reserve_csv(reserve, args.out / f"reserve_list_{stamp}.csv")
-    print(f"今日の予約リスト: 予約 {len(picks)}本（目標{target}本）・即決 {len(instant)}件 → reserve_list_{stamp}.csv", file=sys.stderr)
+    print(f"今日の予約リスト: 予約 {len(picks)}本（目標{target}本）・即決 {len(instant)}件・カビの記載あり {len(mold)}件 → reserve_list_{stamp}.csv",
+          file=sys.stderr)
     write_csv(rows, args.out / f"bid_report_{stamp}.csv")
     write_markdown([r for r in rows if r["判定"] != "要確認" or r["想定販売価格USD"]],
                    args.out / f"bid_report_{stamp}.md", cfg, fx, reserve, target)
