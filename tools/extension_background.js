@@ -145,6 +145,15 @@ async function evWriteLog() {
   const url = "data:text/csv;charset=utf-8," + encodeURIComponent("\ufeff" + lines.join("\n") + "\n");
   try { await quietDownload({ url, filename: "aurora_evidence_log.csv", conflictAction: "overwrite", saveAs: false }); } catch (e) { /* 次の回に書く */ }
 }
+// 2026-11-26 オーナー「もう裏で片付けろ」: 取引ナビ・注文の状況は、オーナーの窓ではなく、前に出さない別の窓（裏の窓）で開いて写す。
+// 注文の状況が「システムでエラー」のまま（取引が終わった物）は、オーナーが前に手で撮っていたのと同じ出品ページ（jp/auction/ID）で写す
+let evWin = null, evAutoWin = null;
+async function evWindow() {
+  if (evWin != null) { try { await chrome.windows.get(evWin); return evWin; } catch (e) { evWin = null; } }
+  const w = await chrome.windows.create({ focused: false, url: "about:blank" });
+  evWin = w.id;
+  return evWin;
+}
 async function evRun() {
   if (evBusy) { evStat.total = evStat.n + evQueue.length; return; }
   evBusy = true;
@@ -157,23 +166,60 @@ async function evRun() {
     evTell({ done: false });
     let tab = null, res = { ok: false, note: "" };
     try {
-      tab = await chrome.tabs.create({ url: item.url, active: true });
+      const winId = await evWindow();
+      tab = await chrome.tabs.create({ windowId: winId, url: item.url, active: true });
       res = await new Promise((resolve) => {
         evWait = { tabId: tab.id, id: item.id, resolve: (v) => resolve(v) };
         setTimeout(() => evDone(tab.id, false, "30秒待っても画面が読めなかった"), 30000);   // 中身が読めない画面は evidence.js が先に知らせる
       });
     } catch (e) { res = { ok: false, note: "タブを開けなかった: " + String((e && e.message) || e) }; }
+    if (tab) { try { await chrome.tabs.remove(tab.id); } catch (e) { /* 閉じられていても続ける */ } }
+    const auction = "https://auctions.yahoo.co.jp/jp/auction/" + item.id;
+    if (!res.ok && item.url !== auction) {   // 出品ページで撮り直す（1回だけ）
+      await evLog({ [item.id]: ["出品ページで撮り直し", res.note] });
+      evQueue.unshift(Object.assign({}, item, { url: auction }));
+      evStat.n -= 1;
+      continue;
+    }
     if (res.ok) evStat.saved += 1; else evStat.failed.push(item.id);
     if (!res.ok) await evLog({ [item.id]: ["保存できず", res.note + "（開いた URL: " + item.url.replace(/=[^&]+/g, "=…").replace(/aid=…/, "aid=" + item.id) + "）"] });
-    // 開いたタブは保存できてもできなくても閉じる（残すと止まったように見える。2026-11-26 オーナー「止まったけど？」）。できなかったIDは一覧の右下に出す
-    if (tab) { try { await chrome.tabs.remove(tab.id); } catch (e) { /* 閉じられていても続ける */ } }
     await new Promise((r) => setTimeout(r, 1500));
   }
-  if (evStat.from != null) { try { await chrome.tabs.update(evStat.from, { active: true }); } catch (e) { /* 一覧のタブが閉じられていても */ } }
+  if (evWin != null) { try { await chrome.windows.remove(evWin); } catch (e) { /* 閉じられていても */ } evWin = null; }
   evTell({ done: true });
   await evWriteLog();
+  // 毎日の自動の回（evAutoRun）で開いた一覧の窓も閉じる
+  if (evAutoWin != null) { const w = evAutoWin; evAutoWin = null; setTimeout(() => chrome.windows.remove(w).catch(() => {}), 5000); }
   evBusy = false;
 }
+
+// ↻ を要らなくする: Mac が拡張機能を作り直したら（フォルダの manifest.json の版が変わったら）自分で読み直す（2026-11-26）
+async function evSelfUpdate() {
+  if (evBusy) return false;
+  const disk = await fetch(chrome.runtime.getURL("manifest.json"), { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+  if (disk && disk.version && disk.version !== chrome.runtime.getManifest().version) { chrome.runtime.reload(); return true; }
+  return false;
+}
+// 毎日1回、Mac が数えた「証跡が無いID」（evidence_need.json。build_extension.py が毎朝書く）があれば、落札分の一覧を裏の窓で開いて取りに行く
+async function evAutoRun() {
+  if (evBusy || evAutoWin != null) return;
+  const need = await fetch(chrome.runtime.getURL("evidence_need.json"), { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+  if (!need || !Array.isArray(need.ids) || !need.ids.length) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const r = await chrome.storage.local.get("evAutoDay");
+  if (r.evAutoDay === day) return;
+  await chrome.storage.local.set({ evAutoDay: day });
+  const w = await chrome.windows.create({ focused: false, url: "https://auctions.yahoo.co.jp/my/won" });
+  evAutoWin = w.id;
+  setTimeout(() => { if (evAutoWin === w.id && !evBusy) { evAutoWin = null; chrome.windows.remove(w.id).catch(() => {}); } }, 120000);   // 2分たっても何も始まらなければ閉じる（ログイン切れなど）
+}
+async function evTick() { if (!(await evSelfUpdate())) await evAutoRun(); }
+if (chrome.alarms) {
+  chrome.alarms.create("aurora_evidence", { periodInMinutes: 30 });
+  chrome.alarms.onAlarm.addListener((a) => { if (a.name === "aurora_evidence") evTick(); });
+}
+chrome.runtime.onStartup && chrome.runtime.onStartup.addListener(() => evTick());
+chrome.runtime.onInstalled && chrome.runtime.onInstalled.addListener(() => setTimeout(evTick, 5000));
 
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   // 相場データ: フォルダの data.json を毎回読む（Mac が作り直した最新。拡張機能の ↻ は不要）
@@ -236,11 +282,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
     const keys = Array.from(new Set([key].concat(ids.map((i) => "evidence_" + i))));
     evSaved(keys).then((r) => {
       if (keys.some((k) => r[k])) { evDone(_sender.tab.id, true); return send({ already: true }); }
-      return chrome.tabs.captureVisibleTab(_sender.tab.windowId, { format: "png" })
+      // 裏の窓は macOS で隠れていると白紙で写ることがある → 小さすぎる画像なら、その窓を一瞬前に出して写し直す（記録に残す）
+      const shot = () => chrome.tabs.captureVisibleTab(_sender.tab.windowId, { format: "png" });
+      return shot().then((url) => (url.length > 30000 ? url
+        : chrome.windows.update(_sender.tab.windowId, { focused: true }).then(() => new Promise((ok) => setTimeout(ok, 800))).then(shot)
+          .then((u2) => { evLog({ [String(msg.id).toLowerCase()]: ["裏の窓は白紙だったので前に出して写した", ""] }); return u2; })))
         .then((url) => quietDownload({ url, filename: "ヤフオク仕入証跡/" + String(msg.name).slice(0, 120) + ".png", conflictAction: "uniquify", saveAs: false })
           // 日本語の名前を受け付けない環境だけ、英数字の名前（終了日_金額_オークションID）で保存する
           .catch(() => quietDownload({ url, filename: "yahoo_evidence/" + String(msg.name).replace(/[^\w.-]+/g, "_").replace(/_+/g, "_") + ".png", conflictAction: "uniquify", saveAs: false })))
-        .then(() => { if (msg.found) evLog({ [String(msg.id).toLowerCase()]: ["保存（注文の画面）", msg.found] }); keys.forEach((k) => evSession.add(k.replace(/^evidence_/, ""))); return chrome.storage.local.set(Object.fromEntries(keys.map((k) => [k, Date.now()]))); })
+        .then(() => { if (msg.found) evLog({ [String(msg.id).toLowerCase()]: ["保存（" + (/\/jp\/auction\//.test(_sender.tab.url || "") ? "出品ページ" : "注文の画面") + "）", msg.found] }); keys.forEach((k) => evSession.add(k.replace(/^evidence_/, ""))); return chrome.storage.local.set(Object.fromEntries(keys.map((k) => [k, Date.now()]))); })
         .then(() => { evDone(_sender.tab.id, true); send({ saved: true }); });
     }).catch((e) => { evDone(_sender.tab.id, false, "画面を写せなかった: " + String((e && e.message) || e)); send({ error: String((e && e.message) || e) }); });
     return true;
