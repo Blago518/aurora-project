@@ -293,6 +293,7 @@ def check_results(cfg: dict, fx: float, delay: float = 1.5, rows: list[dict] | N
     known = _known_states() if known is None else known
     now = datetime.now(timezone.utc)
     n = 0
+    closed_cache: dict = {}   # 終わった出品の検索（同じ検索語は1回だけ読む）
     for r in rows:
         if 0 < (_num(r.get("final_price")) or 0) <= 1000 and r.get("result") != "落札":
             # 2026-11-25 より前に、隠された最終価格（開始価格の1円・1,000円。入札22〜41件）を記録した物。
@@ -322,10 +323,14 @@ def check_results(cfg: dict, fx: float, delay: float = 1.5, rows: list[dict] | N
         if state is None:
             try:
                 state = _item_state(fetch(f"https://auctions.yahoo.co.jp/jp/auction/{r['auction_id']}"))
-            except Exception as e:  # 読めなければ次回
-                print(f"  結果を読めませんでした: {r['auction_id']}（{e}）", file=sys.stderr)
-                continue
+            except Exception:  # noqa: BLE001  2026-11-26 から終わった出品のページは 404。終わった出品の検索で探す
+                state = {}
             time.sleep(delay)
+            if not state:
+                import yahoo_results
+                state = yahoo_results.closed_state(r, fetch, closed_cache, delay)
+            if not state:
+                continue  # 読めなければ次回
         res = judge_result(r, state, cfg, fx, won_ids)
         if res:
             r.update(res, checked_at=now.strftime("%Y-%m-%d %H:%M"))

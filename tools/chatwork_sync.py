@@ -78,8 +78,16 @@ def _num(s: str) -> float | None:
 
 def parse_sales(text: str, date: str) -> list[dict]:
     """販売通知の本文から販売を取り出す。読めない項目がある報告は飛ばす（推測しない）."""
-    text = CW_TAGS.sub("", text.replace("\r", ""))
+    text = re.sub(r"\[title\].*?\[/title\]", "\n", text.replace("\r", ""), flags=re.S)  # 見出し（販売通知）は商品名ではない
+    text = CW_TAGS.sub("", text)
     starts = [m.start() for m in ITEM_START.finditer(text)]
+    if not starts and "[販売価格]" in text:
+        # 管理番号 [00104] の無い報告も1件として読む（前は黙って飛ばしていた。2026-11-26 オーナー「追記0件とは？」）。
+        # 商品名は [販売価格] のすぐ上の行
+        head = [x for x in text.split("[販売価格]")[0].splitlines() if x.strip()]
+        if head:
+            text = "[00000] " + head[-1] + "\n[販売価格]" + text.split("[販売価格]", 1)[1]
+            starts = [0]
     rows = []
     for a, b in zip(starts, starts[1:] + [len(text)]):
         block = text[a:b]
@@ -221,18 +229,29 @@ def sync(dry_run: bool = False) -> int:
     except urllib.error.URLError as e:
         print(f"Chatwork: 接続できませんでした（{e.reason}）", file=sys.stderr)
         return 0
-    rows = []
+    rows, unread = [], []
     for m in msgs:
         body = m.get("body", "")
         if "[販売価格]" not in body:
             continue
         date = datetime.fromtimestamp(m.get("send_time", 0)).strftime("%Y-%m-%d")
-        rows += parse_sales(body, date)
+        got = parse_sales(body, date)
+        rows += got
+        if not got:
+            unread.append(f"{date} " + " ".join(CW_TAGS.sub("", body).split())[:50])
     new = append_new(rows, dry_run=dry_run)
     for r in new:
         print(f"  + {r['date']} ${r['sold_price_usd']} {r['title'][:60]}（{r['source']}）", file=sys.stderr)
-    print(f"Chatwork: 販売報告 {len(rows)}件を確認、新しく {len(new)}件を{'追記予定' if dry_run else '追記'}"
-          f"（{OUT.relative_to(ROOT)}）", file=sys.stderr)
+    for u in unread:  # 販売報告らしいのに読めなかった物は黙って飛ばさない
+        print(f"  ? 読めなかった報告: {u}", file=sys.stderr)
+    times = [m.get("send_time", 0) for m in msgs if m.get("send_time")]
+    since = datetime.fromtimestamp(min(times)).strftime("%m/%d %H:%M") if times else "-"
+    total = len(read_existing()[1])
+    # 言い方（2026-11-26 オーナー「追記0件とは？」）: 0件は「見た範囲の報告は全部もう入っている」こと
+    print(f"Chatwork: 日報チャットの最新 {len(msgs)}件（{since} 以降。Chatwork の API で読めるのはこの分だけ）に販売報告 {len(rows)}件。"
+          + (f"うち新しい {len(new)}件を{'追記予定' if dry_run else '追記'}" if new else "全部もう取り込み済みで、新しい報告はありません")
+          + (f"・読めなかった報告 {len(unread)}件" if unread else "")
+          + f"（{OUT.relative_to(ROOT)} は全 {total}件）", file=sys.stderr)
     # 頒布会の商品リスト（添付の xlsx）。専用のルームを設定したときだけ（日報チャットの添付は見ない）
     froom = secret_get("files_room")
     if not froom or froom == room:
