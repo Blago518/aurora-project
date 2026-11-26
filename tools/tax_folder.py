@@ -246,6 +246,9 @@ def run(downloads: Path | None = None, home: Path | None = None, post=None, uplo
     print(f"  台帳の落札分 {len(miss['ids'])}件のうち、証跡あり {len(miss['have'])}件・無い {len(miss['missing'])}件")
     log = evidence_log(downloads)
     lp = downloads / EVIDENCE_LOG
+    for i, (res, note) in list(log.items())[:10]:
+        if i not in miss["missing"]:
+            print(f"    記録: {i} {res} {note[:80]}")
     print(f"  拡張機能の記録: {datetime.fromtimestamp(lp.stat().st_mtime).strftime('%m/%d %H:%M') + ' に書かれた・' + str(len(log)) + '件' if lp.exists() else 'まだ無い'}")
     why = {i: ("：".join(x for x in log[i] if x) if i in log else NOT_IN_LIST) for i in miss["missing"]}
     groups: dict[str, int] = {}

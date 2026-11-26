@@ -218,7 +218,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
       send({ queued: todo.length, already: links.length - todo.length });
       const notes = {};
       for (const l of links) if (r["evidence_" + l.id]) notes[l.id] = ["飛ばした", r["evidence_" + l.id]];
-      for (const id of (msg.noSeller || [])) if (/^[a-z]?\d{8,12}$/i.test(id) && !r["evidence_" + id]) notes[String(id).toLowerCase()] = ["開けず", "落札分の一覧にあるが、取引連絡のリンクが無く、出品者も分からない"];
+      for (const id of (msg.noSeller || [])) if (/^[a-z]?\d{8,12}$/i.test(id) && !r["evidence_" + id]) notes[String(id).toLowerCase()] = ["開けず", "落札分の一覧にあるが、取引ナビの URL が見つからない（" + String((msg.diag || {})[id] || "") + "）"];
       (Object.keys(notes).length ? evLog(notes) : Promise.resolve()).then(() => (todo.length ? evRun() : (evBusy ? null : evWriteLog())));
     });
     return true;

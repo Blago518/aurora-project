@@ -12,7 +12,8 @@ const NAVI_RE = /^https:\/\/contact\.auctions\.yahoo\.co\.jp\//;
 const SELLER_KEYS = ["seller_auc_user_id", "syid", "sellerid", "seller", "targetid", "target", "userid", "user", "u", "id"];
 
 function aidOf(url) {
-  return ((String(url || "").match(/[?&](?:aid|aucid|auctionid)=([a-z]?\d{8,12})(?:&|$|#)/i) || [])[1] || "").toLowerCase();
+  // aid= のほか auction_id= など、名前に aid・auction を含む引数（2026-11-26 一覧の34件で aid= が見つからなかった）
+  return ((String(url || "").match(/[?&][a-z_]*(?:aid|auction)[a-z_]*=([a-z]?\d{8,12})(?:&|$|#)/i) || [])[1] || "").toLowerCase();
 }
 
 // まとめて取引（bundle）の URL → 1件ずつの取引ナビ（top）の URL
@@ -88,6 +89,15 @@ function planLinks(rows, pageHrefs) {
     if (!id || seen.has(id)) continue;
     const own = navLinks(r.hrefs);
     if (own.length) { out.push(own[0]); seen.add(id); continue; }
+    // 行の中の取引ナビのリンクにオークションIDが無い → その行の商品IDを足して開く
+    const bare = (r.hrefs || []).find((h) => NAVI_RE.test(String(h)));
+    if (bare) {
+      const u = new URL(topUrl(bare));
+      u.searchParams.set("aid", id);
+      out.push({ id, url: u.toString(), made: true });
+      seen.add(id);
+      continue;
+    }
     const sy = tpl ? sellerOf(r.hrefs, keys.mine, keys.sk) : "";
     if (!sy) { noSeller += 1; noSellerIds.push(id); continue; }
     const u = new URL(tpl.url);
@@ -110,22 +120,27 @@ function planLinks(rows, pageHrefs) {
   let info = "", pages = 1;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 行（「商品ID：◯」ごと）を読む。root はこのページか、裏で読んだ次のページ
+  // 行（「商品ID：◯」ごと）を読む。root はこのページか、裏で読んだ次のページ。
+  // 2026-11-26「商品ID：」と ID が別の要素に分かれていても読む（文字の1かたまりだけ見ていて、34件を見落としていた）
+  const ID_RE = /商品ID\s*[:：]\s*([a-z]?\d{8,12})/i;
   const rowsIn = (root) => {
     const rows = [], seen = new Set();
-    // script の中の文字（__NEXT_DATA__ の JSON など）は行ではないので読まない
-    const walker = root.createTreeWalker(root.body, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) => (n.parentElement && /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(n.parentElement.tagName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
-    });
-    while (walker.nextNode()) {
-      const m = walker.currentNode.nodeValue.match(/商品ID\s*[:：]\s*([a-z]?\d{8,12})/i);
-      if (!m) continue;
+    const els = Array.from(root.body.querySelectorAll("*")).filter((el) => !/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(el.tagName));
+    for (const el0 of els) {
+      const m = (el0.textContent || "").match(ID_RE);
+      if (!m || Array.from(el0.children).some((c) => ID_RE.test(c.textContent || ""))) continue;   // いちばん内側の、商品IDの書いてある要素
       const id = m[1].toLowerCase();
       if (seen.has(id)) continue;
       seen.add(id);
       // その商品IDだけを含むいちばん外側の枠を、その行とみなす
-      let el = walker.currentNode.parentElement;
+      let el = el0;
       while (el.parentElement && (el.parentElement.textContent.match(/商品ID\s*[:：]/g) || []).length <= 1) el = el.parentElement;
-      rows.push({ id, hrefs: Array.from(el.querySelectorAll("a[href]"), (a) => a.href) });
+      // a の href のほか、ボタンの data-〜・onclick などに書かれた取引ナビの URL も拾う
+      const hrefs = Array.from(el.querySelectorAll("a[href]"), (a) => a.href).concat(naviUrlsIn(el.outerHTML));
+      // 拾えなかったときの手がかり: ［取引連絡］の要素の形（属性の名前と、URL の道だけ。値は伏せる）
+      const btn = Array.from(el.querySelectorAll("a,button,[role=button]")).find((b) => /取引連絡|取引ナビ/.test(b.textContent || ""));
+      const diag = btn ? btn.tagName.toLowerCase() + "[" + Array.from(btn.attributes).map((a) => a.name + (/href|url/i.test(a.name) ? "=" + String(a.value).replace(/\?.*/, "?…") : "")).join(" ") + "]" : "［取引連絡］のボタンなし";
+      rows.push({ id, hrefs, diag });
     }
     return rows;
   };
@@ -138,10 +153,12 @@ function planLinks(rows, pageHrefs) {
     info = `読んだ一覧 ${pages}ページ: 商品 ${totals.rows}件（取引連絡のリンク ${totals.direct}件・型から作った ${totals.made}件・出品者が分からず開けない ${totals.noSeller}件）`;
     const links = plan.links.filter((l) => !sent.has(l.id));
     const noSeller = plan.noSellerIds.filter((id) => !sent.has(id));
+    const diag = {};
+    for (const r of rows) if (noSeller.includes(r.id)) diag[r.id] = r.diag;
     if (!links.length && !noSeller.length) return;
     links.forEach((l) => sent.add(l.id));
     noSeller.forEach((id) => sent.add(id));
-    chrome.runtime.sendMessage({ type: "evidenceBatch", links, noSeller }, (r) => {
+    chrome.runtime.sendMessage({ type: "evidenceBatch", links, noSeller, diag }, (r) => {
       if (chrome.runtime.lastError || !r) return;
       if (r.queued) show(`仕入れ証跡: ${r.queued}件を順に開いて保存します（保存済み ${r.already}件は飛ばします）\n${info}`);
     });
