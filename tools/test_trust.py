@@ -1024,6 +1024,12 @@ class JunkSeller(unittest.TestCase):
         import robots
         self.assertTrue(all(robots.allowed(u) for u in urls))
 
+    def test_junk_search_urls(self):
+        import robots
+        urls = ba.junk_search_urls()
+        self.assertEqual(len(urls), len(ba.JUNK_SEARCH_WORDS))
+        self.assertTrue(all(robots.allowed(u) and not robots.removed_params(u) for u, _ in urls))
+
     def test_js_same(self):
         if not shutil.which("node"):
             self.skipTest("node がありません")

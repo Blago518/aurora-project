@@ -1390,6 +1390,20 @@ def meter_search_urls() -> list[tuple[str, str]]:
     return out
 
 
+# ジャンクを名指しで探す（2026-11-26 オーナー「総合業者や個人、コレクターのジャンクは、動作する可能性が高いです。それらのジャンクは狙います」）。
+# 出品者は読んだ後に数え（check_junk_sellers）、専門店のジャンクは ×、総合業者・個人のジャンクは「★ ジャンクは狙い目」
+JUNK_SEARCH_WORDS = ("ジャンク レンズ", "ジャンク フィルムカメラ", "ジャンク 一眼レフ", "ジャンク 中判")
+
+
+def junk_search_urls() -> list[tuple[str, str]]:
+    """ジャンクを名指しで探す検索URL（カメラのカテゴリ。robots.txt の Allow の形。meter_search_urls と同じ形）."""
+    out = []
+    for w in JUNK_SEARCH_WORDS:
+        q = urllib.parse.urlencode({"p": w, "auccat": "23636", "aucminprice": "3000"})
+        out.append((f"https://auctions.yahoo.co.jp/search/search?{q}", f"{w}（総合・個人なら狙い目）"))
+    return out
+
+
 def _model_url(brand: str, word: str) -> str:
     ja = [j for j, en in BRANDS_JA if en == brand]
     # 並べ替え（s1・o1）・件数（n）は robots.txt で Disallow → 付けない（終了が近い順は Mac の中で並べる。2026-11-19）
@@ -1927,7 +1941,7 @@ def judge(item: Item) -> tuple[str, str]:
     elif junk:
         prefix = "ジャンク品: 動作・状態リスクあり。"
     elif kind == "専門店":
-        prefix = "★ カメラ専門店（完動・美品は動く・綺麗な物が多い）。"
+        prefix = "★ カメラ専門店（完動・美品が多い）。"
     else:
         prefix = ""
     now = item.current_price_jpy
@@ -3047,6 +3061,9 @@ def main(argv: list[str] | None = None) -> int:
             meters = meter_search_urls()
             print(f"露出計不良（狙い目）の検索: {len(meters)}本", file=sys.stderr)
             searches += [(u, 100) for u, _ in meters]
+            junks = junk_search_urls()
+            print(f"ジャンク（総合業者・個人なら狙い目）の検索: {len(junks)}本", file=sys.stderr)
+            searches += [(u, 100) for u, _ in junks]
         import robots
         fixed = [(su, robots.removed_params(su)) for su, _ in searches]
         fixed = [(su, ps) for su, ps in fixed if ps]

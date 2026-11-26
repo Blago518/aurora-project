@@ -445,7 +445,7 @@
     if (!c) return ["要確認", "相場なし"];
     const kind = junkSellerKind(it.sellerId), junk = it.flags.includes("ジャンク");
     let pre = junk && kind === "専門店" ? "カメラ専門店のジャンク・" : junk && kind ? "★ ジャンクは狙い目（総合業者・個人）・" : junk ? "ジャンク・"
-      : kind === "専門店" ? "★ カメラ専門店（完動・美品は狙い目）・" : "";
+      : kind === "専門店" ? "★ カメラ専門店（完動・美品が多い）・" : "";
     const isSet = !!(it.setParts && it.setParts.length >= 2);  // まとめ売りで中身を2点以上当てたもの
     if (it.flags.includes("アダプター等") || (!isSet && it.flags.some((f) => f === "付属品のみ?" || f === "セット品")))
       return ["要確認", pre + it.flags.filter((f) => f !== "ジャンク").join("・") + "の可能性"];
