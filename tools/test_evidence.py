@@ -234,3 +234,13 @@ class MissingEvidence(unittest.TestCase):
             r = tax_folder.missing_evidence(dl, home, [led])
             self.assertEqual(r["ids"], ["k1000000004", "p1000000003", "x1000000002", "m1000000001"])
             self.assertEqual(r["missing"], ["k1000000004"])
+
+
+class EvidenceLogReasons(unittest.TestCase):
+    def test_reasons_from_extension_log(self):
+        import tax_folder
+        with tempfile.TemporaryDirectory() as d:
+            dl = Path(d)
+            (dl / "aurora_evidence_log.csv").write_text("\ufeffid,結果,理由,日時\nk1000000004,保存できず,20秒待っても画面が読めなかった,2026-11-26\ndone,,,2026-11-26\n", encoding="utf-8")
+            log = tax_folder.evidence_log(dl)
+            self.assertEqual(log, {"k1000000004": ("保存できず", "20秒待っても画面が読めなかった")})

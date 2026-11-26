@@ -106,13 +106,30 @@ function quietDownload(opts) {
 }
 
 // 仕入れ証跡をまとめて保存する順番待ち（1件ずつ前のタブで開く。写すのは見えている画面だけなので前に出す）
+// 1件ごとの結果と理由は ダウンロード/aurora_evidence_log.csv に残す（2026-11-26 オーナー「全て取得できているか確認しなさい」。
+// 保存できなかった理由が残っていなかった）。Mac の tax_folder.py が読み、台帳の落札分で証跡が無いIDに理由を付けて「Mac_税理フォルダ」へ
 const evQueue = [];
 let evBusy = false, evWait = null, evStat = { saved: 0, failed: [], total: 0, n: 0, from: null };
-function evDone(tabId, ok) {
-  if (evWait && evWait.tabId === tabId) { const w = evWait; evWait = null; w.resolve(ok); }
+function evDone(tabId, ok, note) {
+  if (evWait && evWait.tabId === tabId) { const w = evWait; evWait = null; w.resolve({ ok, note: note || "" }); }
 }
 function evTell(extra) {
   if (evStat.from != null) chrome.tabs.sendMessage(evStat.from, Object.assign({ type: "evidenceProgress" }, evStat, extra), () => void chrome.runtime.lastError);
+}
+async function evLog(entries) {   // entries: {id: [結果, 理由]}
+  const r = await chrome.storage.local.get("evlog");
+  const log = r.evlog || {};
+  const now = new Date().toISOString();
+  for (const [id, [res, note]] of Object.entries(entries)) log[id] = [res, String(note || "").slice(0, 200), now];
+  await chrome.storage.local.set({ evlog: log });
+}
+async function evWriteLog() {
+  const log = (await chrome.storage.local.get("evlog")).evlog || {};
+  const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+  const lines = ["id,結果,理由,日時"].concat(Object.entries(log).map(([id, [res, note, t]]) => [id, res, note, t].map(q).join(",")));
+  lines.push(["done", "", "", new Date().toISOString()].map(q).join(","));
+  const url = "data:text/csv;charset=utf-8," + encodeURIComponent("\ufeff" + lines.join("\n") + "\n");
+  try { await quietDownload({ url, filename: "aurora_evidence_log.csv", conflictAction: "overwrite", saveAs: false }); } catch (e) { /* 次の回に書く */ }
 }
 async function evRun() {
   if (evBusy) { evStat.total = evStat.n + evQueue.length; return; }
@@ -124,21 +141,23 @@ async function evRun() {
     const had = await chrome.storage.local.get("evidence_" + item.id);
     if (had["evidence_" + item.id]) { evStat.saved += 1; continue; }   // まとめて取引の1枚で済んだ物は開かない
     evTell({ done: false });
-    let tab = null, ok = false;
+    let tab = null, res = { ok: false, note: "" };
     try {
       tab = await chrome.tabs.create({ url: item.url, active: true });
-      ok = await new Promise((resolve) => {
-        evWait = { tabId: tab.id, resolve };
-        setTimeout(() => evDone(tab.id, false), 20000);   // 20秒で保存されなければ、できなかったとして次へ（中身が読めない画面は evidence.js が先に知らせる）
+      res = await new Promise((resolve) => {
+        evWait = { tabId: tab.id, resolve: (v) => resolve(v) };
+        setTimeout(() => evDone(tab.id, false, "20秒待っても画面が読めなかった"), 20000);   // 中身が読めない画面は evidence.js が先に知らせる
       });
-    } catch (e) { ok = false; }
-    if (ok) evStat.saved += 1; else evStat.failed.push(item.id);
+    } catch (e) { res = { ok: false, note: "タブを開けなかった: " + String((e && e.message) || e) }; }
+    if (res.ok) evStat.saved += 1; else evStat.failed.push(item.id);
+    if (!res.ok) await evLog({ [item.id]: ["保存できず", res.note + "（開いた URL: " + item.url.replace(/=[^&]+/g, "=…").replace(/aid=…/, "aid=" + item.id) + "）"] });
     // 開いたタブは保存できてもできなくても閉じる（残すと止まったように見える。2026-11-26 オーナー「止まったけど？」）。できなかったIDは一覧の右下に出す
     if (tab) { try { await chrome.tabs.remove(tab.id); } catch (e) { /* 閉じられていても続ける */ } }
     await new Promise((r) => setTimeout(r, 1500));
   }
   if (evStat.from != null) { try { await chrome.tabs.update(evStat.from, { active: true }); } catch (e) { /* 一覧のタブが閉じられていても */ } }
   evTell({ done: true });
+  await evWriteLog();
   evBusy = false;
 }
 
@@ -178,16 +197,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   // 仕入れ証跡をまとめて: ヤフオクのページにあった取引ナビのリンクを、まだ証跡の無い物だけ1件ずつ開く（extension_evidence_list.js）
   if (msg && msg.type === "evidenceBatch" && Array.isArray(msg.links) && _sender && _sender.tab) {
     const links = msg.links.filter((l) => l && /^[a-z]?\d{8,12}$/i.test(l.id || "") && /^https:\/\/contact\.auctions\.yahoo\.co\.jp\//.test(l.url || ""));
-    chrome.storage.local.get(links.map((l) => "evidence_" + l.id)).then((r) => {
+    const ask = links.map((l) => "evidence_" + l.id).concat((msg.noSeller || []).map((id) => "evidence_" + String(id).toLowerCase()));
+    chrome.storage.local.get(ask).then((r) => {
       const todo = links.filter((l) => !r["evidence_" + l.id] && !evQueue.some((q) => q.id === l.id));
       todo.forEach((l) => evQueue.push(Object.assign({ from: _sender.tab.id }, l)));
       send({ queued: todo.length, already: links.length - todo.length });
-      evRun();
+      const notes = {};
+      for (const id of (msg.noSeller || [])) if (/^[a-z]?\d{8,12}$/i.test(id) && !r["evidence_" + id]) notes[String(id).toLowerCase()] = ["開けず", "落札分の一覧にあるが、取引連絡のリンクが無く、出品者も分からない"];
+      (Object.keys(notes).length ? evLog(notes) : Promise.resolve()).then(() => (todo.length ? evRun() : (evBusy ? null : evWriteLog())));
     });
     return true;
   }
   // 取引ナビの画面にオークションID・金額が出なかった（まとめて取引・エラーの画面）→ 待たずに次へ
-  if (msg && msg.type === "evidenceNone" && _sender && _sender.tab) { evDone(_sender.tab.id, false); send({ ok: true }); return false; }
+  if (msg && msg.type === "evidenceNone" && _sender && _sender.tab) { evDone(_sender.tab.id, false, "画面にオークションID・金額が出なかった: " + String(msg.note || "")); send({ ok: true }); return false; }
   // ヤフオクの仕入れ証跡: 取引ナビの見えている画面を PNG で ダウンロード/ヤフオク仕入証跡/ に保存（同じオークションIDは1回だけ。extension_evidence.js）
   if (msg && msg.type === "evidenceShot" && /^[a-z]?\d{8,12}$/i.test(msg.id || "") && _sender && _sender.tab) {
     const key = "evidence_" + msg.id;
@@ -203,7 +225,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
           .catch(() => quietDownload({ url, filename: "yahoo_evidence/" + String(msg.name).replace(/[^\w.-]+/g, "_").replace(/_+/g, "_") + ".png", conflictAction: "uniquify", saveAs: false })))
         .then(() => chrome.storage.local.set(Object.fromEntries(keys.map((k) => [k, Date.now()]))))
         .then(() => { evDone(_sender.tab.id, true); send({ saved: true }); });
-    }).catch((e) => { evDone(_sender.tab.id, false); send({ error: String((e && e.message) || e) }); });
+    }).catch((e) => { evDone(_sender.tab.id, false, "画面を写せなかった: " + String((e && e.message) || e)); send({ error: String((e && e.message) || e) }); });
     return true;
   }
   if (msg && msg.type === "saveMemo") {

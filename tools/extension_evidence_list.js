@@ -82,20 +82,21 @@ function planLinks(rows, pageHrefs) {
   for (const l of direct) { keys = tplKeys(l.url); if (keys) { tpl = l; break; } }
   const out = direct.slice(), seen = new Set(direct.map((l) => l.id));
   let noSeller = 0;
+  const noSellerIds = [];
   for (const r of rows || []) {
     const id = String(r.id || "").toLowerCase();
     if (!id || seen.has(id)) continue;
     const own = navLinks(r.hrefs);
     if (own.length) { out.push(own[0]); seen.add(id); continue; }
     const sy = tpl ? sellerOf(r.hrefs, keys.mine, keys.sk) : "";
-    if (!sy) { noSeller += 1; continue; }
+    if (!sy) { noSeller += 1; noSellerIds.push(id); continue; }
     const u = new URL(tpl.url);
     u.searchParams.set("aid", id);
     u.searchParams.set(keys.sk, sy);
     out.push({ id, url: u.toString(), made: true });
     seen.add(id);
   }
-  return { links: out, direct: direct.length, made: out.filter((l) => l.made).length, noSeller, template: !!tpl };
+  return { links: out, direct: direct.length, made: out.filter((l) => l.made).length, noSeller, noSellerIds, template: !!tpl };
 }
 // @evlist-end
 
@@ -135,9 +136,11 @@ function planLinks(rows, pageHrefs) {
     totals.rows += rows.length; totals.direct += plan.direct; totals.made += plan.made; totals.noSeller += plan.noSeller;
     info = `読んだ一覧 ${pages}ページ: 商品 ${totals.rows}件（取引連絡のリンク ${totals.direct}件・型から作った ${totals.made}件・出品者が分からず開けない ${totals.noSeller}件）`;
     const links = plan.links.filter((l) => !sent.has(l.id));
-    if (!links.length) return;
+    const noSeller = plan.noSellerIds.filter((id) => !sent.has(id));
+    if (!links.length && !noSeller.length) return;
     links.forEach((l) => sent.add(l.id));
-    chrome.runtime.sendMessage({ type: "evidenceBatch", links }, (r) => {
+    noSeller.forEach((id) => sent.add(id));
+    chrome.runtime.sendMessage({ type: "evidenceBatch", links, noSeller }, (r) => {
       if (chrome.runtime.lastError || !r) return;
       if (r.queued) show(`仕入れ証跡: ${r.queued}件を順に開いて保存します（保存済み ${r.already}件は飛ばします）\n${info}`);
     });

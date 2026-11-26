@@ -159,6 +159,24 @@ def missing_evidence(downloads: Path, home: Path | None = None, paths: list[Path
     return {"ids": ids, "have": [i for i in ids if i in have], "missing": [i for i in ids if i not in have]}
 
 
+EVIDENCE_LOG = "aurora_evidence_log.csv"   # 拡張機能が書く、1件ごとの結果と理由（extension_background.js の evWriteLog）
+NOT_IN_LIST = "落札分の一覧で見つからなかった（一覧に載らない古い落札か、別の Yahoo! ID・まだ一覧を開いていない）"
+
+
+def evidence_log(downloads: Path) -> dict[str, tuple[str, str]]:
+    """拡張機能の記録 {ID: (結果, 理由)}. 無ければ空."""
+    p = downloads / EVIDENCE_LOG
+    if not p.exists():
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    with p.open(encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            i = (row.get("id") or "").strip().lower()
+            if i and i != "done":
+                out[i] = ((row.get("結果") or "").strip(), (row.get("理由") or "").strip())
+    return out
+
+
 def move_evidence(downloads: Path, home: Path | None = None) -> dict:
     """ヤフオクの仕入れ証跡の PNG を税理のフォルダへ. {dest, why, moved, total, left}（dest が None＝動かさなかった。why に理由）."""
     root = tax_root(home)
@@ -199,10 +217,18 @@ def run(downloads: Path | None = None, home: Path | None = None, post=None, uplo
     print(f"  輸出許可書: {pbase}（FedEx {count['FedEx']}件・DHL {count['DHL']}件。今回 {pmoved}件）" + (f" ※税理のフォルダには入れていない（{pwhy}）" if pwhy else ""))
     miss = missing_evidence(downloads, home)
     print(f"  台帳の落札分 {len(miss['ids'])}件のうち、証跡あり {len(miss['have'])}件・無い {len(miss['missing'])}件")
-    for i in miss["missing"][:20]:
-        print(f"    証跡が無い: {i}  https://auctions.yahoo.co.jp/jp/auction/{i}")
+    log = evidence_log(downloads)
+    why = {i: ("：".join(x for x in log[i] if x) if i in log else NOT_IN_LIST) for i in miss["missing"]}
+    groups: dict[str, int] = {}
+    for i in miss["missing"]:
+        key = log[i][0] if i in log else "一覧で見つからない"
+        groups[key] = groups.get(key, 0) + 1
+    if groups:
+        print("    内訳: " + "・".join(f"{k} {v}件" for k, v in groups.items()))
+    for i in miss["missing"][:40]:
+        print(f"    証跡が無い: {i}  {why[i]}")
     rows.append(["台帳の落札分の証跡", f"台帳 {len(miss['ids'])}件", "", len(miss["have"]), "", f"無い {len(miss['missing'])}件"])
-    rows.extend([["証跡が無いID（新しい順）", i, "", "", "", f"https://auctions.yahoo.co.jp/jp/auction/{i}"] for i in miss["missing"][:300]])
+    rows.extend([["証跡が無いID（新しい順）", i, "", "", f"https://auctions.yahoo.co.jp/jp/auction/{i}", why[i]] for i in miss["missing"][:300]])
     rows.append(["確かめた日時", datetime.now().strftime("%Y-%m-%d %H:%M"), "", "", "", ""])
     if root is not None:
         rows.append(["税理のフォルダの並び（フォルダ名だけ。台帳にだけ送る）", root.name, "", "", "", ""])
@@ -219,7 +245,7 @@ def run(downloads: Path | None = None, home: Path | None = None, post=None, uplo
     return {"root": root, "evidence": ev, "permit_base": pbase, "permit_moved": pmoved, "rows": rows, "missing": miss}
 
 
-def open_won_and_wait(downloads: Path, limit_sec: int = 900, quiet_sec: int = 90) -> int:
+def open_won_and_wait(downloads: Path, limit_sec: int = 1800, quiet_sec: int = 300) -> int:
     """Chrome で落札分の一覧を開き（拡張機能が取引ナビを順に開いて保存する）、証跡の PNG が増えなくなるまで待つ. 増えた枚数を返す."""
     import subprocess
     import time
@@ -227,14 +253,24 @@ def open_won_and_wait(downloads: Path, limit_sec: int = 900, quiet_sec: int = 90
     start = n0 = count()
     subprocess.run(["open", "-a", "Google Chrome", "https://auctions.yahoo.co.jp/my/won"], check=False)
     t0 = last = time.time()
-    print("  落札分の一覧を Chrome で開きました。保存が止まるまで待ちます（最長15分）…")
+    logp = downloads / EVIDENCE_LOG
+    print("  落札分の一覧を Chrome で開きました。拡張機能が全部を開き終わるまで待ちます（最長30分）…")
+    # 終わりは拡張機能が書く記録（aurora_evidence_log.csv の done 行）で決める。2026-11-26 は「90秒増えない」で決めて、
+    # 保存できない物が続いた所で拡張機能より先に数え終わっていた
     while time.time() - t0 < limit_sec:
         time.sleep(10)
         n = count()
         if n != n0:
             n0, last = n, time.time()
             print(f"    保存 {n - start}枚")
-        elif time.time() - last > quiet_sec:
+        try:
+            fresh = logp.stat().st_mtime > t0
+        except OSError:
+            fresh = False
+        if fresh and time.time() - max(last, logp.stat().st_mtime) > 30:
+            break   # 記録が書かれ、その後30秒なにも増えない（2ページ目の分の書き足しも待つ）
+        if not fresh and time.time() - last > quiet_sec:
+            print("    ⚠ 拡張機能の記録が書かれていません（chrome://extensions で aurora の ↻ が済んでいないかもしれません）")
             break
     return n0 - start
 
