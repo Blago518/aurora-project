@@ -1882,7 +1882,7 @@ def _seller_total(url: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def check_junk_sellers(items: list, delay: float, max_new: int = 30, path: Path | None = None, today: date | None = None,
+def check_junk_sellers(items: list, delay: float, max_new: int = 60, path: Path | None = None, today: date | None = None,
                        get_total=None) -> int:
     """ジャンクの出品の出品者（と ◎○ の出品者）のうち、まだ数えていない・30日より古い物を数えて data/seller_kind.csv に足す. 数えた人数."""
     from datetime import date
