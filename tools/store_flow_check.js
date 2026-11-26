@@ -105,8 +105,6 @@ function checkCards(cards, when) {
     // ［確認済み］（2026-11-26 オーナー「スマホアプリの入札タブでも、確認済みボタンほしいね」）: 押すと印が付き、記録され、開き直しても残る。もう1回で外れる
     { await p.click('#bidChips [data-f="sure"]'); await p.waitForTimeout(150);
       await p.click('[data-seen="d1"]'); await p.waitForTimeout(200);
-      const on = await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed") + b.textContent);
-      if (!/^true✓ 確認済み/.test(on)) bad(`${lab}: ［確認済み］を押しても印が付かない: ${on}`);
       if (!/確認済み/.test((await p.evaluate(() => localStorage.getItem("storeOutbox"))) || "")) bad(`${lab}: ［確認済み］が記録されない`);
       // 確認済みは下の1行にまとめてたたむ（2026-11-26 オーナー「確認済みは1行に折り畳んでほしい。かさばってスクロールが面倒」）
       const fold = async () => p.$eval("[data-fold]", (b) => b.textContent).catch(() => "");
@@ -115,6 +113,8 @@ function checkCards(cards, when) {
       { const last = await p.$eval("#bidList", (l) => [...l.children].pop().matches("[data-fold]")); if (!last) bad(`${lab}: 確認済みの1行が一覧のいちばん下にない`); }
       await p.click("[data-fold]"); await p.waitForTimeout(150);
       if (!(await p.$('[data-card="d1"]'))) bad(`${lab}: 確認済みの1行を開いてもカードが出ない`);
+      { const on = await p.$eval('[data-seen="d1"]', (b) => b.getAttribute("aria-pressed") + b.textContent).catch(() => "（カードが無い）");
+        if (!/^true✓ 確認済み/.test(on)) bad(`${lab}: ［確認済み］を押しても印が付かない: ${on}`); }
       { const op = await p.$eval('[data-card="d1"]', (c) => +getComputedStyle(c).opacity); if (!(op < 0.8)) bad(`${lab}: 確認済みにしてもカードが薄くならない（opacity ${op}）`); }
       // 確認済みのカードは1行にたたむ（2026-11-26 オーナー「確認済みは閉じれるようにしてほしい」）。［開く］で中身が出て、［閉じる］でまたたたむ
       { const vis = async () => p.$eval('[data-card="d1"] .max', (m) => getComputedStyle(m).display !== "none");
@@ -202,4 +202,4 @@ function checkCards(cards, when) {
   }
   await b.close();
   console.log(JSON.stringify({ problems }));
-})().catch((e) => { console.log(JSON.stringify({ problems: problems.concat(["止まった: " + e.message.split("\n")[0]]) })); });
+})().catch((e) => { console.log(JSON.stringify({ problems: problems.concat(["止まった: " + e.message.split("\n")[0]]) })); process.exit(0); });   // ブラウザが残っても待たずに終わる
