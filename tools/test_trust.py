@@ -306,7 +306,9 @@ class AccessoryOnly(unittest.TestCase):
              "【返品保証】 キヤノン Canon ivis HF R10 バッテリー付き デジタルビデオカメラ e17565": True,
              "Mamiya RB67 ワインディングクランク": True, "Hasselblad winding crank": True,
              "マミヤ Mamiya 645 1000S ボディ 巻き上げクランク付き": False, "Canon EOS R10 ボディ": False,
-             "Mamiya 645 PRO TL 80mm F2.8 ワインディングクランク付き": False}
+             "Mamiya 645 PRO TL 80mm F2.8 ワインディングクランク付き": False,
+             "【01】PENTAX ペンタックス 645用120マガジン フィルムバック 中古 現状品 261015A9971": True,
+             "Mamiya RB67 Pro S 120 フィルムバック": True, "PENTAX 645N ボディ 120フィルムバック付き": False}
 
     def test_python(self):
         for t, acc in self.CASES.items():
