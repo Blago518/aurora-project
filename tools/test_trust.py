@@ -311,7 +311,10 @@ class AccessoryOnly(unittest.TestCase):
              "Mamiya RB67 Pro S 120 フィルムバック": True, "PENTAX 645N ボディ 120フィルムバック付き": False,
              # 2026-11-26 オーナーの店舗アプリの画面: 電池蓋に T2 本体の Sold が当たり OK で出ていた
              "CONTAX T2 用電池蓋(ブラック)": True, "Nikon FM2 電池カバー": True, "Canon AE-1 battery cover": True,
-             "CONTAX T2 電池蓋付き 美品": False, "Nikon FM2 ボディ": False}
+             "CONTAX T2 電池蓋付き 美品": False, "Nikon FM2 ボディ": False,
+             # 同じ種類の残り（オーキドの指摘で探した）: 底蓋・電池室の蓋・フィルムインサート。グリップ付きの本体は付属品ではない
+             "Leica M6 底蓋": True, "Canon EOS 5D 電池室 蓋": True, "CONTAX T3 用 電池室カバー": True, "Pentax 645 フィルムインサート": True,
+             "Nikon D750 バッテリーグリップ付き": False, "Canon バッテリーグリップ BG-E14": True}
 
     def test_python(self):
         for t, acc in self.CASES.items():
