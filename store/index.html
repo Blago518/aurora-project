@@ -96,7 +96,7 @@ details{margin-top:10px}summary{font-weight:700;font-size:13px;color:var(--ok);c
 .bid .tt{flex:1;min-width:0}.bid .tt a{color:var(--ink);font-weight:700;text-decoration:none;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bid .max{display:flex;align-items:baseline;gap:8px;margin:8px 0 2px}.bid .max strong{cursor:pointer}.bid .max strong{font-size:22px;color:var(--good)}
 .bid .tent .max strong,.bid.tent .max strong{color:var(--warn)}
-.bid.did{opacity:.55}.bid .tt{display:flex;gap:8px;align-items:flex-start}.bid .tt a{flex:1;min-width:0}.seenbtn{flex:none;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid #c6d3de;background:#fff;color:var(--sub);white-space:nowrap}.seenbtn[aria-pressed="true"]{background:#e6f4ea;border-color:#9fd3b0;color:var(--good)}.bid.seen{opacity:.55}.bid .links.five{grid-template-columns:repeat(5,1fr)}.bid .links.six{grid-template-columns:repeat(6,1fr);gap:4px}.bid .links.six .mini{padding-left:2px;padding-right:2px}.linkbtn{background:none;border:0;color:var(--blue);font-size:12px;padding:0;text-decoration:underline}
+.bid.did{opacity:.55}.bid .tt{display:flex;gap:8px;align-items:flex-start}.bid .tt a{flex:1;min-width:0}.seenbtn{flex:none;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid #c6d3de;background:#fff;color:var(--sub);white-space:nowrap}.seenbtn[aria-pressed="true"]{background:#e6f4ea;border-color:#9fd3b0;color:var(--good)}.bid.seen{opacity:.55}.bid.seen.shut>:not(.tt){display:none}.bid.seen.shut{padding:8px 0}.bid.seen.shut .tt a{-webkit-line-clamp:1}.openbtn{flex:none;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid #c6d3de;background:#fff;color:var(--sub);white-space:nowrap}.bid .links.five{grid-template-columns:repeat(5,1fr)}.bid .links.six{grid-template-columns:repeat(6,1fr);gap:4px}.bid .links.six .mini{padding-left:2px;padding-right:2px}.linkbtn{background:none;border:0;color:var(--blue);font-size:12px;padding:0;text-decoration:underline}
 .bidbar{position:fixed;left:0;right:0;bottom:0;z-index:8;display:flex;gap:8px;align-items:center;background:var(--navy);color:#fff;padding:10px max(12px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 10px) max(12px,env(safe-area-inset-left))}
 .bidbar .bbt{flex:1;min-width:0;display:flex;flex-direction:column}.bidbar b{font-size:22px}.bidbar span{font-size:11px;color:#a9c3d6}.bidbar small{font-size:11px;color:#a9c3d6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bidbar .mini{white-space:nowrap}
@@ -314,7 +314,7 @@ code{background:#eef2f6;padding:2px 5px;border-radius:5px;font-size:12px;word-br
 <div id="bidBar" class="bidbar" hidden></div>
 <script>
   // アプリの版（直したら上げる）。?r= 付きで開くと、iPhone や GitHub Pages に残った古いファイルを使わない
-  var APP_VERSION = "2026.11.26.5";
+  var APP_VERSION = "2026.11.26.6";
   var R = new URLSearchParams(location.search).get("r") || APP_VERSION;
   document.write('<script src="core.js?r=' + R + '"><\/script><script src="sync.js?r=' + R + '"><\/script><script src="shops.js?r=' + R + '"><\/script>');
 </script>
@@ -1432,6 +1432,7 @@ const LS_BIDF = "storeBidFilter", LS_BIDDONE = "storeBidDone", LS_BIDSORT = "sto
 // 確認済みにしたカードは予約済みと同じく薄くする（2026-11-26 オーナー「確認済みにしたら、薄くホワイトアウトしたい」）。
 // 押すと「共有_店舗」に「確認済み」の行を送り、翌朝 Mac が入札の記録と照らして、確認済みなのに入札しなかった物を「Mac_見送り」へ（入札しなかった意図を学ぶ）
 const LS_BIDSEEN = "storeBidSeen";
+const bidOpen = new Set();   // 確認済みのうち、いま開いているカード（開き直すと、またたたまれる）
 const SNIPE_URL = "https://tools.aucfan.com/v2/snipe/smpitem?via=spmenu";   // スマホ用の入札予約（URL を入れる画面。2026-11-22 オーナーが教えてくれた）
 let bidFilter = lsGet(LS_BIDF, "reserve"), bidSort = lsGet(LS_BIDSORT, "rank");
 function toast(msg) { const t = $("toast"); if (!t) return; t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2600); }
@@ -1456,9 +1457,11 @@ function bidCard(i, B, done, now, tag) {
   const maxHtml = `<div class="max${no ? " no" : ""}">${no ? yn(false) : sure ? yn(true) : ""}${!(mx > 0) ? ""
     : no ? `<strong>上限 ${yen(mx)}</strong><span class="s">${[tax, nowTx].filter(Boolean).join("・")}</span>`
     : `<strong>${yen(mx)}</strong><span class="s">まで入札${tax}${nowTx ? "・" + nowTx : ""}</span>`}</div>`;
-  const seen = !!lsGet(LS_BIDSEEN, {})[i.id];
-  return `<div class="bid${i.check && !(ck && ck.own) ? " tent" : ""}${did ? " did" : ""}${seen ? " seen" : ""}" data-card="${esc(i.id)}">
-    <div class="tt"><a href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a><button class="seenbtn" type="button" data-seen="${esc(i.id)}" aria-pressed="${seen}">${seen ? "✓ 確認済み" : "確認済み"}</button></div>${marks}
+  const seen = !!lsGet(LS_BIDSEEN, {})[i.id], shut = seen && !bidOpen.has(i.id);
+  // 確認済みのカードは1行にたたむ（2026-11-26 オーナー「確認済みは閉じれるようにしてほしい」）。［開く］で中身を出し、［閉じる］でまたたたむ
+  const ob = seen ? `<button class="openbtn" type="button" data-open="${esc(i.id)}">${shut ? "開く" : "閉じる"}</button>` : "";
+  return `<div class="bid${i.check && !(ck && ck.own) ? " tent" : ""}${did ? " did" : ""}${seen ? " seen" : ""}${shut ? " shut" : ""}" data-card="${esc(i.id)}">
+    <div class="tt"><a href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">${esc(i.title)}</a>${ob}<button class="seenbtn" type="button" data-seen="${esc(i.id)}" aria-pressed="${seen}">${seen ? "✓ 確認済み" : "確認済み"}</button></div>${marks}
     <div class="s">${e ? `${esc(dayLabel(e))} ${esc(hm)} 終了・<span class="${soon ? "hot" : ""}">${esc(leftText(e - now))}</span>・` : ""}${esc(at)}時点 ${yen(i.price)}・入札${i.bids ?? "-"}</div>
     ${maxHtml}
     <div class="links six"><a class="mini" href="${esc(toChrome(i.url))}" target="_blank" rel="noopener">ヤフオク</a><button class="mini" type="button" data-copy="${esc(i.url)}">URL</button>${L.sold ? `<a class="mini" href="${esc(L.sold)}" target="_blank" rel="noopener">Sold</a>` : "<span></span>"}${L.now ? `<a class="mini" href="${esc(L.now)}" target="_blank" rel="noopener">Now</a>` : "<span></span>"}
@@ -1552,10 +1555,13 @@ function ctxMax(name, c) {
 }
 $("result").addEventListener("click", (e) => { if (e.target.closest("[data-ctxsnipe]") && bidCtx) startSnipe(bidCtx, ctxMax($("name").value, lastLook && lastLook.calc)); });
 $("bidList").onclick = (e) => {
+  const ob = e.target.closest("[data-open]");
+  if (ob) { const id = ob.dataset.open; bidOpen.has(id) ? bidOpen.delete(id) : bidOpen.add(id); renderBids(); return; }
   const sb = e.target.closest("[data-seen]");
   if (sb) {
     const i = DATA.bids.items.find((x) => x.id === sb.dataset.seen); if (!i) return;
     const seen = lsGet(LS_BIDSEEN, {});
+    bidOpen.delete(i.id);
     if (seen[i.id]) { delete seen[i.id]; bidRecord({ id: i.id, title: i.title, end: i.end }, "確認済み取消"); }
     else { seen[i.id] = nowJst(); bidRecord({ id: i.id, title: i.title, end: i.end, mark: i.mark || "", maxBid: bidMax(i), price: i.price || "", usd: i.usd || "" }, "確認済み"); }
     lsSet(LS_BIDSEEN, seen); renderBids(); return;
