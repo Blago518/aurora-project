@@ -92,15 +92,41 @@ def have_permits(d: Path | None = None) -> set[str]:
     return out
 
 
+def _collect_fedex_zips(src: Path, dst: Path) -> int:
+    """ダウンロードの ZIP の中の FedEx の輸出許可通知書（<運送状番号>_RELS_<日付>.pdf）を、開かずに FedEx のフォルダへ取り出す. ZIP は消さない."""
+    import zipfile
+    n = 0
+    for z in (sorted(src.glob("*.zip")) if src.is_dir() else []):
+        try:
+            with zipfile.ZipFile(z) as zf:
+                for info in zf.infolist():
+                    name = Path(info.filename).name
+                    if info.is_dir() or not re.fullmatch(r"\d{12}_RELS_\d{8}\.pdf", name):
+                        continue
+                    to = dst / "FedEx" / name
+                    if to.exists():
+                        continue
+                    to.parent.mkdir(parents=True, exist_ok=True)
+                    to.write_bytes(zf.read(info))
+                    n += 1
+        except (zipfile.BadZipFile, OSError):
+            continue
+    return n
+
+
 def collect_from_downloads(src: Path | None = None, dst: Path | None = None) -> int:
     """ダウンロードフォルダ（と前の置き場所）の輸出許可通知書の PDF を、運送会社ごとのフォルダ（FedEx／DHL）に移す. 移した数を返す.
     同じ名前がもう移し先にあれば、ダウンロードの方を消す（もう移した物）."""
     import shutil
     src = src or Path.home() / "Downloads"
     dst = dst or permit_base()
-    n = 0
+    n = _collect_fedex_zips(src, dst)
     olds = [x for x in (dst, HAVE_DIR) if x.is_dir()]   # 分ける前に1つのフォルダへ置いた物も分ける
-    for p in [x for d in [src] + olds for x in (sorted(d.glob("*.pdf")) if d.is_dir() else [])]:
+    # FedEx はメールの ZIP で届き、開くとダウンロードの中にフォルダ（例: 「〜-RELS-2026…」）ができる（2026-11-26 オーナー「輸出許可証が届いたけど？」）。
+    # その1段下の「<運送状番号>_RELS_<日付>.pdf」も拾う（DHL の「10桁.pdf」は名前が広いので、フォルダの中からは拾わない）
+    nested = [x for sub in (sorted(y for y in src.iterdir() if y.is_dir()) if src.is_dir() else [])
+              for x in sorted(sub.glob("*_RELS_*.pdf"))]
+    for p in [x for d in [src] + olds for x in (sorted(d.glob("*.pdf")) if d.is_dir() else [])] + nested:
         car = carrier_of(p.name)
         if not car:
             continue

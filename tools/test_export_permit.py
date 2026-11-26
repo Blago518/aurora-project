@@ -98,6 +98,24 @@ class FillTemplate(unittest.TestCase):
                 self.assertEqual(ep.have_permits(dst), {"870000000001", "5800000001", "5800000002"})          # フォルダの中も数える
             self.assertEqual([ep.carrier_of(x) for x in ("870000000001_RELS_20260916.pdf", "5800000001.pdf", "請求書.pdf")], ["FedEx", "DHL", None])
 
+    def test_collect_fedex_zip_and_folder(self):
+        """FedEx はメールの ZIP で届く。ZIP のままでも、開いたフォルダの中でも拾う（2026-11-26 オーナー「輸出許可証が届いたけど？」）."""
+        import zipfile
+        with tempfile.TemporaryDirectory() as d:
+            src, dst = Path(d) / "dl", Path(d) / "have"
+            (src / "TANAKA-RELS-20260101000000000").mkdir(parents=True)
+            (src / "TANAKA-RELS-20260101000000000" / "870000000011_RELS_20261006.pdf").write_text("x")
+            (src / "TANAKA-RELS-20260101000000000" / "5800000009.pdf").write_text("x")      # フォルダの中の DHL 形は拾わない
+            with zipfile.ZipFile(src / "TANAKA-RELS-20260102000000000.zip", "w") as zf:
+                zf.writestr("TANAKA-RELS-20260102000000000/870000000012_RELS_20261007.pdf", "y")
+                zf.writestr("TANAKA-RELS-20260102000000000/870000000011_RELS_20261006.pdf", "x")
+                zf.writestr("memo.txt", "z")
+            self.assertEqual(ep.collect_from_downloads(src, dst), 2)
+            self.assertEqual(sorted(x.name for x in (dst / "FedEx").iterdir()), ["870000000011_RELS_20261006.pdf", "870000000012_RELS_20261007.pdf"])
+            self.assertFalse((dst / "DHL").exists())
+            self.assertTrue((src / "TANAKA-RELS-20260102000000000.zip").exists())                 # ZIP は消さない
+            self.assertEqual(ep.collect_from_downloads(src, dst), 0)                               # 2回目は何もしない
+
     def test_permit_base(self):
         """税理のフォルダの中に「輸出許可」を含むフォルダがちょうど1つあればそこ、決まらなければ data/export_permits."""
         with tempfile.TemporaryDirectory() as d:
