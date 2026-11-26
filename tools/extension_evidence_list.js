@@ -1,5 +1,5 @@
 // ヤフオクの仕入れ証跡をまとめて保存（2026-11-26 オーナー「俺がそのページを開いたら、取得するものをつくったりできないの？」）。
-// ヤフオクのページ（マイ・オークションの落札分の一覧 auctions.yahoo.co.jp/my/won など）に取引ナビへのリンクがあれば、まだ証跡の無い物を
+// 落札分の一覧（auctions.yahoo.co.jp/my/won だけ）に取引ナビへのリンクがあれば、まだ証跡の無い物を
 // 裏方（background.js）が1件ずつ前のタブで開き、取引ナビの evidence.js が画面を PNG で保存したらそのタブを閉じる。
 // 2026-11-26 落札分の一覧で［取引連絡］のある5件だけ保存して止まった。取引が終わった物は［評価］だけで取引ナビのリンクが無い。
 // → 同じページの取引ナビのリンク（出品者・落札者の引数付き）を型にして、行の中のリンクから出品者のIDを拾い、オークションIDと入れ替えて作る。
@@ -102,6 +102,7 @@ function planLinks(rows, pageHrefs) {
 
 (function () {
   if (typeof document === "undefined" || typeof chrome === "undefined" || !chrome.runtime) return;
+  if (!/^\/my\/won/.test(location.pathname)) return;   // 落札分の一覧のときだけ動く（検索・ストアの画面は動かさない）
   const sent = new Set();
   const tag = document.createElement("div");
   tag.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#14214a;color:#fff;padding:10px 14px;border-radius:8px;font:13px sans-serif;opacity:.95;max-width:360px;white-space:pre-line";

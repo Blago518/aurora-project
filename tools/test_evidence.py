@@ -214,6 +214,9 @@ class EvidenceList(unittest.TestCase):
     def test_built_into_extension(self):
         src = (HERE / "build_extension.py").read_text(encoding="utf-8")
         self.assertIn('"evidence_list.js"', src)
+        # 2026-11-26 検索・ストアの画面まで上下していた → 落札分の一覧だけで動く
+        self.assertIn('"matches": ["https://auctions.yahoo.co.jp/my/won*"]', src)
+        self.assertIn("/my\\/won/.test(location.pathname)", (HERE / "extension_evidence_list.js").read_text(encoding="utf-8"))
         self.assertIn("evidenceBatch", (HERE / "extension_background.js").read_text(encoding="utf-8"))
 
 
