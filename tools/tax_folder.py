@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import csv
+import re
 import io
 import shutil
 import sys
@@ -112,6 +113,52 @@ def move_file(p: Path, to: Path) -> bool:
     return True
 
 
+ID_RE = re.compile(r"(?<![a-z0-9])([a-z]\d{9,11})(?![a-z0-9])")
+
+
+def ledger_ids(paths: list[Path] | None = None) -> list[str]:
+    """古物台帳（data/ledger.csv・data/kanri.csv）の中のヤフオクのオークションID（小文字）. 台帳の下ほど新しいので新しい順に.
+    読み方は bid_results.load_won_ids と同じ（英字1字＋数字9〜11桁。…/auction/ID の URL の中も）."""
+    import unicodedata
+    root = Path(__file__).resolve().parent.parent
+    seen: list[str] = []
+    for p in paths if paths is not None else [root / "data" / "ledger.csv", root / "data" / "kanri.csv"]:
+        if not p.exists():
+            continue
+        text = unicodedata.normalize("NFKC", p.read_text(encoding="utf-8-sig", errors="ignore")).lower()
+        for m in ID_RE.finditer(text):
+            if m.group(1) in seen:
+                seen.remove(m.group(1))
+            seen.append(m.group(1))
+    return list(reversed(seen))
+
+
+def evidence_ids(downloads: Path, home: Path | None = None) -> set[str]:
+    """証跡の PNG がある ID. 名前の _ID（まとめて取引は _ID_ID…）を全部. ダウンロードと、デスクトップの「税理〜」の下（何階層でも）."""
+    desk = (home or Path.home()) / "Desktop"
+    dirs = [downloads / sub for sub in EVIDENCE_SUBS]
+    try:
+        dirs += sorted(p for p in desk.glob("税理*") if p.is_dir())
+    except OSError:
+        pass
+    out: set[str] = set()
+    for d in dirs:
+        try:
+            files = list(d.rglob("*.png")) if d.is_dir() else []
+        except OSError:
+            continue
+        for f in files:
+            out.update(m.group(1) for m in re.finditer(r"_([a-z]?\d{8,12})(?=_|$)", f.stem.lower()))
+    return out
+
+
+def missing_evidence(downloads: Path, home: Path | None = None, paths: list[Path] | None = None) -> dict:
+    """台帳の落札分のうち、証跡が無いID（新しい順）. {ids, have, missing}. 「全部そろったか」はここで数える（2026-11-26 オーナー「全て取得できているか確認しなさい」）."""
+    ids = ledger_ids(paths)
+    have = evidence_ids(downloads, home)
+    return {"ids": ids, "have": [i for i in ids if i in have], "missing": [i for i in ids if i not in have]}
+
+
 def move_evidence(downloads: Path, home: Path | None = None) -> dict:
     """ヤフオクの仕入れ証跡の PNG を税理のフォルダへ. {dest, why, moved, total, left}（dest が None＝動かさなかった。why に理由）."""
     root = tax_root(home)
@@ -150,6 +197,12 @@ def run(downloads: Path | None = None, home: Path | None = None, post=None, uplo
         rows.append([f"輸出許可書 {c}", str(pbase / c), pmoved if c == "FedEx" else "", count[c], "", pwhy])
     print(f"  ヤフオクの仕入れ証跡: {ev['dest'] or '動かしていない（' + ev['why'] + '）'}（今回 {ev['moved']}件・フォルダの中 {ev['total']}件・ダウンロードに残り {ev['left']}件）")
     print(f"  輸出許可書: {pbase}（FedEx {count['FedEx']}件・DHL {count['DHL']}件。今回 {pmoved}件）" + (f" ※税理のフォルダには入れていない（{pwhy}）" if pwhy else ""))
+    miss = missing_evidence(downloads, home)
+    print(f"  台帳の落札分 {len(miss['ids'])}件のうち、証跡あり {len(miss['have'])}件・無い {len(miss['missing'])}件")
+    for i in miss["missing"][:20]:
+        print(f"    証跡が無い: {i}  https://auctions.yahoo.co.jp/jp/auction/{i}")
+    rows.append(["台帳の落札分の証跡", f"台帳 {len(miss['ids'])}件", "", len(miss["have"]), "", f"無い {len(miss['missing'])}件"])
+    rows.extend([["証跡が無いID（新しい順）", i, "", "", "", f"https://auctions.yahoo.co.jp/jp/auction/{i}"] for i in miss["missing"][:300]])
     rows.append(["確かめた日時", datetime.now().strftime("%Y-%m-%d %H:%M"), "", "", "", ""])
     if root is not None:
         rows.append(["税理のフォルダの並び（フォルダ名だけ。台帳にだけ送る）", root.name, "", "", "", ""])
@@ -163,9 +216,31 @@ def run(downloads: Path | None = None, home: Path | None = None, post=None, uplo
                 print(f"  → 古物台帳「{STATUS_SHEET}」に送りました")
         except Exception as e:  # noqa: BLE001  送れなくても振り分けは済んでいる
             print(f"  ⚠ 振り分けの結果を台帳に送れませんでした（{e}）")
-    return {"root": root, "evidence": ev, "permit_base": pbase, "permit_moved": pmoved, "rows": rows}
+    return {"root": root, "evidence": ev, "permit_base": pbase, "permit_moved": pmoved, "rows": rows, "missing": miss}
+
+
+def open_won_and_wait(downloads: Path, limit_sec: int = 900, quiet_sec: int = 90) -> int:
+    """Chrome で落札分の一覧を開き（拡張機能が取引ナビを順に開いて保存する）、証跡の PNG が増えなくなるまで待つ. 増えた枚数を返す."""
+    import subprocess
+    import time
+    count = lambda: sum(len(list((downloads / sub).glob("*.png"))) for sub in EVIDENCE_SUBS if (downloads / sub).is_dir())  # noqa: E731
+    start = n0 = count()
+    subprocess.run(["open", "-a", "Google Chrome", "https://auctions.yahoo.co.jp/my/won"], check=False)
+    t0 = last = time.time()
+    print("  落札分の一覧を Chrome で開きました。保存が止まるまで待ちます（最長15分）…")
+    while time.time() - t0 < limit_sec:
+        time.sleep(10)
+        n = count()
+        if n != n0:
+            n0, last = n, time.time()
+            print(f"    保存 {n - start}枚")
+        elif time.time() - last > quiet_sec:
+            break
+    return n0 - start
 
 
 if __name__ == "__main__":
+    if "--won" in sys.argv:   # 落札分の一覧を開いて保存が止まるまで待ってから、振り分けと「証跡が無いID」の数え
+        open_won_and_wait(Path.home() / "Downloads")
     run()
     sys.exit(0)

@@ -215,3 +215,22 @@ class EvidenceList(unittest.TestCase):
         src = (HERE / "build_extension.py").read_text(encoding="utf-8")
         self.assertIn('"evidence_list.js"', src)
         self.assertIn("evidenceBatch", (HERE / "extension_background.js").read_text(encoding="utf-8"))
+
+
+class MissingEvidence(unittest.TestCase):
+    """台帳の落札分のうち証跡が無いID（tax_folder.missing_evidence）. まとめて取引の名前（_ID_ID）も数える."""
+
+    def test_missing(self):
+        import tax_folder
+        with tempfile.TemporaryDirectory() as d:
+            home, dl = Path(d), Path(d) / "Downloads"
+            (dl / "ヤフオク仕入証跡").mkdir(parents=True)
+            sub = home / "Desktop" / "税理A" / "8. 仕入" / "ヤフオク"
+            sub.mkdir(parents=True)
+            led = home / "ledger.csv"
+            led.write_text("No,URL\n1,https://auctions.yahoo.co.jp/jp/auction/m1000000001\n2,x1000000002\n3,p1000000003\n4,k1000000004\n", encoding="utf-8")
+            (dl / "ヤフオク仕入証跡" / "20260901_カメラ店A_6000_m1000000001.png").write_bytes(b"png")
+            (sub / "20260816_まとめて取引_2350_x1000000002_p1000000003.png").write_bytes(b"png")
+            r = tax_folder.missing_evidence(dl, home, [led])
+            self.assertEqual(r["ids"], ["k1000000004", "p1000000003", "x1000000002", "m1000000001"])
+            self.assertEqual(r["missing"], ["k1000000004"])
