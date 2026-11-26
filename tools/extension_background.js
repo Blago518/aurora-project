@@ -105,6 +105,40 @@ function quietDownload(opts) {
   }), (e) => { ui(true); throw e; });
 }
 
+// 仕入れ証跡をまとめて保存する順番待ち（1件ずつ前のタブで開く。写すのは見えている画面だけなので前に出す）
+const evQueue = [];
+let evBusy = false, evWait = null, evStat = { saved: 0, failed: [], total: 0, n: 0, from: null };
+function evDone(tabId, ok) {
+  if (evWait && evWait.tabId === tabId) { const w = evWait; evWait = null; w.resolve(ok); }
+}
+function evTell(extra) {
+  if (evStat.from != null) chrome.tabs.sendMessage(evStat.from, Object.assign({ type: "evidenceProgress" }, evStat, extra), () => void chrome.runtime.lastError);
+}
+async function evRun() {
+  if (evBusy) { evStat.total = evStat.n + evQueue.length; return; }
+  evBusy = true;
+  evStat = { saved: 0, failed: [], total: evQueue.length, n: 0, from: evQueue.length ? evQueue[0].from : null };
+  while (evQueue.length) {
+    const item = evQueue.shift();
+    evStat.n += 1;
+    evTell({ done: false });
+    let tab = null, ok = false;
+    try {
+      tab = await chrome.tabs.create({ url: item.url, active: true });
+      ok = await new Promise((resolve) => {
+        evWait = { tabId: tab.id, resolve };
+        setTimeout(() => evDone(tab.id, false), 25000);   // 25秒で保存されなければ、できなかったとして次へ
+      });
+    } catch (e) { ok = false; }
+    if (ok) evStat.saved += 1; else evStat.failed.push(item.id);
+    if (tab && ok) { try { await chrome.tabs.remove(tab.id); } catch (e) { /* 閉じられていても続ける */ } }   // 保存できなかったタブは残す（理由を見られるように）
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (evStat.from != null) { try { await chrome.tabs.update(evStat.from, { active: true }); } catch (e) { /* 一覧のタブが閉じられていても */ } }
+  evTell({ done: true });
+  evBusy = false;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   // 相場データ: フォルダの data.json を毎回読む（Mac が作り直した最新。拡張機能の ↻ は不要）
   if (msg && msg.type === "getData") {
@@ -138,18 +172,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
       .then(() => send({ ok: true }), (e) => send({ error: String((e && e.message) || e) }));
     return true;
   }
+  // 仕入れ証跡をまとめて: ヤフオクのページにあった取引ナビのリンクを、まだ証跡の無い物だけ1件ずつ開く（extension_evidence_list.js）
+  if (msg && msg.type === "evidenceBatch" && Array.isArray(msg.links) && _sender && _sender.tab) {
+    const links = msg.links.filter((l) => l && /^[a-z]?\d{8,12}$/i.test(l.id || "") && /^https:\/\/contact\.auctions\.yahoo\.co\.jp\//.test(l.url || ""));
+    chrome.storage.local.get(links.map((l) => "evidence_" + l.id)).then((r) => {
+      const todo = links.filter((l) => !r["evidence_" + l.id] && !evQueue.some((q) => q.id === l.id));
+      todo.forEach((l) => evQueue.push(Object.assign({ from: _sender.tab.id }, l)));
+      send({ queued: todo.length, already: links.length - todo.length });
+      evRun();
+    });
+    return true;
+  }
   // ヤフオクの仕入れ証跡: 取引ナビの見えている画面を PNG で ダウンロード/ヤフオク仕入証跡/ に保存（同じオークションIDは1回だけ。extension_evidence.js）
   if (msg && msg.type === "evidenceShot" && /^[a-z]?\d{8,12}$/i.test(msg.id || "") && _sender && _sender.tab) {
     const key = "evidence_" + msg.id;
     chrome.storage.local.get(key).then((r) => {
-      if (r[key]) return send({ already: true });
+      if (r[key]) { evDone(_sender.tab.id, true); return send({ already: true }); }
       return chrome.tabs.captureVisibleTab(_sender.tab.windowId, { format: "png" })
         .then((url) => quietDownload({ url, filename: "ヤフオク仕入証跡/" + String(msg.name).slice(0, 120) + ".png", conflictAction: "uniquify", saveAs: false })
           // 日本語の名前を受け付けない環境だけ、英数字の名前（終了日_金額_オークションID）で保存する
           .catch(() => quietDownload({ url, filename: "yahoo_evidence/" + String(msg.name).replace(/[^\w.-]+/g, "_").replace(/_+/g, "_") + ".png", conflictAction: "uniquify", saveAs: false })))
         .then(() => chrome.storage.local.set({ [key]: Date.now() }))
-        .then(() => send({ saved: true }));
-    }).catch((e) => send({ error: String((e && e.message) || e) }));
+        .then(() => { evDone(_sender.tab.id, true); send({ saved: true }); });
+    }).catch((e) => { evDone(_sender.tab.id, false); send({ error: String((e && e.message) || e) }); });
     return true;
   }
   if (msg && msg.type === "saveMemo") {
