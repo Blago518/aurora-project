@@ -641,10 +641,84 @@ def _group(rows: list[dict], key, top: int | None = None) -> list[dict]:
     return out
 
 
+# ---- 仕入れの成績（2026-11-26 オーナー「どの出品者からどの商品をどの状態までなら、利益がでる仕入れができるか、
+#      ここをデータベースに蓄積していきたい」）.
+#      1件ずつの行（Mac_仕入れ成績）と、出品者ごとのまとめ（Mac_仕入れ成績_出品者）. 判定・上限額には使わない。
+#      1件の利益の目安の額は公開リポジトリに書かない: data/targets.toml の [item] profit_jpy か、古物台帳「共有_目標」→ data/item_target.txt（無ければ空欄）
+PURCHASE_FIELDS = ["販売日", "No.", "出品者", "機種", "状態", "状態欄", "仕入(円)", "売値($)", "利益(円)", "目安以上", "日数", "商品名"]
+SELLER_FIELDS = ["出品者", "売れた件数", "目安以上の件数", "目安以上の割合(%)", "利益の合計(円)", "1件の平均(円)",
+                 "赤字の件数", "在庫の件数", "在庫の仕入(円)", "状態（売れた物）"]
+
+
+def read_item_target(path: Path) -> float | None:
+    """1件の利益の目安（data/targets.toml の [item] profit_jpy、無ければ data/item_target.txt＝古物台帳「共有_目標」から）. 無ければ None."""
+    if not path.exists() or "[item]" not in path.read_text(encoding="utf-8"):
+        txt = path.parent / "item_target.txt"
+        return _num(txt.read_text(encoding="utf-8").strip()) if txt.exists() else None
+    try:
+        import tomllib
+        d = tomllib.loads(path.read_text(encoding="utf-8"))
+    except ImportError:
+        d = appraise._parse_simple_toml(path.read_text(encoding="utf-8"))
+    return _num((d.get("item") or {}).get("profit_jpy"))
+
+
+def purchase_rows(sold: list[dict], kanri: dict | None = None, target: float | None = None) -> list[dict]:
+    """売れた1件ずつ: 出品者・機種・状態・仕入・売値・利益. 利益の大きい順."""
+    kanri = kanri or {}
+    out = []
+    for r in sold:
+        k = kanri.get(norm_sku(r["sku"])) if r.get("sku") else None
+        prof = round(r["p"]["profit"]) if r["p"]["has_cost"] else None
+        out.append({
+            "販売日": r["sold"].strftime("%Y/%m/%d") if r.get("sold") else "", "No.": r.get("sku") or "",
+            "出品者": (k or {}).get("supplier") or r.get("supplier") or "（空欄）",
+            "機種": appraise.model_key(r["title"])[0] if r.get("title") else "",
+            "状態": (k or {}).get("cond") or "", "状態欄": (k or {}).get("raw") or "",
+            "仕入(円)": round(r["cost_jpy"]) if r.get("cost_jpy") is not None else "",
+            "売値($)": round(r["price_usd"], 2), "利益(円)": "" if prof is None else prof,
+            "目安以上": "" if prof is None or not target else ("○" if prof >= target else ""),
+            "日数": (r["sold"] - r["buy"]).days if r.get("buy") and r.get("sold") and r["sold"] >= r["buy"] else "",
+            "商品名": r.get("title") or "",
+        })
+    out.sort(key=lambda x: -(x["利益(円)"] if x["利益(円)"] != "" else -10 ** 9))
+    return out
+
+
+def seller_rows(rows: list[dict], stock: list[dict], kanri: dict | None = None) -> list[dict]:
+    """出品者ごと: 売れた件数・目安以上の割合・平均利益・赤字・在庫. 目安以上の件数 → 利益の合計の多い順."""
+    kanri = kanri or {}
+    g: dict[str, dict] = {}
+
+    def get(name):
+        return g.setdefault(name, {"n": 0, "hit": 0, "sum": 0, "loss": 0, "stock": 0, "stock_cost": 0, "conds": Counter()})
+    for r in rows:
+        if r["利益(円)"] == "":
+            continue
+        s = get(r["出品者"])
+        s["n"] += 1; s["sum"] += r["利益(円)"]
+        s["hit"] += r["目安以上"] == "○"
+        s["loss"] += r["利益(円)"] < 0
+        if r["状態"]:
+            s["conds"][r["状態"]] += 1
+    for r in stock:
+        k = kanri.get(norm_sku(r["sku"])) if r.get("sku") else None
+        s = get((k or {}).get("supplier") or r.get("supplier") or "（空欄）")
+        s["stock"] += 1; s["stock_cost"] += r.get("cost_jpy") or 0
+    out = [{"出品者": name, "売れた件数": s["n"], "目安以上の件数": s["hit"],
+            "目安以上の割合(%)": round(s["hit"] / s["n"] * 100) if s["n"] else "",
+            "利益の合計(円)": s["sum"], "1件の平均(円)": round(s["sum"] / s["n"]) if s["n"] else "",
+            "赤字の件数": s["loss"], "在庫の件数": s["stock"], "在庫の仕入(円)": round(s["stock_cost"]),
+            "状態（売れた物）": "・".join(f"{c}{n}" for c, n in s["conds"].most_common())}
+           for name, s in g.items()]
+    out.sort(key=lambda x: (-x["目安以上の件数"], -(x["利益の合計(円)"] or 0)))
+    return out
+
+
 def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], listings_date: str,
           targets: dict, cfg: dict, fx: float, today: date, kanri: dict | None = None,
           ebay: dict | None = None, item_types: dict | None = None, junk: list | None = None,
-          monthly_costs: dict | None = None, api: dict | None = None) -> dict:
+          monthly_costs: dict | None = None, api: dict | None = None, item_target: float | None = None) -> dict:
     j = cfg["judge"]
     ebay = ebay or {}
     per = ebay.get("per", {})
@@ -807,6 +881,8 @@ def build(ledger: list[dict], cols: dict, costs: dict, listings: list[dict], lis
                         "clean_avg": avg(clean), "clean_margin": mg(clean)}
     else:
         d["sold_conditions"] = d["stock_conditions"] = d["optical"] = None
+    d["purchase_rows"] = purchase_rows(sold, kanri, item_target)
+    d["seller_rows"] = seller_rows(d["purchase_rows"], stock, kanri)
 
     # 実際の手取り（ebay売上）と推定の比較・返金・注文に結び付かない費用
     act = [r for r in sold if r["ebay"]]
@@ -973,8 +1049,14 @@ def main(argv=None) -> int:
                    "fin": fin, "name": "ebay売上シート（eBay の取引レポート）の注文"}
     data = build(ledger, cols, read_costs(args.costs), listings, ldate, read_targets(args.targets), cfg, fx, date.today(),
                  kanri, read_ebay_sales(args.ebay_sales), read_item_types(args.item_types),
-                 read_junk(args.junk), read_monthly_costs(args.monthly_costs), api)
+                 read_junk(args.junk), read_monthly_costs(args.monthly_costs), api, read_item_target(args.targets))
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    # 仕入れの成績は別の CSV に（グラフの JSON には入れない。update_all が台帳「Mac_仕入れ成績」「Mac_仕入れ成績_出品者」へ送る）
+    for key, name, fields in (("purchase_rows", "purchase_db.csv", PURCHASE_FIELDS), ("seller_rows", "purchase_sellers.csv", SELLER_FIELDS)):
+        with open(args.out.parent / name, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            w.writerows(data.pop(key, []) or [])
     args.out.write_text(render(data), encoding="utf-8")
     # 同じ中身を JSON でも置く（ledger_sync.upload_dashboard が台帳へ送り、Artifacts のグラフが開くたびに読む）
     (args.out.parent / "dashboard_data.json").write_text(json.dumps(data, ensure_ascii=False, default=str), encoding="utf-8")

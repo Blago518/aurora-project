@@ -137,6 +137,48 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(d["stock_conditions"], [{"label": "Near MINT", "count": 1}])
         self.assertEqual((d["optical"]["n"], d["optical"]["clean_n"]), (1, 2))
 
+    def test_purchase_db(self):
+        """仕入れの成績（2026-11-26 オーナー「どの出品者からどの商品をどの状態までなら、利益がでる仕入れができるか」）."""
+        d = self.data()
+        rows = d["purchase_rows"]
+        self.assertEqual(len(rows), 4)
+        self.assertEqual([r["利益(円)"] for r in rows], sorted((r["利益(円)"] for r in rows), reverse=True))  # 利益の大きい順
+        a1 = next(r for r in rows if r["No."] == "A001")
+        self.assertEqual((a1["出品者"], a1["状態"], a1["仕入(円)"]), ("acc1", "MINT", 8000))
+        self.assertEqual(a1["目安以上"], "")                    # 目安の額が無ければ空欄
+        ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
+        d2 = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14), item_target=1)
+        self.assertTrue(all(r["目安以上"] == ("○" if r["利益(円)"] >= 1 else "") for r in d2["purchase_rows"]))
+        (self.tmp / "t.toml").write_text("[item]\nprofit_jpy = 1234\n", encoding="utf-8")
+        self.assertEqual(bd.read_item_target(self.tmp / "t.toml"), 1234)
+        self.assertIsNone(bd.read_item_target(self.tmp / "none.toml"))
+        (self.tmp / "item_target.txt").write_text("4321", encoding="utf-8")
+        self.assertEqual(bd.read_item_target(self.tmp / "none.toml"), 4321)
+        sellers = {s["出品者"]: s for s in d["seller_rows"]}
+        self.assertEqual(sellers["acc1"]["売れた件数"], 2)
+        self.assertEqual(sellers["acc3"]["在庫の件数"], 1)     # 売れていない A005
+        self.assertEqual(set(sellers), {"acc1", "acc2", "acc3", "SPM JAPAN 合同会社"})
+        self.assertEqual(list(rows[0]), bd.PURCHASE_FIELDS)
+        self.assertEqual(list(d["seller_rows"][0]), bd.SELLER_FIELDS)
+
+    def test_purchase_db_upload(self):
+        import ledger_sync
+        from unittest import mock
+        (self.tmp / "purchase_db.csv").write_text("a\n1\n", encoding="utf-8-sig")
+        (self.tmp / "purchase_sellers.csv").write_text("b\n2\n", encoding="utf-8-sig")
+        got = []
+        with mock.patch.object(ledger_sync, "post_sheet", lambda sh, b, post=None: got.append(sh) or True):
+            self.assertEqual(ledger_sync.upload_purchase_db(self.tmp), 2)
+        self.assertEqual(got, ["Mac_仕入れ成績", "Mac_仕入れ成績_出品者"])
+
+    def test_item_target_sync(self):
+        import ledger_sync
+        from unittest import mock
+        with mock.patch.object(ledger_sync, "fetch", lambda u, k, sh=None: "項目,値\n1件の利益の目安(円),\"2,500\"\n"), \
+                mock.patch.object(ledger_sync, "DATA", self.tmp):
+            self.assertEqual(ledger_sync.sync_item_target("u", "k"), 2500)
+        self.assertEqual(bd.read_item_target(self.tmp / "none.toml"), 2500)
+
     def test_no_kanri(self):
         ledger, cols = bd.read_ledger(self.tmp / "ledger.csv")
         d = bd.build(ledger, cols, {}, [], "", {}, self.cfg, 150.0, date(2026, 11, 14))

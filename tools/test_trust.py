@@ -926,3 +926,39 @@ class LightMold(unittest.TestCase):
         js = ("console.log(JSON.stringify(" + json.dumps(list(self.CASES), ensure_ascii=False) +
               ".map(t=>{const it={title:t,flags:m.detectFlags(t),calc:{maxBid:100000,bidNow:1000},price:1000};const r=m.judge(it);return r[0]!=='×'&&/軽いカビ/.test(r[1])&&it.lightMold===true;})))")
         self.assertEqual(run_js(data, js), list(self.CASES.values()))
+
+
+class History(unittest.TestCase):
+    """仕入れの実績（2026-11-26 オーナー「どの出品者からどの商品をどの状態までなら、利益がでる仕入れができるか」→「実績を表示」）."""
+    CSV = ("販売日,No.,出品者,機種,状態,状態欄,仕入(円),売値($),利益(円),目安以上,日数,商品名\n"
+           "2026/10/01,A1,カメラ店A ヤフオク!店,,MINT,,30000,300,12000,○,20,Nikon Ai 35mm F1.4\n"
+           "2026/10/02,A2,カメラ店A ヤフオク!店,,Near MINT,,8000,80,-500,,30,Canon FD 50mm F1.4\n"
+           "2026/10/03,A3,kur********,,MINT,,5000,90,1500,,10,Nikon Ai 35mm F1.4\n")
+
+    def hist(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "purchase_db.csv"
+            p.write_text(self.CSV, encoding="utf-8")
+            return ba.load_history(p, target=5000)
+
+    def test_python(self):
+        h = self.hist()
+        note = ba.history_note(h, "カメラ店A ヤフオク!店", "ニコン Nikon Ai 35mm F1.4 単焦点")
+        self.assertIn("この出品者: 売れた2件", note)
+        self.assertIn("この機種: 売れた2件", note)
+        self.assertIn("平均5,750円", note)      # この出品者の平均 (12000-500)/2
+        self.assertEqual(ba.history_note(h, "知らない店", "Pentax MX"), "")
+        self.assertIn("この出品者", ba.history_note(h, "カメラ店A ヤフオク！店 さん", "x"))   # 全角・さん付き
+
+    def test_js_same(self):
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        h = self.hist()
+        cases = [("カメラ店A ヤフオク!店", "ニコン Nikon Ai 35mm F1.4 単焦点"), ("知らない店", "Pentax MX"),
+                 ("カメラ店A ヤフオク！店 さん", "x"), ("", "Canon FD 50mm F1.4")]
+        data = bx.build_data(CFG, 150.0)
+        data["refs"], data["kantei"] = [], []
+        js = ("const h=" + json.dumps(h, ensure_ascii=False) + ";console.log(JSON.stringify(" +
+              json.dumps(cases, ensure_ascii=False) + ".map(c=>m.historyNote(h,c[0],c[1]))))")
+        self.assertEqual(run_js(data, js), [ba.history_note(h, a, b) for a, b in cases])

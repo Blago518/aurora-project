@@ -364,6 +364,7 @@ def dashboard() -> None:
         try:
             import ledger_sync
             ledger_sync.upload_dashboard()  # → 古物台帳「Mac_グラフ」→ Artifacts のグラフが開くたびに読む
+            ledger_sync.upload_purchase_db()  # → 古物台帳「Mac_仕入れ成績」「Mac_仕入れ成績_出品者」（出品者×機種×状態の利益）
             ledger_sync.upload_transactions()  # → 古物台帳「Mac_取引」→ 管理の月次サマリー（売上・件数・返金）が毎朝最新に
             ledger_sync.upload_returns()  # → 古物台帳「Mac_返品」→ ゴース・フシギダネが返品の理由を分析（購入者の情報は送らない）
         except Exception as e:  # noqa: BLE001  送れなくても他の更新は続ける
