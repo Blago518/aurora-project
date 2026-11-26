@@ -150,6 +150,25 @@ class EvidenceList(unittest.TestCase):
                                         capture_output=True, text=True, check=True).stdout)
         self.assertEqual(out, ["m1000000001", "v1000000003"])
 
+    def test_plan_makes_links_for_finished_rows(self):
+        """［評価］だけの行（取引が終わった物）は、同じページの取引ナビのリンクを型に、出品者のIDを入れ替えて作る."""
+        if not shutil.which("node"):
+            self.skipTest("node がありません")
+        src = (HERE / "extension_evidence_list.js").read_text(encoding="utf-8")
+        body = src[src.index("// @evlist-start"):src.index("// @evlist-end")]
+        navi = "https://contact.auctions.yahoo.co.jp/buyer/top?aid=m1000000001&syid=storeA&bid=buyerB"
+        rows = [{"id": "m1000000001", "hrefs": [navi]},
+                {"id": "j1000000002", "hrefs": ["https://auctions.yahoo.co.jp/jp/auction/j1000000002",
+                                                "https://auctions.yahoo.co.jp/seller/storeC"]},
+                {"id": "k1000000003", "hrefs": ["https://feedback.auctions.yahoo.co.jp/rating/edit?aID=k1000000003&targetID=storeD"]},
+                {"id": "s1000000004", "hrefs": ["https://auctions.yahoo.co.jp/jp/auction/s1000000004"]}]
+        js = body + "\nconsole.log(JSON.stringify(planLinks(%s, [%s])));" % (json.dumps(rows), json.dumps(navi))
+        plan = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual([l["id"] for l in plan["links"]], ["m1000000001", "j1000000002", "k1000000003"])
+        self.assertEqual(plan["links"][1]["url"], "https://contact.auctions.yahoo.co.jp/buyer/top?aid=j1000000002&syid=storeC&bid=buyerB")
+        self.assertIn("syid=storeD", plan["links"][2]["url"])
+        self.assertEqual((plan["direct"], plan["made"], plan["noSeller"]), (1, 2, 1))
+
     def test_built_into_extension(self):
         src = (HERE / "build_extension.py").read_text(encoding="utf-8")
         self.assertIn('"evidence_list.js"', src)
