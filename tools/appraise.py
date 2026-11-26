@@ -136,6 +136,7 @@ class Item:
     set_parts: list = field(default_factory=list)  # まとめ売りの中身 [(中身, 相場$送料込み)]（2点以上のときだけ）
     seller_id: str = ""      # 出品者（検索結果の seller.userId。ストアのページ /seller/<これ>）
     seller_name: str = ""    # 出品者の表示名（注意を出す出品者の照合に使う。config.toml [caution]）
+    seller_good: float | None = None   # 出品者の良い評価の割合（%。検索結果の seller.goodRating。「どちらでもない」は入らない）
     trusted: bool = False    # 安心ストア（フォロー中）→ 安心枠の基準で判定
     desc_hits: list = field(default_factory=list)  # 説明文に書かれていた難（カビ・クモリなど）
     meter_ok: bool = False  # 説明文に露出計の不良（狙い目。2026-11-23）
@@ -349,6 +350,7 @@ def parse_listing_page_full(page: str) -> tuple[list[Item], int | None, int]:
             memo="ストア" if (x.get("seller") or {}).get("isStore") else "",
             seller_id=str((x.get("seller") or {}).get("userId") or ""),
             seller_name=str((x.get("seller") or {}).get("displayName") or ""),
+            seller_good=good_rating((x.get("seller") or {}).get("goodRating")),
         ))
     return items, total, len(listing["items"])
 
@@ -2455,11 +2457,24 @@ def history_note(hist: dict | None, seller_name: str, title: str) -> str:
     return "／".join(parts)
 
 
-def caution_note(seller_name: str, cfg: dict | None = None) -> str:
-    """注意を出す出品者（config.toml [caution]）なら注意の文、それ以外は空. 判定・上限額・並びには使わない."""
+def good_rating(v) -> float | None:
+    """「98.0%」→ 98.0。読めなければ None."""
+    m = re.search(r"\d+(?:\.\d+)?", str(v or ""))
+    return float(m.group(0)) if m else None
+
+
+def caution_note(seller_name: str, cfg: dict | None = None, good: float | None = None) -> str:
+    """注意を出す出品者（config.toml [caution]）なら注意の文、それ以外は空. 判定・上限額・並びには使わない.
+    良い評価の割合が min_good_rating 未満なら「良い評価 98.0%」も付ける（2026-11-26 オーナーが選択式で「良い評価の割合で印を出す」）."""
     c = (cfg or _base_cfg()).get("caution") or {}
     name = str(seller_name or "")
-    return str(c.get("note", "")) if name and any(w and w in name for w in c.get("sellers", [])) else ""
+    out = []
+    if name and any(w and w in name for w in c.get("sellers", [])):
+        out.append(str(c.get("note", "")))
+    low = c.get("min_good_rating")
+    if good is not None and low is not None and good < float(low):
+        out.append(f"良い評価 {good:.1f}%（{float(low):g}% 未満）")
+    return "／".join(x for x in out if x)
 
 
 def rows_for_output(items: list[Item]) -> list[dict]:
@@ -2491,7 +2506,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "理由": reason,
                 "タイトル": it.title,
                 "ヤフオクURL": it.url,
-                "出品者の注意": caution_note(it.seller_name),
+                "出品者の注意": caution_note(it.seller_name, good=it.seller_good),
                 "出品者": it.seller_name,
                 "現在価格": it.current_price_jpy,
                 "即決価格": it.buy_now_jpy,

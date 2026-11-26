@@ -877,6 +877,7 @@
       bids: x.bidCount ?? 0, end: x.endTime || "", ship: x.isFreeShipping ? 0 : (x.currentPriceShippingFee ?? null),
       watch: x.watchCount ?? 0, store: !!(x.seller && x.seller.isStore), tax: x.taxFlag === 1,
       sellerId: String((x.seller && x.seller.userId) || ""), sellerName: String((x.seller && x.seller.displayName) || ""),
+      sellerGood: goodRating(x.seller && x.seller.goodRating),
     }));
   }
 
@@ -1079,9 +1080,14 @@ font:14px/1.4 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;box-sh
     const t = historyNote(DATA.history, i.sellerName, i.title);
     return t ? `<div class="s phist">実績 ${esc(t)}</div>` : "";
   }
+  // 良い評価の割合（検索結果の seller.goodRating）が min_good_rating 未満なら注意（appraise.caution_note と同じ。2026-11-26 オーナー「良い評価の割合で印を出す」）
+  function goodRating(v) { const m = String(v ?? "").match(/\d+(?:\.\d+)?/); return m ? Number(m[0]) : null; }
   function cautionLine(i) {
-    const c = DATA.caution || {}, name = String(i.sellerName || "");
-    return name && (c.sellers || []).some((w) => w && name.includes(w)) ? `<div class="s x" title="${esc(name)}">⚠ ${esc(c.note || "注意する出品者")}</div>` : "";
+    const c = DATA.caution || {}, name = String(i.sellerName || ""), out = [];
+    if (name && (c.sellers || []).some((w) => w && name.includes(w))) out.push(c.note || "注意する出品者");
+    const g = i.sellerGood, low = c.minGood;
+    if (g != null && low != null && g < low) out.push(`良い評価 ${g.toFixed(1)}%（${low}% 未満）`);
+    return out.length ? `<div class="s x" title="${esc(name)}">⚠ ${esc(out.join("／"))}</div>` : "";
   }
   function yahooLine(key) {
     const y = key && (DATA.yahooStats || {})[key];
@@ -1505,7 +1511,7 @@ ${canBrowse() ? `<td class="n" data-browse="${esc(g.label)}">${browseCell(g.labe
 
   // Node でのテスト用
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { meterOk, cautionLine, historyNote, normSeller, junkSellerKind, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, queryForTitle, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
+    module.exports = { meterOk, cautionLine, goodRating, historyNote, normSeller, junkSellerKind, robotsSafeUrl, winOf, winText, isLowWin, trendOf, suggestUsd, sweetSpot, bidPrio, isFNumber, modelWord, setPartTitles, titleToQuery, tokensOf, detectFlags, matchRefs, matchKantei, calculate, judge, evaluate, parseItems, modelKey, roundDown, descHits, ebaySearchQuery, siblingExcludes, modelQuery, cleanQuery, queryForTitle, variantsConflict, conditionOf, matchPreferMemo, isMemo, shipFee, winOdds, yahooLine, watchAdd, watchCsv };
     return;
   }
 
