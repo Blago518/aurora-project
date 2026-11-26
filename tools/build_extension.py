@@ -78,6 +78,8 @@ def build_data(cfg: dict, fx: float) -> dict:
         "winStats": _win_stats(),
         # 自動入札の練習（data/practice.csv。いちばん新しい日の3品）。鑑定画面の一番上に出すだけで、判定・並びには使わない
         "practice": practice_items(),
+        # 仕入れの実績（reports/purchase_db.csv の出品者ごと・機種ごと。2026-11-26 オーナーが選択式で「実績を表示」。表示だけ）
+        "history": ba.load_history(target=ba.item_target()),
         # ヤフオクの落札相場（data/yahoo_results.csv。機種ごとの直近の落札額。表示だけで判定・上限額には使わない）
         "yahooStats": _yahoo_stats(cfg),
         # 勝ちやすさ（data/win_score.csv。機種の比較用キーごと {rate, n}）。1割未満の機種は入札候補の下に回す（判定・上限額には使わない）

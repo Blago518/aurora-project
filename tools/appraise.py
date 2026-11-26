@@ -2264,6 +2264,81 @@ def _usd(v) -> str:
     return "-" if v is None else f"${v:,.2f}"
 
 
+# ---- 仕入れの実績（2026-11-26 オーナー「どの出品者からどの商品をどの状態までなら、利益がでる仕入れができるか、
+#      データベースに蓄積していきたい」→ 選択式で「実績を表示」）. build_dashboard が作る reports/purchase_db.csv
+#      （売れた1件ずつ: 出品者・商品名・状態・利益・目安以上）から、出品者ごと・機種ごとの実績を入札の画面に出す。
+#      表示だけで、判定・上限入札額・並びには使わない. 拡張機能の normSeller・historyLine と同じ（テストは test_trust.History）
+def norm_seller(name: str) -> str:
+    t = re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(name or "")).lower())
+    return re.sub(r"(さん|様)$", "", t)
+
+
+def item_target() -> float | None:
+    """1件の利益の目安（額は公開リポジトリに置かない。古物台帳「共有_目標」→ data/item_target.txt）."""
+    p = DATA / "item_target.txt"
+    try:
+        return float(p.read_text(encoding="utf-8").strip()) if p.exists() else None
+    except ValueError:
+        return None
+
+
+def load_history(path: Path | None = None, target: float | None = None) -> dict:
+    """{"sellers": {正規化した出品者: 実績}, "models": {機種キー: 実績}, "target": 目安の額}. 実績は {n, hit, sum, best}."""
+    path = path or ROOT / "reports" / "purchase_db.csv"
+    out: dict = {"sellers": {}, "models": {}, "target": target}
+    if not path.exists():
+        return out
+    for r in csv.DictReader(path.read_text(encoding="utf-8-sig").splitlines()):
+        try:
+            prof = float(str(r.get("利益(円)") or "").replace(",", ""))
+        except ValueError:
+            continue
+        hit = (r.get("目安以上") or "").strip() == "○"
+        cond = (r.get("状態") or "").strip()
+        for kind, k in (("sellers", norm_seller(r.get("出品者") or "")), ("models", model_key(r.get("商品名") or "")[1])):
+            if not k or k in ("(空欄)", "（空欄）", "-"):
+                continue
+            g = out[kind].setdefault(k, {"n": 0, "hit": 0, "sum": 0, "conds": {}})
+            g["n"] += 1; g["hit"] += hit; g["sum"] += round(prof)
+            if cond:
+                g["conds"][cond] = g["conds"].get(cond, 0) + 1
+    return out
+
+
+def _find_seller(hist: dict, name: str) -> dict | None:
+    k = norm_seller(name)
+    if not k:
+        return None
+    sellers = hist.get("sellers") or {}
+    if k in sellers:
+        return sellers[k]
+    for sk, v in sellers.items():  # 「リサマイ市場・本館」と「リサマイ市場・本館 さん」など。短すぎる名前では当てない
+        if len(sk) >= 4 and len(k) >= 4 and (sk in k or k in sk):
+            return v
+    return None
+
+
+def _hist_text(g: dict, target: float | None) -> str:
+    t = f"売れた{g['n']}件"
+    if target:
+        t += f"（利益{target / 10000:g}万円以上 {g['hit']}件）"
+    return t + f"・平均{round(g['sum'] / g['n']):,}円"
+
+
+def history_note(hist: dict | None, seller_name: str, title: str) -> str:
+    """「この出品者: 売れた3件（利益1万円以上 1件）・平均◯円／この機種: …」. 実績が無ければ空."""
+    if not hist:
+        return ""
+    parts = []
+    s = _find_seller(hist, seller_name)
+    if s:
+        parts.append("この出品者: " + _hist_text(s, hist.get("target")))
+    m = (hist.get("models") or {}).get(model_key(title or "")[1])
+    if m:
+        parts.append("この機種: " + _hist_text(m, hist.get("target")))
+    return "／".join(parts)
+
+
 def caution_note(seller_name: str, cfg: dict | None = None) -> str:
     """注意を出す出品者（config.toml [caution]）なら注意の文、それ以外は空. 判定・上限額・並びには使わない."""
     c = (cfg or _base_cfg()).get("caution") or {}
@@ -2301,6 +2376,7 @@ def rows_for_output(items: list[Item]) -> list[dict]:
                 "タイトル": it.title,
                 "ヤフオクURL": it.url,
                 "出品者の注意": caution_note(it.seller_name),
+                "出品者": it.seller_name,
                 "現在価格": it.current_price_jpy,
                 "即決価格": it.buy_now_jpy,
                 "入札数": it.bids,
@@ -2355,7 +2431,8 @@ def rows_for_output(items: list[Item]) -> list[dict]:
 # 勝ちやすさの記録が無い機種は default_rate（全体の勝ちやすさの目安）で並べる。即決価格が上限額以下の出品は別枠で先頭（数えない）。
 # 1日の予約額の合計には上限を付けない（2026-11-19 ユーザー決定）
 RESERVE_FIELDS = ["順", "区分", "判定", "勝ちやすさ", "上限入札額(入札欄に入れる額)", "支払い額(ストアは税込)", "現在価格",
-                  "即決価格", "利益(今の価格で落札)", "終了", "商品名", "ヤフオク", "注意", "落札の中央値(この機種・直近90日)"]
+                  "即決価格", "利益(今の価格で落札)", "終了", "商品名", "ヤフオク", "注意", "落札の中央値(この機種・直近90日)",
+                  "仕入れの実績(出品者・機種)"]
 
 
 def _end_dt(s: str):
@@ -2422,7 +2499,7 @@ def reserve_mold(rows: list[dict], now: datetime | None = None, days: int = 2) -
 
 
 def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 10.0, sold_stats: dict | None = None,
-                 mold: list[dict] | None = None) -> list[dict]:
+                 mold: list[dict] | None = None, history: dict | None = None) -> list[dict]:
     """予約リストの表（CSV・古物台帳「Mac_予約リスト」・レポートの一番上）.
 
     sold_stats: 機種ごとの落札額（yahoo_results.load_model_stats）。行に「落札の中央値」を出すだけで、並び・判定・上限には使わない
@@ -2446,6 +2523,7 @@ def reserve_rows(instant: list[dict], picks: list[dict], store_tax_pct: float = 
                 "利益(今の価格で落札)": r.get("利益(現在価格)"), "終了": r.get("終了") or "",
                 "商品名": r.get("タイトル") or "", "ヤフオク": r["ヤフオクURL"], "注意": r.get("出品者の注意") or "",
                 "落札の中央値(この機種・直近90日)": sold(r),
+                "仕入れの実績(出品者・機種)": history_note(history, r.get("出品者") or "", r.get("タイトル") or ""),
             })
     return out
 
@@ -2462,12 +2540,18 @@ def _caution_html(r: dict, e) -> str:
     return '<br><small style="color:#a4473a">⚠ ' + e(r["注意"]) + "</small>" if r.get("注意") else ""
 
 
+def _hist_html(r: dict, e) -> str:
+    """予約リストの行の仕入れの実績（表示だけ。2026-11-26 オーナーが選択式で「実績を表示」）."""
+    h = r.get("仕入れの実績(出品者・機種)")
+    return '<br><small style="color:#2b5d8a">実績 ' + e(h) + "</small>" if h else ""
+
+
 def reserve_html(rows: list[dict], target: int) -> str:
     e = html.escape
     n_pick = sum(1 for r in rows if r["区分"] == "予約")
     body = "".join(
         f'<tr><td>{r["順"]}</td><td>{e(r["区分"])}<br><b>{e(r["判定"])}</b></td>'
-        f'<td><a href="{e(r["ヤフオク"])}" target="_blank" rel="noopener">{e(r["商品名"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small>{_caution_html(r, e)}</td>'
+        f'<td><a href="{e(r["ヤフオク"])}" target="_blank" rel="noopener">{e(r["商品名"][:60])}</a><br><small>終了 {e(r["終了"] or "-")}</small>{_caution_html(r, e)}{_hist_html(r, e)}</td>'
         f'<td><b>{_yen(r["上限入札額(入札欄に入れる額)"])}</b><br><small>支払い {_yen(r["支払い額(ストアは税込)"])}'
         f'{"（税込）" if r["支払い額(ストアは税込)"] != r["上限入札額(入札欄に入れる額)"] else ""}</small></td>'
         f'<td>{_yen(r["現在価格"])}{("<br><small>即決 " + _yen(r["即決価格"]) + "</small>") if r["即決価格"] else ""}</td>'
@@ -2929,7 +3013,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:  # noqa: BLE001  落札額の記録が無くても予約リストは作る
         sold_stats = {}
     mold = reserve_mold(rows, days=int(rs.get("days", 2)))
-    reserve = reserve_rows(instant, picks, cfg["yahoo"]["store_tax_pct"], sold_stats, mold)
+    reserve = reserve_rows(instant, picks, cfg["yahoo"]["store_tax_pct"], sold_stats, mold, load_history(target=item_target()))
     write_reserve_csv(reserve, args.out / f"reserve_list_{stamp}.csv")
     print(f"今日の予約リスト: 予約 {len(picks)}本（目標{target}本）・即決 {len(instant)}件・カビの記載あり {len(mold)}件 → reserve_list_{stamp}.csv",
           file=sys.stderr)
