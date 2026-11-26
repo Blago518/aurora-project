@@ -584,6 +584,8 @@ FLAG_RULES = [
                    r"(?:\bSB-?\d{1,3}[A-Z]?\b|スピードライト|ストロボ|speedligh?te?|ワインダー|\bwinder\b|モータードライブ|motor\s*drive|\bMD-\d{1,2}\b|"
                    r"(?<!range\s)\bfinder\b|\bDF-GR\d|\bgrip\b|コントロールユニット|control\s*unit)"
                    r"(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|ディスプレイスタンド|展示台|(?:ロング|ネック|ハンド|リスト|ショルダー)ストラップ(?![\s　]?(?:付|あり|有|セット))|"
+                   # 電池蓋（2026-11-26「CONTAX T2 用電池蓋(ブラック)」に T2 本体の Sold が当たり OK で出ていた）
+                   r"(?:電池|バッテリー|バッテリ)\s*(?:蓋|ふた|フタ|カバー|室\s*カバー)(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|battery\s*(?:cover|door|lid)|"
                    r"repair\s*parts?|補修\s*用?\s*(?:部品|パーツ)|修理\s*用\s*(?:部品|パーツ)|グリップライン|張り?革のみ|貼り?革のみ|"
                    r"臨時増刊|増刊号|別冊|\bHLD-?\d+[A-Za-z]?(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|"
                    r"用\s*グリップ(?![\s　]?[^\s　]{0,14}(?:付|あり|有|セット))|"
@@ -814,6 +816,12 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     for rx, rep in TITLE_FIXES_RE:
         t = rx.sub(rep, t)
     t = re.sub(r"/[A-Z]{1,2}\d{3}\s*$", " ", t)  # ストアの管理番号（…/ジャンク/A077）
+    # 閉じていない括弧の後ろにメーカー名が2つ以上並ぶのは、検索に引っかけるための語の並び（2026-11-26「CONTAX TVS …（T2キャノンペンタックスFUJI SONY」
+    # が Canon・T2 と読まれ、T2 の相場が当たる恐れがあった）。機種の語ではないので外す
+    tail = re.search(r"[（(][^）)]*$", t)
+    if tail and sum(1 for ja, _ in BRANDS_JA if ja in tail.group()) + sum(
+            1 for w in re.findall(r"[A-Za-z]+", tail.group()) if w.lower() in BRANDS_EN) >= 2:
+        t = t[:tail.start()]
     # 末尾の管理番号（【9022NT】K11・【K172】K03・【1582-4NT】K17・【25490CK】J26。拡張機能と同じ。2026-11-19）
     t = re.sub(r"[【\[]\s*[A-Za-z]{0,2}\d{2,6}(?:-\d{1,5})?[A-Za-z]{0,3}\s*[】\]]\s*[A-Z]\d{1,3}\s*$", " ", t)
     t = re.sub(r"[【\[]\s*\d{3,6}(?:-\d{1,5})?[A-Za-z]{1,3}\s*[】\]]\s*$", " ", t)
@@ -846,6 +854,12 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
     t = re.sub(r"[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+", " ", t)
     brand = ""
     all_brands: list[str] = []
+    # いちばん前に書かれたメーカー名を頭に（2026-11-26「CONTAX TVS …（T2キャノンペンタックス…」の Sold が「Canon TVS T2」になっていた。
+    # 以前はカタカナのメーカー名を、英字のメーカー名より先に、書かれた位置に関係なく取っていた）。Carl・Zeiss はレンズの銘なので数えない
+    first_at = sorted([(t.find(ja), en) for ja, en in BRANDS_JA if ja in t] +
+                      [(m.start(), BRANDS_EN[m.group().lower().strip(".-")]) for m in re.finditer(r"[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*", t)
+                       if m.group().lower().strip(".-") in BRANDS_EN])
+    first_maker = next((en for _, en in first_at if en not in ("Carl", "Zeiss")), "")
     for ja, en in BRANDS_JA:
         if ja in t:
             brand = brand or en
@@ -884,6 +898,8 @@ def title_to_query(title: str, max_tokens: int = 7) -> str:
                 continue
         if not any(x.lower() == low for x in tokens):
             tokens.append(tok)
+    if first_maker:
+        brand = first_maker
     makers = [b for b in all_brands if b.lower() in LENS_MAKERS]
     if makers:  # 「タムロン … ニコン用」はタムロン製
         brand = makers[0]

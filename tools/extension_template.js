@@ -75,6 +75,9 @@
     let t = title.normalize("NFKC");
     for (const [re, rep] of TITLE_FIXES) t = t.replace(re, rep);
     t = t.replace(/\/[A-Z]{1,2}\d{3}\s*$/, " ");
+    // 閉じていない括弧の後ろにメーカー名が2つ以上並ぶのは検索に引っかけるための語（appraise.title_to_query と同じ。2026-11-26）
+    { const tail = t.match(/[（(][^）)]*$/);
+      if (tail && C.brandsJa.filter(([ja]) => tail[0].includes(ja)).length + (tail[0].match(/[A-Za-z]+/g) || []).filter((w) => C.brandsEn[w.toLowerCase()]).length >= 2) t = t.slice(0, tail.index); }
     // 末尾の管理番号（【9022NT】K11・【K172】K03・【1582-4NT】K17・【25490CK】J26。appraise.title_to_query と同じ。2026-11-19）
     t = t.replace(/[【\[]\s*[A-Za-z]{0,2}\d{2,6}(?:-\d{1,5})?[A-Za-z]{0,3}\s*[】\]]\s*[A-Z]\d{1,3}\s*$/, " ");
     t = t.replace(/[【\[]\s*\d{3,6}(?:-\d{1,5})?[A-Za-z]{1,3}\s*[】\]]\s*$/, " ");
@@ -104,6 +107,11 @@
     t = t.replace(/[【】\[\]（）()「」『』★☆◆◇■□●○◎※!！?？/|｜,、。:：~〜♪#＃]+/g, " ");
     let brand = "";
     const allBrands = [];
+    // いちばん前に書かれたメーカー名を頭に（appraise.title_to_query と同じ。2026-11-26 「CONTAX TVS …（T2キャノン…」が Canon になっていた）
+    const firstAt = C.brandsJa.filter(([ja]) => t.includes(ja)).map(([ja, en]) => [t.indexOf(ja), en])
+      .concat([...t.matchAll(/[A-Za-z0-9αµ][A-Za-z0-9αµ.\-+]*/g)].map((m) => [m.index, C.brandsEn[m[0].toLowerCase().replace(/^[.-]+|[.-]+$/g, "")]]).filter((x) => x[1]))
+      .sort((a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+    const firstMaker = (firstAt.find(([, en]) => en !== "Carl" && en !== "Zeiss") || [])[1] || "";
     for (const [ja, en] of C.brandsJa) {
       if (t.includes(ja)) { brand = brand || en; allBrands.push(en); t = t.split(ja).join(" \u0002 "); }  // \u0002 = メーカー名の位置
     }
@@ -133,6 +141,7 @@
       }
       if (!tokens.some((x) => x.toLowerCase() === low)) tokens.push(tok);
     }
+    if (firstMaker) brand = firstMaker;
     const makers = allBrands.filter((b) => C.lensMakers.includes(b.toLowerCase()));
     if (makers.length) brand = makers[0];
     // 社外レンズ（Rokinon・Viltrox など）は「キャノンマウント」のメーカーではなく、その社名を頭に（appraise.title_to_query と同じ）

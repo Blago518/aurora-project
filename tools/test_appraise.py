@@ -394,7 +394,10 @@ class ModelQuery(unittest.TestCase):
              ("ZENZA BRONICA ZENZANON MC 250mm F5.6 中判カメラ用 レンズ 単焦点", "Bronica ZENZANON MC 250mm F5.6"),
              ("キヤノン　Canon RF24-70mm F2.8L IS USM【動作確認済】#10657 F.Nov.2126", "Canon RF 24-70mm F2.8 L IS"),
              ("ニコン Nikon AF-S VR-NIKKOR 70-200mm 1:2.8G 動作品　60サイズ", "Nikon AF-S VR-NIKKOR 70-200mm F2.8 G"),
-             ("良品 Nikon P900 め０１６", "Nikon P900")]
+             ("良品 Nikon P900 め０１６", "Nikon P900"),
+             # 2026-11-26 オーナー「これはひどい」: 後ろの「（T2キャノン…」で Canon・T2 と読んでいた。いちばん前のメーカー名を頭にし、閉じていない括弧の後ろのメーカーの並びは外す
+             ("良品　CONTAX TVS 高級コンパクト　動作確認　カールツァイスバリオゾナー（T2キャノンペンタックスFUJI SONY", "Contax TVS"),
+             ("CONTAX T2 用電池蓋(ブラック)", "Contax T2")]
 
     def test_python(self):
         import build_store as bs
