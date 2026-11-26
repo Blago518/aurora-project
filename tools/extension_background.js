@@ -121,18 +121,20 @@ async function evRun() {
   while (evQueue.length) {
     const item = evQueue.shift();
     evStat.n += 1;
+    const had = await chrome.storage.local.get("evidence_" + item.id);
+    if (had["evidence_" + item.id]) { evStat.saved += 1; continue; }   // まとめて取引の1枚で済んだ物は開かない
     evTell({ done: false });
     let tab = null, ok = false;
     try {
       tab = await chrome.tabs.create({ url: item.url, active: true });
       ok = await new Promise((resolve) => {
         evWait = { tabId: tab.id, resolve };
-        setTimeout(() => evDone(tab.id, false), 25000);   // 25秒で保存されなければ、できなかったとして次へ
+        setTimeout(() => evDone(tab.id, false), 20000);   // 20秒で保存されなければ、できなかったとして次へ（中身が読めない画面は evidence.js が先に知らせる）
       });
     } catch (e) { ok = false; }
     if (ok) evStat.saved += 1; else evStat.failed.push(item.id);
-    // 保存できなかったタブは、最初の1つだけ理由が見えるように残す（作った URL が合わないとき、何十も残さない）
-    if (tab && (ok || evStat.failed.length > 1)) { try { await chrome.tabs.remove(tab.id); } catch (e) { /* 閉じられていても続ける */ } }
+    // 開いたタブは保存できてもできなくても閉じる（残すと止まったように見える。2026-11-26 オーナー「止まったけど？」）。できなかったIDは一覧の右下に出す
+    if (tab) { try { await chrome.tabs.remove(tab.id); } catch (e) { /* 閉じられていても続ける */ } }
     await new Promise((r) => setTimeout(r, 1500));
   }
   if (evStat.from != null) { try { await chrome.tabs.update(evStat.from, { active: true }); } catch (e) { /* 一覧のタブが閉じられていても */ } }
@@ -184,16 +186,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
     });
     return true;
   }
+  // 取引ナビの画面にオークションID・金額が出なかった（まとめて取引・エラーの画面）→ 待たずに次へ
+  if (msg && msg.type === "evidenceNone" && _sender && _sender.tab) { evDone(_sender.tab.id, false); send({ ok: true }); return false; }
   // ヤフオクの仕入れ証跡: 取引ナビの見えている画面を PNG で ダウンロード/ヤフオク仕入証跡/ に保存（同じオークションIDは1回だけ。extension_evidence.js）
   if (msg && msg.type === "evidenceShot" && /^[a-z]?\d{8,12}$/i.test(msg.id || "") && _sender && _sender.tab) {
     const key = "evidence_" + msg.id;
-    chrome.storage.local.get(key).then((r) => {
-      if (r[key]) { evDone(_sender.tab.id, true); return send({ already: true }); }
+    // まとめて取引は1枚に中の商品が全部写るので、どれか1つでも保存済みなら写さない（重複させない）。保存したら全部を済みにする
+    const ids = (Array.isArray(msg.ids) ? msg.ids : [msg.id]).filter((i) => /^[a-z]?\d{8,12}$/i.test(i)).map((i) => String(i).toLowerCase());
+    if (!ids.includes(String(msg.id).toLowerCase())) ids.push(String(msg.id).toLowerCase());
+    const keys = Array.from(new Set([key].concat(ids.map((i) => "evidence_" + i))));
+    chrome.storage.local.get(keys).then((r) => {
+      if (keys.some((k) => r[k])) { evDone(_sender.tab.id, true); return send({ already: true }); }
       return chrome.tabs.captureVisibleTab(_sender.tab.windowId, { format: "png" })
         .then((url) => quietDownload({ url, filename: "ヤフオク仕入証跡/" + String(msg.name).slice(0, 120) + ".png", conflictAction: "uniquify", saveAs: false })
           // 日本語の名前を受け付けない環境だけ、英数字の名前（終了日_金額_オークションID）で保存する
           .catch(() => quietDownload({ url, filename: "yahoo_evidence/" + String(msg.name).replace(/[^\w.-]+/g, "_").replace(/_+/g, "_") + ".png", conflictAction: "uniquify", saveAs: false })))
-        .then(() => chrome.storage.local.set({ [key]: Date.now() }))
+        .then(() => chrome.storage.local.set(Object.fromEntries(keys.map((k) => [k, Date.now()]))))
         .then(() => { evDone(_sender.tab.id, true); send({ saved: true }); });
     }).catch((e) => { evDone(_sender.tab.id, false); send({ error: String((e && e.message) || e) }); });
     return true;
