@@ -85,6 +85,31 @@ class RecKey(unittest.TestCase):
         self.assertIsNone(bs.rec_key("Some Camera"))
 
 
+class RecLensNames(unittest.TestCase):
+    """2026-11-27 店舗仕入れの前に Mac_おすすめ の全594行を読み直して見つけた物（実際の商品名）."""
+
+    def test_names(self):
+        cases = [
+            ("Canon EF 50mm f/2.5 Compact Macro", "Canon EF 50mm F2.5 Macro", "lens"),   # Compact でカメラに入っていた
+            ("Canon RF-S 10-18mm 4.5-6.3 IS STM", "Canon RF-S 10-18mm F4.5-6.3", "lens"),   # RF-S が消えていた
+            ("Leica SUMMILUX-M 35mm f/1.4 Titan Titanium", "Leica SUMMILUX-M 35mm F1.4", "lens"),
+            ("Leica Summaron 35mm 3.5 L39", "Leica Summaron 35mm F3.5 L39", "lens"),
+            ("Pentax SMC DA Fisheye 10-17mm f/3.5-4.5 ED IF", "Pentax SMC Fisheye 10-17mm F3.5-4.5", "lens"),
+            ("Nikon AF-S DX 55-300mm f/4.5-5.6G ED VR", "Nikon AF-S DX 55-300mm F4.5-5.6", "lens"),
+            ("Minolta AF 80-200mm f/2.8 APO G", "Minolta AF 80-200mm F2.8 APO", "lens"),
+        ]
+        for t, label, kind in cases:
+            k = bs.rec_key(t)
+            self.assertEqual((k[0], k[2]), (label, kind), t)
+
+    def test_keys(self):
+        # RF-S と EF-S は別のレンズ。Leica の名前・DX は表示だけで、書いていない商品名と同じ行
+        self.assertNotEqual(bs.rec_key("Canon RF-S 10-18mm 4.5-6.3 IS STM")[1], bs.rec_key("Canon EF-S 10-18mm f/4.5-5.6 IS STM")[1])
+        self.assertEqual(bs.rec_key("Leica SUMMILUX-M 35mm f/1.4")[1], bs.rec_key("Leica 35mm f/1.4")[1])
+        self.assertEqual(bs.rec_key("Nikon AF-S DX 55-300mm f/4.5-5.6G")[1], bs.rec_key("Nikon AF-S 55-300mm f/4.5-5.6G")[1])
+        self.assertEqual(bs.rec_key("Canon PowerShot G7 X Mark II Compact Camera")[2], "camera")   # Macro の無い Compact は今までどおりカメラ
+
+
 class RecMakerModel(unittest.TestCase):
     """おすすめのメーカーと型番（2026-11-24 オーナー「om はオリンパスですよね？メーカーも型番もよく調べて精査して」）.
     「Mac_おすすめ」の実際の商品名 559件を全部読み直して見つけた誤り。直したら、その商品名をここに足す."""
@@ -146,7 +171,7 @@ class RecMakerModel(unittest.TestCase):
                  "Olympus Six F.C. 7.5cm F3.5": ("Olympus Six F.C. 7.5cm F3.5", "film"),
                  "Rollei Rolleicode III TLR Xener 75mm": ("Rollei Rolleicord III 75mm", "film"),
                  "[Near MINT] Fujifilm TIARA Zoom 28-56mm Point & Shoot Film Camera from JAPAN": ("Fujifilm TIARA Zoom 28-56mm", "film"),
-                 "Leica Summaron 35mm 3.5cm F3.5 Lens L39 LTM Mount": ("Leica 35mm F3.5 L39", "mf"),
+                 "Leica Summaron 35mm 3.5cm F3.5 Lens L39 LTM Mount": ("Leica Summaron 35mm F3.5 L39", "mf"),
                  "Nikon NIKKOR-P 10.5cm 2.5 S Mount": ("Nikon 10.5cm F2.5", "mf"),
                  "Sony Alpha SAL85F28 85mm f/2.8 SAM": ("Sony 85mm F2.8", "af"),
                  "TAMRON SP 70-300 4-5.6 A005 for Canon": ("Tamron 70-300mm F4-5.6", "af"),
