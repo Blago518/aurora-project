@@ -246,6 +246,11 @@ FIXED_LENS_RE = re.compile(r"\bmju|\btrip\b|\bXA\d?\b|(?<![-\w])T[234]\b|\bTVS\b
                            r"\bC35\b|espio|\bTLR\b|samurai|35-S\b", re.I)
 MOVIE_RE = re.compile(r"movie\s+camera|cine\s+camera|super\s?8|single\s?8|double\s?8", re.I)
 MOUNT_TOKENS = {"l39", "m39", "m42", "ltm"}
+# おすすめの表示名・まとめにだけ残すレンズの語（2026-11-27 店舗仕入れの前の精査。RF-S と EF-S、DX、魚眼、APO は値段の違う別のレンズ。
+# Leica の Summilux-M・Summicron-R のように -M・-R が付いた名前も残す）。eBay の検索語（LENS_LINE_WORDS）は変えない
+REC_LENS_WORDS = {"rf-s", "ef-m"}   # マウント: 比べるキーにも入れる（別のレンズ）
+REC_SHOW_WORDS = {"dx", "fisheye", "apo"}   # 表示名にだけ残す（書いていない商品名と同じ行のまま）
+REC_LEICA_LINE_RE = re.compile(r"(?:summilux|summicron|summarit|summaron|elmarit|elmar|noctilux|tele-elmarit|super-angulon)(?:-[mr])?")
 
 
 def rec_clean(title: str) -> str:
@@ -417,7 +422,9 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     has_mm = any(re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?(?:mm|cm)", t) for t in low)
     zoom = any(re.fullmatch(r"\d{1,3}-\d{2,3}mm", t) for t in low)   # ズームの焦点距離は F値が無くてもレンズ（AF-S DX 18-140mm）
     has_f = zoom or any(re.fullmatch(r"f\d+(\.\d+)?(-\d+(\.\d+)?)?[a-z]?", t) for t in low)  # F5.6E・F1.4G・F2.8L も F値（2026-11-22 200-500mm F5.6E がカメラに入っていた）
-    kind = "lens" if has_mm and (has_f or "lens" in low or lens_like(title)) and not CAMERA_WORDS & set(low) and not body_before_mm(title) \
+    # 「Compact Macro」（Canon EF 50mm f/2.5 Compact Macro）の Compact はレンズの名前で、コンパクトカメラではない（2026-11-27）
+    cam_words = CAMERA_WORDS - ({"compact"} if "macro" in low else set())
+    kind = "lens" if has_mm and (has_f or "lens" in low or lens_like(title)) and not cam_words & set(low) and not body_before_mm(title) \
         and not CAMERA_PHRASE_RE.search(title) else "camera"
 
     lens35 = any(rest[i].lower() == "35mm" and re.fullmatch(r"f\d.*", rest[i + 1].lower()) for i in range(len(rest) - 1))
@@ -425,7 +432,7 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
     def wanted(t: str) -> bool:
         if kind == "lens":
             # Nikon Z・Contax G のレンズは系統の語を残す（無いと MF のレンズと見分けられない。2026-11-22）
-            return bool(t in LENS_LINE_WORDS or t in MOUNT_TOKENS or re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?(?:mm|cm)", t) or re.fullmatch(r"f\d.*", t)
+            return bool(t in LENS_LINE_WORDS or t in REC_LENS_WORDS or t in MOUNT_TOKENS or re.fullmatch(r"\d+(?:\.\d)?(-\d+(?:\.\d)?)?(?:mm|cm)", t) or re.fullmatch(r"f\d.*", t)
                         or (t == "z" and brand == "Nikon") or (t == "g" and brand == "Contax") or (t == "gr" and brand == "Ricoh"))
         return bool((re.search(r"\d", t) and (t != "35mm" or lens35)) or t in CAMERA_LINE_WORDS)
 
@@ -495,6 +502,11 @@ def rec_key(title: str) -> tuple[str, str, str] | None:
         i = next((i for i, t in enumerate(shown) if t.lower() in spec or (t.lower() == "35mm" and lens35)), None)
         if i:
             shown = shown[:i] + ["+"] + shown[i:]
+    if kind == "lens":
+        # DX・Fisheye・APO・Leica の名前（Summilux-M・Elmar など）は表示名にだけ残す。比べるキーは変えない（2026-11-27）
+        shown = [t for t in rest if t in shown or t.lower() in REC_SHOW_WORDS or REC_LEICA_LINE_RE.fullmatch(t.lower())]
+        seen = set()
+        shown = [t for t in shown if not (t.lower() in seen or seen.add(t.lower()))]
     shown = [{"ZOOM": "Zoom", "WIDE": "Wide", "PANORAMA": "Panorama", "Pro-S": "Pro S", "Pro-SD": "Pro SD", "ltm": "L39", "LTM": "L39"}.get(t, t) for t in shown]
     shown = [re.sub(r"^f(?=\d)", "F", t) for t in shown]   # f1.8 → F1.8
     if kind == "lens" and brand in ("Olympus", "OM SYSTEM") and not any(t.lower() in ("zuiko", "m.zuiko") for t in shown):
