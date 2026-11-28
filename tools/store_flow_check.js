@@ -169,6 +169,9 @@ function checkCards(cards, when) {
     // おすすめ: 全部の種類×全部のメーカーで、枠と違う物を出さない（2026-11-22「フィルムカメラで何故レンズが出る？」、2026-11-23 D4s・F値なしのレンズ）。
     // シリーズは一眼レフが先・8mm は最後、同じシリーズは型の名前順（F2 の下に F3。2026-11-23）
     const recChk = await p.evaluate(() => {
+      // 上限が千円未満の機種は出さない（2026-11-28「税込30円以下なら買い」）
+      const any = DATA.recs.find((r) => r.brand === "Canon") || DATA.recs[0];
+      DATA.recs.push({ ...any, label: "Canon FD 50mm F1.4 安すぎ", maxBuy: 30, kind: any.kind });
       const out = [];
       for (const kind of Object.keys(REC_KINDS)) {
         recSel.kind = kind; recSel.high = false; renderBrands();
@@ -183,6 +186,9 @@ function checkCards(cards, when) {
       return out;
     });
     for (const x of recChk) {
+      if (x.labels.includes("Canon FD 50mm F1.4 安すぎ")) bad(`${lab}: おすすめ ${x.kind}/${x.b} に上限30円の機種が出る`);
+      for (const m of x.text.matchAll(/税込\s*([\d,]+)円\s*以下なら買い/g)) if (+m[1].replace(/,/g, "") < 1000) bad(`${lab}: おすすめ ${x.kind}/${x.b} に「税込${m[1]}円以下なら買い」`);
+      if (x.text.includes("過去の利益 平均")) bad(`${lab}: 過去の利益は中央値なのに「平均」と出る`);
       x.labels.forEach((l, i) => { if (x.wants[i] && x.wants[i] !== x.kind) bad(`${lab}: おすすめ ${x.kind}/${x.b} に別の枠の「${l}」（${x.wants[i]}）`); });
       for (const [w, why] of BANNED) if (x.text.includes(w)) bad(`${lab}: おすすめ ${x.kind}/${x.b} に使わない言葉「${w}」（${why}）`);   // 全部の種類×メーカー×「すべて」の値段で見る
       const gi = (g) => x.groups.indexOf(g);
@@ -196,6 +202,19 @@ function checkCards(cards, when) {
       }
     }
     await p.evaluate(() => { recSel.kind = "film"; recSel.high = true; recSel.brand = "Canon"; renderBrands(); renderRecs(); });
+    // 棚の読み取り: 見出しを押すとたたむ・もう1回で開く・新しく撮ったら開く（2026-11-28「読取を折り畳みたい」）
+    { const fold = await p.evaluate(() => {
+        const mk = (n, pr) => ({ name: n, price: pr, notes: "", r: lookup(n, pr, soldOpt(n, { note: "" })) });
+        shelfFold = false; shelfRows = [mk("Canon AE-1", 5000), mk("Canon A-1", 8000), mk("Nikon F3", 20000)]; renderShelf();
+        const n0 = document.querySelectorAll("#shelf .shelf").length;
+        document.querySelector("#shelf [data-fold-shelf]").click();
+        const n1 = document.querySelectorAll("#shelf .shelf").length, h1 = !!document.querySelector("#shelf [data-fold-shelf]"), keep = localStorage.getItem("storeShelfFold");
+        document.querySelector("#shelf [data-fold-shelf]").click();
+        const n2 = document.querySelectorAll("#shelf .shelf").length;
+        shelfRows = []; renderShelf();
+        return { n0, n1, h1, n2, keep };
+      });
+      if (fold.n0 !== 3 || fold.n1 !== 0 || !fold.h1 || fold.n2 !== 3 || fold.keep !== "true") bad(`${lab}: 読み取りの一覧がたためない・開けない: ${JSON.stringify(fold)}`); }
     // 横にはみ出さない・使わない言葉が無い（全部のタブ）
     for (const t of ["look", "rec", "sweet", "calc", "bid", "shop", "set"]) {
       await p.click(`nav [data-tab="${t}"]`); await p.waitForTimeout(120);

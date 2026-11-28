@@ -530,6 +530,9 @@ def store_calc(usd: float, cfg: dict, fx: float, price_jpy: int | None = None) -
     return ba.calculate(item, cfg, fx)
 
 
+REC_MIN_BUY_JPY = 1000   # 上限がこれ未満の機種はおすすめに出さない（「税込30円以下なら買い」と出ていた。2026-11-28 店舗で。アプリの REC_MIN_BUY と同じ）
+
+
 def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
     groups: dict[str, dict] = {}
     for r in rows:
@@ -566,7 +569,7 @@ def recommendations(rows: list[dict], cfg: dict, fx: float) -> list[dict]:
             continue
         usd = round(statistics.median([s["usd"] for s in base]), 2) if base else memo["usd"]
         calc = store_calc(usd, cfg, fx)
-        if calc["max_bid_jpy"] <= 0:
+        if calc["max_bid_jpy"] < REC_MIN_BUY_JPY:
             continue   # どの値段で買っても基準に届かない機種は、おすすめに出さない（アプリに「上限なし」と出ていた。2026-11-24）
         # 実際の利益（販売額と仕入値の両方がある自分・Chatworkの実績だけ）
         profits = [store_calc(s["usd"], cfg, fx, int(s["purchase"]))["profit_now_jpy"]

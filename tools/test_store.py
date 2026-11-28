@@ -253,7 +253,7 @@ class Recommendations(unittest.TestCase):
         # Canon NewFD 50mm F1.4（$78〜85）は、どの値段で買っても基準（$99以下は利益4,000円）に届かないので出さない
         # （アプリに「税込 上限なし」と出て、いくらでも買えるように読めた。2026-11-24）
         self.assertEqual([r["label"] for r in recs], ["Nikon FM2"])
-        self.assertTrue(all(r["maxBuy"] > 0 for r in recs))
+        self.assertTrue(all(r["maxBuy"] >= bs.REC_MIN_BUY_JPY for r in recs))
         fm2 = recs[0]
         self.assertEqual((fm2["sales"], fm2["usd"], fm2["kind"]), (3, 255.0, "camera"))
         # 上限額で買えば基準を満たす
