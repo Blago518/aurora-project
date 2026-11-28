@@ -202,6 +202,19 @@ function checkCards(cards, when) {
       }
     }
     await p.evaluate(() => { recSel.kind = "film"; recSel.high = true; recSel.brand = "Canon"; renderBrands(); renderRecs(); });
+    // 棚の読み取り: 見出しを押すとたたむ・もう1回で開く・新しく撮ったら開く（2026-11-28「読取を折り畳みたい」）
+    { const fold = await p.evaluate(() => {
+        const mk = (n, pr) => ({ name: n, price: pr, notes: "", r: lookup(n, pr, soldOpt(n, { note: "" })) });
+        shelfFold = false; shelfRows = [mk("Canon AE-1", 5000), mk("Canon A-1", 8000), mk("Nikon F3", 20000)]; renderShelf();
+        const n0 = document.querySelectorAll("#shelf .shelf").length;
+        document.querySelector("#shelf [data-fold-shelf]").click();
+        const n1 = document.querySelectorAll("#shelf .shelf").length, h1 = !!document.querySelector("#shelf [data-fold-shelf]"), keep = localStorage.getItem("storeShelfFold");
+        document.querySelector("#shelf [data-fold-shelf]").click();
+        const n2 = document.querySelectorAll("#shelf .shelf").length;
+        shelfRows = []; renderShelf();
+        return { n0, n1, h1, n2, keep };
+      });
+      if (fold.n0 !== 3 || fold.n1 !== 0 || !fold.h1 || fold.n2 !== 3 || fold.keep !== "true") bad(`${lab}: 読み取りの一覧がたためない・開けない: ${JSON.stringify(fold)}`); }
     // 横にはみ出さない・使わない言葉が無い（全部のタブ）
     for (const t of ["look", "rec", "sweet", "calc", "bid", "shop", "set"]) {
       await p.click(`nav [data-tab="${t}"]`); await p.waitForTimeout(120);
