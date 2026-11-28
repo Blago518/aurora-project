@@ -1235,7 +1235,9 @@ const brandName = (b) => (b === "Carl" ? "Carl Zeiss" : b);
 const HIGH_NET_USD = 250;
 const recNet = (r) => r.usd - ((DATA && DATA.cfg.deductionUsd) || 0);
 // OM SYSTEM（2021年にオリンパスのカメラ事業を引き継いだ会社）は Olympus の枠（2026-11-24 オーナー「om はオリンパスですよね？」）。Mac の新しいデータは最初から Olympus
-const recPool = () => DATA.recs.filter((r) => !recSel.high || recNet(r) >= HIGH_NET_USD).map((r) => (r.brand === "OM" ? { ...r, brand: "Olympus" } : r));
+// 上限が千円未満の機種はおすすめに出さない（「税込30円以下なら買い」と出ていた。2026-11-28 店舗で。build_store.REC_MIN_BUY_JPY と同じ）
+const REC_MIN_BUY = 1000;
+const recPool = () => DATA.recs.filter((r) => r.maxBuy >= REC_MIN_BUY && (!recSel.high || recNet(r) >= HIGH_NET_USD)).map((r) => (r.brand === "OM" ? { ...r, brand: "Olympus" } : r));
 function renderBrands() {
   const count = {};
   for (const r of recPool()) if (recCat(r) === recSel.kind) count[r.brand] = (count[r.brand] || 0) + r.sales + (r.sales ? 0 : 0.01);  // 選んだ種類に品があるメーカーだけ（空のページを出さない）
@@ -1305,7 +1307,7 @@ function renderRecs() {
     }
     const L = linksWithCat(withEx(r.label), recIsLens(r) ? "3323" : recCat(r) === "digital" ? "31388" : "15230");
     return `<div class="rec" data-rec="${esc(r.label)}"><div class="t"><span class="n">${i + 1}</span><b>${esc(r.label)}</b><span class="s">${r.sales ? `販売${r.sales}回` : "販売なし"}</span></div>
-      <div class="buy">${buy > 0 ? `税込 <strong>${yen(buy)}</strong> 以下なら買い` : yn(false)} <span class="s">／${usdTxt}${r.profit != null ? `／過去の利益 平均${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
+      <div class="buy">${buy > 0 ? `税込 <strong>${yen(buy)}</strong> 以下なら買い` : yn(false)} <span class="s">／${usdTxt}${r.profit != null ? `／過去の利益 中央値${yen(r.profit)}` : ""}${r.basis !== "販売実績" ? "／" + esc(r.basis) : ""}</span></div>
       <div class="links"><button class="mini main" data-look="${esc(r.label)}">調べる</button><a class="mini" href="${L.sold}" target="_blank" rel="noopener">Sold</a><a class="mini" href="${L.now}" target="_blank" rel="noopener">Now</a><a class="mini" href="${L.pr}" target="_blank" rel="noopener">PR</a></div></div>`;
   };
   $("recList").innerHTML = list.length ? groups.map((G) => `<h3 class="grp">${esc(G.name)} <span class="s">${G.items.length}品</span></h3>` + G.items.map(one).join("")).join("") : `<div class="empty">この条件の販売実績はまだありません</div>`;

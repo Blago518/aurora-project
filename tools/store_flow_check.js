@@ -169,6 +169,9 @@ function checkCards(cards, when) {
     // おすすめ: 全部の種類×全部のメーカーで、枠と違う物を出さない（2026-11-22「フィルムカメラで何故レンズが出る？」、2026-11-23 D4s・F値なしのレンズ）。
     // シリーズは一眼レフが先・8mm は最後、同じシリーズは型の名前順（F2 の下に F3。2026-11-23）
     const recChk = await p.evaluate(() => {
+      // 上限が千円未満の機種は出さない（2026-11-28「税込30円以下なら買い」）
+      const any = DATA.recs.find((r) => r.brand === "Canon") || DATA.recs[0];
+      DATA.recs.push({ ...any, label: "Canon FD 50mm F1.4 安すぎ", maxBuy: 30, kind: any.kind });
       const out = [];
       for (const kind of Object.keys(REC_KINDS)) {
         recSel.kind = kind; recSel.high = false; renderBrands();
@@ -183,6 +186,9 @@ function checkCards(cards, when) {
       return out;
     });
     for (const x of recChk) {
+      if (x.labels.includes("Canon FD 50mm F1.4 安すぎ")) bad(`${lab}: おすすめ ${x.kind}/${x.b} に上限30円の機種が出る`);
+      for (const m of x.text.matchAll(/税込\s*([\d,]+)円\s*以下なら買い/g)) if (+m[1].replace(/,/g, "") < 1000) bad(`${lab}: おすすめ ${x.kind}/${x.b} に「税込${m[1]}円以下なら買い」`);
+      if (x.text.includes("過去の利益 平均")) bad(`${lab}: 過去の利益は中央値なのに「平均」と出る`);
       x.labels.forEach((l, i) => { if (x.wants[i] && x.wants[i] !== x.kind) bad(`${lab}: おすすめ ${x.kind}/${x.b} に別の枠の「${l}」（${x.wants[i]}）`); });
       for (const [w, why] of BANNED) if (x.text.includes(w)) bad(`${lab}: おすすめ ${x.kind}/${x.b} に使わない言葉「${w}」（${why}）`);   // 全部の種類×メーカー×「すべて」の値段で見る
       const gi = (g) => x.groups.indexOf(g);
